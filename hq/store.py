@@ -24,6 +24,10 @@ class Store:
         self._writer.execute('PRAGMA journal_mode=WAL')
         self._writer.executescript(_SCHEMA)
 
+    def close(self):
+        with self._lock:
+            self._writer.close()
+
     def conn(self):
         return sqlite3.connect(self.path)
 

@@ -1,0 +1,5 @@
+{"type":"session_meta","timestamp":"2026-10-30T10:00:00Z","payload":{"id":"x","cwd":"/project","model_provider":"openai","timestamp":"2026-10-30T10:00:00Z"}}
+{"type":"turn_context","timestamp":"2026-10-30T10:00:01Z","payload":{"model":"gpt-6","cwd":"/project"}}
+{"type":"response_item","timestamp":"2026-10-30T10:00:02Z","payload":{"type":"function_call","name":"shell"}}
+{"type":"event_msg","timestamp":"2026-10-30T10:00:03Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":26222,"cached_input_tokens":12672,"cache_write_input_tokens":0,"output_tokens":42}},"rate_limits":{"primary":{"used_percent":6.0,"window_minutes":300,"resets_at":1793218194},"secondary":{"used_percent":2.0,"window_minutes":10080,"resets_at":1793220000}}}}
+{"type":"event_msg","timestamp":"2026-10-30T10:00:04Z","payload":{"type":"task_complete"}}

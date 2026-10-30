@@ -10,7 +10,7 @@ class StoreTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.store = Store(Path(self.tmp.name) / 'hq.db')
-        self.addCleanup(self.store._writer.close)
+        self.addCleanup(self.store.close)
         self.session = SessionRec('s','codex','openai',None,None,None,0,9,None,None,'source')
         self.account = lambda h, p, m: 'account'
 
