@@ -1,0 +1,13 @@
+{
+  "sources": {
+    "claude_code": {"enabled": true, "paths": ["~/.claude/projects"]},
+    "codex": {"enabled": true, "paths": ["~/.codex/sessions", "\\\\wsl$\\Debian\\home\\*\\.codex\\sessions"]},
+    "opencode": {"enabled": true, "paths": ["~/.local/share/opencode/opencode.db"]},
+    "antigravity": {"enabled": true, "paths": ["~/.gemini/antigravity-cli/conversations", "~/.gemini/antigravity-cli/history.jsonl"]},
+    "gemini_cli": {"enabled": true, "paths": ["~/.gemini/tmp/*/chats"]},
+    "provider_usage": {"enabled": true, "paths": ["~/.claude/provider-usage"]}
+  },
+  "alerts": {"thresholds": [80, 95], "toast": false},
+  "default_skin": "isometric",
+  "recommend_task_kind": "coding"
+}
