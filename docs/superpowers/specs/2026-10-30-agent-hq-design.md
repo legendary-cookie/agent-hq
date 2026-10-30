@@ -77,7 +77,7 @@ agent-hq/
 | `events` | `id`, `session_id`, `ts`, `kind` (`user`, `assistant`, `tool_call`, `tool_result`, `error`, `turn_end`), `tool`, `preview` (≤200 chars), `tokens_in`, `tokens_out`, `tokens_cache_read`, `tokens_cache_write`, `tokens_estimated` (bool), `model` |
 | `tasks` | `id`, `session_id`, `started_at`, `ended_at`, `outcome` (`ok`, `error`, `open`). One task = one user/delegator prompt up to the next `turn_end`. Derived by the collector. |
 | `delegations` | Mirror of `provider-usage` `calls` (read-only copy): `ts`, `provider`, `model`, `task_kind`, `outcome`, `tokens`, `duration_s`, `note` |
-| `limit_snapshots` | `account_id`, `window` (`5h`, `week`, `day`, `month`), `used_percent`, `resets_at`, `source` (`measured`, `blocked`, `manual`), `recorded_at` |
+| `limit_snapshots` | `account_id`, `scope` (model name or `*`), `window` (`5h`, `week`, `day`, `month`, `block`), `used_percent`, `resets_at`, `source` (`measured`, `blocked`, `manual`), `recorded_at` |
 | `cursors` | `adapter`, `key`, `offset`, `mtime` |
 | `prices` | `model`, `input`, `output`, `cache_read`, `cache_write` (USD per 1M tokens). Loaded from `prices.json`. |
 
@@ -102,7 +102,7 @@ Shared rules:
 | `claude_code` | `~/.claude/projects/**/*.jsonl` | sessions, subagents (via `parentUuid`/sidechain links), tool calls, per-message tokens incl. cache, model, cwd | none in logs |
 | `codex` | `~/.codex/sessions/**/*.jsonl`, plus the Debian WSL home (`\\wsl$\Debian\home\<user>\.codex\sessions`) when present | sessions, tool calls, tokens, model, cwd | `rate_limits.primary/secondary` → `5h`/`week` snapshots, source `measured` |
 | `opencode` | `~/.local/share/opencode/opencode.db` (tables `session`, `message`, `part`, `todo` only) | sessions, messages, tool parts, model/provider per message, tokens when present | none |
-| `antigravity` | `~/.gemini/antigravity-cli/conversations`, `history.jsonl` | conversations, steps, model | none; tokens estimated (4 chars ≈ 1 token) and flagged |
+| `antigravity` | `~/.gemini/antigravity-cli/conversations`, `history.jsonl` | conversations, prompts, activity from step-count growth | none; step payloads are binary protobuf, so tokens and model are shown as unknown (not estimated) |
 | `gemini_cli` | `~/.gemini/tmp/*/chats` | chat sessions, model, tokens when present | none |
 | `provider_usage` | `~/.claude/provider-usage/usage.db` (read-only) | `delegations`; Hermes appears only here | `limits` table → `blocked` snapshots (100 % until `blocked_until`) |
 
