@@ -1,0 +1,52 @@
+<h2>Which office style feels right?</h2>
+<p class="subtitle">Every agent is an NPC. What it does maps to live status: typing at a desk = working, a "!" bubble = waiting for you, in the break room = idle, red smoke = error, walking to another desk = delegating.</p>
+
+<div class="cards">
+  <div class="card" data-choice="topdown" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <svg viewBox="0 0 320 200" width="100%" style="image-rendering:pixelated;background:#2b2d42">
+        <rect x="8" y="8" width="148" height="88" fill="#3d405b" stroke="#8d99ae"/><text x="14" y="22" fill="#f4a261" font-size="10" font-family="monospace">CLAUDE WING</text>
+        <rect x="164" y="8" width="148" height="88" fill="#3d405b" stroke="#8d99ae"/><text x="170" y="22" fill="#90be6d" font-size="10" font-family="monospace">CODEX LAB</text>
+        <rect x="8" y="104" width="148" height="88" fill="#3d405b" stroke="#8d99ae"/><text x="14" y="118" fill="#4cc9f0" font-size="10" font-family="monospace">ANTIGRAVITY</text>
+        <rect x="164" y="104" width="148" height="88" fill="#4a4e69" stroke="#8d99ae"/><text x="170" y="118" fill="#e9c46a" font-size="10" font-family="monospace">BREAK ROOM</text>
+        <g fill="#a26b3d"><rect x="24" y="40" width="30" height="14"/><rect x="74" y="40" width="30" height="14"/><rect x="180" y="40" width="30" height="14"/><rect x="24" y="136" width="30" height="14"/></g>
+        <g><rect x="34" y="56" width="10" height="12" fill="#f4a261"/><rect x="84" y="56" width="10" height="12" fill="#f4a261"/><rect x="190" y="56" width="10" height="12" fill="#90be6d"/><rect x="34" y="152" width="10" height="12" fill="#4cc9f0"/><rect x="200" y="150" width="10" height="12" fill="#90be6d"/><rect x="230" y="160" width="10" height="12" fill="#c77dff"/></g>
+        <rect x="80" y="28" width="16" height="12" fill="#fff" rx="2"/><text x="85" y="38" font-size="10" font-family="monospace" fill="#e63946">!</text>
+        <rect x="250" y="140" width="22" height="16" fill="#6c584c"/><text x="245" y="186" fill="#ccc" font-size="8" font-family="monospace">coffee</text>
+      </svg>
+    </div>
+    <div class="card-body"><h3>A. Top-down pixel office</h3><p>One room per harness, desks per session. Like Pixel Agents and Stardew. Easiest to read at a glance, scales to many agents.</p></div>
+  </div>
+
+  <div class="card" data-choice="isometric" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <svg viewBox="0 0 320 200" width="100%" style="background:#1d1e2c">
+        <polygon points="160,20 300,95 160,170 20,95" fill="#3d405b" stroke="#8d99ae"/>
+        <line x1="90" y1="57" x2="230" y2="132" stroke="#8d99ae" stroke-dasharray="3"/><line x1="230" y1="57" x2="90" y2="132" stroke="#8d99ae" stroke-dasharray="3"/>
+        <g fill="#a26b3d"><polygon points="110,70 130,60 150,70 130,80"/><polygon points="170,70 190,60 210,70 190,80"/><polygon points="110,120 130,110 150,120 130,130"/></g>
+        <g><rect x="125" y="78" width="9" height="14" fill="#f4a261"/><rect x="185" y="78" width="9" height="14" fill="#90be6d"/><rect x="125" y="128" width="9" height="14" fill="#4cc9f0"/><rect x="215" y="118" width="9" height="14" fill="#c77dff"/></g>
+        <rect x="181" y="54" width="16" height="12" fill="#fff" rx="2"/><text x="186" y="64" font-size="10" font-family="monospace" fill="#e63946">!</text>
+        <text x="12" y="192" fill="#ccc" font-size="9" font-family="monospace">rooms = quadrants of one floor</text>
+      </svg>
+    </div>
+    <div class="card-body"><h3>B. Isometric cozy office</h3><p>Habbo / Two Point style, one floor split into zones. The prettiest option, but harder to build and agents can hide behind furniture.</p></div>
+  </div>
+
+  <div class="card" data-choice="sideview" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <svg viewBox="0 0 320 200" width="100%" style="background:#14213d">
+        <g stroke="#8d99ae" fill="#3d405b"><rect x="20" y="14" width="280" height="54"/><rect x="20" y="72" width="280" height="54"/><rect x="20" y="130" width="280" height="54"/></g>
+        <text x="26" y="26" fill="#f4a261" font-size="9" font-family="monospace">3F CLAUDE</text><text x="26" y="84" fill="#90be6d" font-size="9" font-family="monospace">2F CODEX</text><text x="26" y="142" fill="#4cc9f0" font-size="9" font-family="monospace">1F AGY / OPENCODE</text>
+        <g fill="#a26b3d"><rect x="80" y="54" width="28" height="6"/><rect x="140" y="54" width="28" height="6"/><rect x="80" y="112" width="28" height="6"/><rect x="80" y="170" width="28" height="6"/></g>
+        <g><rect x="88" y="40" width="9" height="14" fill="#f4a261"/><rect x="148" y="40" width="9" height="14" fill="#f4a261"/><rect x="88" y="98" width="9" height="14" fill="#90be6d"/><rect x="88" y="156" width="9" height="14" fill="#4cc9f0"/><rect x="240" y="98" width="9" height="14" fill="#c77dff"/></g>
+        <rect x="270" y="14" width="22" height="170" fill="#22223b" stroke="#8d99ae"/><text x="272" y="100" fill="#ccc" font-size="7" font-family="monospace">LIFT</text>
+      </svg>
+    </div>
+    <div class="card-body"><h3>C. Side-view office tower</h3><p>One floor per harness, with a lift for delegations between harnesses. Fun "building" metaphor, but cramped once a floor has more than about 6 agents.</p></div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Either way, clicking an NPC opens its detail panel</h3>
+  <p>Harness, provider, model, account, project folder, current tool step, tokens and value for the session, parent and child agents, and the limit bar of the account it uses.</p>
+</div>
