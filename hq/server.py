@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 from .config import Config, SourceCfg, Account, Price, _path, save_config
-from .kpis import compute_kpis, resolve_range, session_value, _rows
+from .kpis import compute_kpis, resolve_range, session_value, _rows, series
 from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
 from .status import last_kinds, session_status
@@ -93,6 +93,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                     return self.send_json(200,result)
                 with closing(store.conn()) as conn:
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
+                    if path=='/api/series':
+                        rng=resolve_range(param('range','today'),datetime.now().astimezone(),param('from'),param('to'))
+                        return self.send_json(200,series(conn,cfg,rng,param('bucket','day'),param('by','provider')))
                     if path=='/api/kpis':
                         name=param('range','today'); start=param('from'); end=param('to'); rng=resolve_range(name,datetime.now().astimezone(),start,end)
                         return self.send_json(200,compute_kpis(conn,cfg,rng,param('group_by'),now))
@@ -100,11 +103,15 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                         sessions=_rows(conn,'select * from sessions order by last_event_at desc'); last=last_kinds(conn)
                         for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now)
                         if path=='/api/sessions':
+                            enriched = _rows(conn, '''SELECT session_id, max(CASE WHEN rn=1 THEN kind END) last_kind, max(CASE WHEN tool_rank=1 AND kind='tool_call' THEN tool END) last_tool, max(CASE WHEN preview_rank=1 THEN preview END) last_preview, sum(coalesce(tokens_in,0)+coalesce(tokens_out,0)+coalesce(tokens_cache_read,0)+coalesce(tokens_cache_write,0)) tokens FROM (SELECT *, row_number() over (partition by session_id order by ts desc,id desc) rn, row_number() over (partition by session_id order by (kind='tool_call') desc,ts desc,id desc) tool_rank, row_number() over (partition by session_id order by (preview is not null) desc,ts desc,id desc) preview_rank FROM events) GROUP BY session_id''')
+                            extra={e['session_id']:e for e in enriched}
+                            for s in sessions:
+                                e=extra.get(s['id'], {}); s.update(last_kind=e.get('last_kind'),last_tool=e.get('last_tool'),last_preview=e.get('last_preview'),tokens=e.get('tokens',0))
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
                                 if param(key): sessions=[s for s in sessions if s[col]==param(key)]
                             if param('from'): sessions=[s for s in sessions if s['started_at']>=float(param('from'))]
                             if param('to'): sessions=[s for s in sessions if s['started_at']<float(param('to'))]
-                            return self.send_json(200,sessions)
+                            return self.send_json(200,sessions[:min(2000,max(1,int(param("limit","500"))))])
                         counts={k:sum(s['status']==k for s in sessions) for k in ('working','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
                         return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]))})
                     if path.startswith('/api/sessions/'):
