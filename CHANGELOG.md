@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.2.0 (2026-10-31): web UI, Milestone 2
+
+Added
+- React + TypeScript UI served by `python -m hq`:
+  - pages: Dashboard, Agents (with the inspector), Limits (with manual entry) and Settings;
+  - alert banner and sidebar limit bars;
+  - live refresh over one shared SSE stream, reconnecting with backoff;
+  - light and dark mode.
+- API:
+  - `GET /api/series` (hourly or daily tokens, value, tasks and errors per group);
+  - session rows carry `last_kind`, `last_tool`, `last_preview` and `tokens`;
+  - session events accept `order=desc`;
+  - top sessions are listed without prices (ranked by tokens).
+- The token file is reused across launches.
+
+Fixed (found by checking the running UI on real data)
+- Claude event previews showed Python `repr` text for nested tool results.
+- The inspector timeline showed a session's oldest 50 events instead of its newest.
+- Every API hook opened its own SSE connection, which would exhaust the browser's 6-per-host limit.
+- Charts skipped empty hours and days.
+- After a rebuild, a cached `index.html` kept loading the old bundle. `index.html` is now `no-cache` and hashed assets are `immutable`.
+- Restarting the server sent open pages to the token screen.
+
+Independent review (risk gate)
+- Reviewer: a fresh Claude Opus agent. No XSS and no token leaks found; 1 medium-high, 2 medium and 4 low findings, all fixed:
+  - Day buckets split in two on daylight-saving change days, which made week and month charts drop data. Reproduced.
+  - Charts showed unpriced series as $0.
+  - The reused token stayed in browser history. The launch URL now carries a single-use 120 s code exchanged via `POST /api/exchange`, and `--rotate-token` was added.
+  - The inspector's status dot was always idle.
+  - Stale data showed briefly on range switch.
+  - A bad token made the SSE stream retry silently.
+  - Every refresh enriched all sessions.
+
+Verified (2026-10-31, real logs)
+- Tests: 40 web, 120 Python (on Windows; the two DST tests skip without `tzset` and pass on Linux).
+- Launch flow in the browser: the code was exchanged, the URL cleaned to `#/dashboard` with no token in it, and reusing the code returned 403.
+- Browser checks:
+  - Every page in light mode at 1280–1440 px and in dark mode at 1280 px.
+  - No horizontal overflow at 1024 px.
+  - No `NaN` or `undefined` text.
+  - No console errors.
+  - Requests go to `127.0.0.1` only.
+  - Without a token the help page shows.
+  - A server restart with the page open keeps working.
+- The Dashboard week tokens tile matches `GET /api/kpis?range=week` within one refresh cycle on live data (954.5M = 954.5M).
+
 ## 0.1.0 (2026-10-31): backend, Milestone 1
 
 Added
