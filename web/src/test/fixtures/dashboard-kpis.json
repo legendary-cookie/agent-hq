@@ -1,0 +1,102 @@
+{
+  "activity": {
+    "active_agents": 2,
+    "sessions_started": 2,
+    "tasks": 4,
+    "tool_calls": 8,
+    "agent_hours": 2,
+    "average_task_duration": null
+  },
+  "quality": {
+    "success_rate": null,
+    "errors_per_100_tool_calls": null,
+    "delegation_outcomes": {}
+  },
+  "tokens": {
+    "input": 1000,
+    "output": 200,
+    "cache_read": 300,
+    "cache_write": 0,
+    "cache_hit_ratio": 0.2
+  },
+  "value": {
+    "total_usd": 0,
+    "unpriced_tokens": 1500,
+    "estimated": false
+  },
+  "plan_roi": {
+    "account-a": {
+      "value_usd": 0,
+      "monthly_price_usd": null,
+      "roi": null
+    }
+  },
+  "quota_use": {},
+  "routing": {
+    "delegations_per_provider": {
+      "provider-a": 2
+    },
+    "blocked_count": 0,
+    "hours_blocked": {
+      "model-a": 1
+    }
+  },
+  "previous": {
+    "activity": {
+      "active_agents": 2,
+      "sessions_started": 2,
+      "tasks": 4,
+      "tool_calls": 8,
+      "agent_hours": 2,
+      "average_task_duration": null
+    },
+    "quality": {
+      "success_rate": null,
+      "errors_per_100_tool_calls": null,
+      "delegation_outcomes": {}
+    },
+    "tokens": {
+      "input": 1000,
+      "output": 200,
+      "cache_read": 300,
+      "cache_write": 0,
+      "cache_hit_ratio": 0.2
+    },
+    "value": {
+      "total_usd": 0,
+      "unpriced_tokens": 1500,
+      "estimated": false
+    },
+    "plan_roi": {
+      "account-a": {
+        "value_usd": 0,
+        "monthly_price_usd": null,
+        "roi": null
+      }
+    },
+    "quota_use": {},
+    "routing": {
+      "delegations_per_provider": {
+        "provider-a": 2
+      },
+      "blocked_count": 0,
+      "hours_blocked": {
+        "model-a": 1
+      }
+    }
+  },
+  "top_sessions": [
+    {
+      "session_id": "parent",
+      "tokens": 1500,
+      "value_usd": null
+    }
+  ],
+  "top_projects": [],
+  "top_models": [
+    {
+      "model": "model-a",
+      "tokens": 1500
+    }
+  ]
+}

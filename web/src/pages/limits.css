@@ -1,0 +1,84 @@
+.limits-page h1 {
+  margin-bottom: 20px;
+}
+.limits-cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+.limits-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+}
+.limits-card h2 {
+  margin: 0 0 16px;
+  font-size: 17px;
+}
+.limits-window {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.limits-window-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.limits-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.limits-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.limits-manual {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.limits-manual summary {
+  color: var(--accent);
+  cursor: pointer;
+}
+.limits-manual form {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.limits-manual label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
+.limits-manual input,
+.limits-manual select {
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.limits-manual button {
+  justify-self: start;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface);
+  cursor: pointer;
+}
+.limits-manual [role='alert'] {
+  margin: 0;
+  color: var(--error);
+}

@@ -5,6 +5,18 @@ import type { LimitCard, Overview } from '../api/types';
 import { useApi } from '../api/client';
 import { useRoute } from './router';
 import { TokenHelp } from './TokenHelp';
+import type { Route } from './router';
+import { Dashboard } from '../pages/Dashboard';
+import { Agents } from '../pages/Agents';
+import { Limits } from '../pages/Limits';
+import { Settings } from '../pages/Settings';
+
+const PAGES: Record<Route, () => JSX.Element> = {
+  dashboard: Dashboard,
+  agents: Agents,
+  limits: Limits,
+  settings: Settings,
+};
 export function App() {
   const [route, navigate] = useRoute();
   const [forbidden, setForbidden] = useState(false);
@@ -16,12 +28,13 @@ export function App() {
     return () => window.removeEventListener('hq-forbidden', handler);
   }, []);
   if (forbidden || error?.status === 403) return <TokenHelp />;
+  const Page = PAGES[route];
   return (
     <div className="shell">
       <Sidebar route={route} navigate={navigate} />
       <main>
         <AlertBanner alerts={overview?.alerts ?? []} cards={limits ?? []} />
-        <h1>{route[0].toUpperCase() + route.slice(1)}</h1>
+        <Page />
       </main>
     </div>
   );

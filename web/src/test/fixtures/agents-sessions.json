@@ -1,0 +1,40 @@
+[
+  {
+    "id": "parent",
+    "harness": "Codex",
+    "provider": "provider-a",
+    "model": "model-a",
+    "account_id": "account-a",
+    "project": "/work/project",
+    "title": "Parent",
+    "started_at": 100,
+    "last_event_at": 200,
+    "ended_at": null,
+    "status": "working",
+    "parent_id": null,
+    "source_ref": null,
+    "last_kind": null,
+    "last_tool": null,
+    "last_preview": null,
+    "tokens": 1500
+  },
+  {
+    "id": "child",
+    "harness": "Codex",
+    "provider": "provider-a",
+    "model": "model-a",
+    "account_id": "account-a",
+    "project": "/work/project",
+    "title": "Child",
+    "started_at": 100,
+    "last_event_at": 200,
+    "ended_at": null,
+    "status": "idle",
+    "parent_id": "parent",
+    "source_ref": null,
+    "last_kind": null,
+    "last_tool": null,
+    "last_preview": null,
+    "tokens": 1500
+  }
+]

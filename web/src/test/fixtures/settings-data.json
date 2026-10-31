@@ -1,0 +1,1 @@
+{"sources":{"codex":{"enabled":true,"paths":["/sessions"]}},"accounts":[{"id":"a","provider":"openai","label":"Codex","plan":"Plus","monthly_price_usd":20,"billing_day":1,"match":[],"cap_tokens":{}}],"prices":{"priced":{"input":1,"output":2,"cache_read":0.1,"cache_write":0.2}},"alerts":{"thresholds":[80,95],"toast":false},"default_skin":"isometric","recommend_task_kind":"coding"}

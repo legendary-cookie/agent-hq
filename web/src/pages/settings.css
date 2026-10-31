@@ -1,0 +1,107 @@
+.settings-page h1 {
+  margin-bottom: 20px;
+}
+.settings-page form {
+  display: grid;
+  gap: 16px;
+}
+.settings-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel);
+}
+.settings-card h2 {
+  margin: 0 0 14px;
+  font-size: 17px;
+}
+.settings-card table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.settings-card th {
+  padding: 6px;
+  color: var(--muted);
+  font-weight: 400;
+  text-align: left;
+}
+.settings-card td {
+  padding: 6px;
+  border-top: 1px solid var(--border);
+}
+.settings-card td:nth-child(n + 3) input,
+.settings-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.settings-card input:not([type='checkbox']),
+.settings-card select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.settings-card label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.settings-model,
+.settings-source {
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.settings-price-fields,
+.settings-alerts {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 10px;
+}
+.settings-price-fields input,
+.settings-alerts input[type='number'] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.settings-card .settings-toggle {
+  display: flex;
+  align-items: center;
+  align-self: end;
+  padding: 8px 0;
+}
+.settings-path {
+  margin-top: 4px;
+  color: var(--muted);
+}
+.settings-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.settings-actions button {
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--surface);
+  cursor: pointer;
+}
+.settings-page [role='alert'] {
+  color: var(--error);
+}
