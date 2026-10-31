@@ -61,3 +61,16 @@ class GeminiCliAdapterTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GeminiRepeatedHeaderTests(unittest.TestCase):
+    def test_repeated_header_is_an_update_not_a_warning(self):
+        import tempfile
+        from hq.store import Store
+        from hq.config import SourceCfg
+        from hq.adapters.gemini_cli import GeminiCliAdapter
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        store = Store(Path(tmp.name) / 'hq.db'); self.addCleanup(store.close)
+        b = GeminiCliAdapter().poll(store, SourceCfg(True, [Path(__file__).parent / 'fixtures/gemini/tmp/*/chats']))
+        self.assertEqual(b.warnings, 0)
+

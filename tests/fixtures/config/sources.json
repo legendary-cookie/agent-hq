@@ -1,0 +1,1 @@
+{"sources":{"claude_code":{"enabled":true,"paths":[]},"codex":{"enabled":true,"paths":[]},"opencode":{"enabled":true,"paths":[]},"antigravity":{"enabled":true,"paths":[]},"gemini_cli":{"enabled":true,"paths":[]},"provider_usage":{"enabled":true,"paths":[]}},"alerts":{"thresholds":[80,95],"toast":false},"default_skin":"isometric","recommend_task_kind":"coding"}

@@ -7,6 +7,7 @@ from step-count growth.
 """
 import json
 import os
+import time
 import sqlite3
 from pathlib import Path
 
@@ -93,8 +94,8 @@ class AntigravityAdapter:
             refs.setdefault(cid, key)
             mtime = os.stat(db_path).st_mtime
             old = store.get_cursor(self.name, key)
-            if old is not None and old[1] == mtime:
-                continue  # unchanged since last pass: do not open it
+            if old is not None and old[1] == mtime and time.time() - mtime > 2:
+                continue  # unchanged and settled: do not open it (2 s guards coarse mtimes)
             try:
                 count = _steps_count(db_path)
             except sqlite3.Error:

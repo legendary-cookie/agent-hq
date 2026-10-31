@@ -6,11 +6,29 @@ adapter (first occurrence wins), across passes by the store's
 UNIQUE(session_id, ext_id).
 """
 import json
+from datetime import datetime
 from pathlib import Path
 
 from .base import iter_files, preview
 from ..records import Batch, EventRec, SessionRec
 from ..tail import read_new_lines
+
+def _ts(value, default=0.0):
+    """Gemini writes ISO-8601 strings; accept epoch milliseconds too."""
+    if isinstance(value, (int, float)):
+        return value / 1000.0
+    if isinstance(value, str) and value:
+        return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+    return default
+
+
+def _text(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return ' '.join(str(part.get('text', '')) for part in content if isinstance(part, dict)) or None
+    return None
+
 
 _KINDS = {'user': 'user', 'gemini': 'assistant'}
 
@@ -50,8 +68,9 @@ class GeminiCliAdapter:
                     for message in row['$set'].get('messages') or []:
                         if isinstance(message, dict):
                             messages.append(message)
-                elif header is None:
-                    header = row
+                elif 'sessionId' in row:
+                    # Gemini rewrites its header as the chat updates; keep the latest.
+                    header = {**(header or {}), **row}
                 else:
                     warnings += 1
             except (ValueError, TypeError, KeyError, AttributeError):
@@ -59,7 +78,7 @@ class GeminiCliAdapter:
         if not isinstance(header, dict):
             return None, [], warnings
         sid = f'gemini_cli:{path.stem}'
-        started_at = (header.get('startTime') or 0) / 1000.0
+        started_at = _ts(header.get('startTime'))
         session = SessionRec(sid, self.name, 'google', None, None, None,
                              started_at, started_at, None, None, str(path))
         model = None
@@ -74,13 +93,13 @@ class GeminiCliAdapter:
             if kind is None:
                 warnings += 1
                 continue
-            ts = (message.get('timestamp') or started_at * 1000) / 1000.0
+            ts = _ts(message.get('timestamp'), started_at)
             tokens = message.get('tokens') or {}
             if message.get('model'):
                 model = message['model']
             session = SessionRec(sid, self.name, 'google', model, None, None,
                                  started_at, max(started_at, ts), None, None, str(path))
-            file_events.append(EventRec(sid, mid, ts, kind, None, preview(message.get('content')),
+            file_events.append(EventRec(sid, mid, ts, kind, None, preview(_text(message.get('content'))),
                                         tokens.get('input'), tokens.get('output'),
                                         None, None, False, message.get('model')))
         return session, file_events, warnings

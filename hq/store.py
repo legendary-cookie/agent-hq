@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, session_id TEXT, start
 CREATE TABLE IF NOT EXISTS delegations (id INTEGER PRIMARY KEY, ext_id TEXT UNIQUE, ts REAL, provider TEXT, model TEXT, task_kind TEXT, outcome TEXT, tokens INTEGER, duration_s REAL, note TEXT);
 CREATE TABLE IF NOT EXISTS limit_snapshots (id INTEGER PRIMARY KEY, account_id TEXT, harness TEXT, provider TEXT, scope TEXT, window TEXT, used_percent REAL, resets_at REAL, source TEXT, recorded_at REAL, UNIQUE(account_id, harness, provider, scope, window, used_percent, resets_at, source, recorded_at));
 CREATE TABLE IF NOT EXISTS cursors (adapter TEXT, key TEXT, offset INTEGER, mtime REAL, PRIMARY KEY(adapter, key));
+CREATE INDEX IF NOT EXISTS idx_events_session_ts ON events(session_id, ts, id);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
 CREATE TABLE IF NOT EXISTS prices (model TEXT PRIMARY KEY, input REAL, output REAL, cache_read REAL, cache_write REAL);
 '''
 
