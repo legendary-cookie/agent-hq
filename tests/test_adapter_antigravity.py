@@ -55,6 +55,7 @@ class AntigravityAdapterTests(unittest.TestCase):
         self.assertFalse([e for e in first.events if e.ext_id.startswith('steps#')])
         baseline = next(s for s in first.sessions if s.id == 'antigravity:agy-c1')
         self.assertAlmostEqual(baseline.last_event_at, os.path.getmtime(self.conv_dir / 'agy-c1.db'), places=4)
+        self.store.apply(first, lambda *a: 'unassigned')
         append_steps(self.conv_dir / 'agy-c1.db', extra=2)
         second = self.poll()
         steps = [e for e in second.events if e.ext_id.startswith('steps#')]

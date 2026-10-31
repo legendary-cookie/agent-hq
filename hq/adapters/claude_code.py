@@ -23,6 +23,7 @@ class ClaudeCodeAdapter:
 
     def poll(self, store, cfg):
         sessions, events, warnings = [], [], 0
+        cursors = []
         for path in iter_files(cfg, '**/*.jsonl'):
             key = str(path)
             old = store.get_cursor(self.name, key)
@@ -100,5 +101,5 @@ class ClaudeCodeAdapter:
             if state:
                 state['title'] = title
                 sessions.append(SessionRec(**state))
-            store.set_cursor(self.name, key, *cursor)
-        return Batch(sessions, events, [], [], warnings)
+            cursors.append((self.name, key, *cursor))
+        return Batch(sessions, events, [], [], warnings, cursors)

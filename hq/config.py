@@ -39,13 +39,19 @@ class Config:
 class ForbiddenPathError(ValueError):
     pass
 
-_FORBIDDEN = {'secrets', 'auth.json', 'oauth_creds.json', 'credentials', 'google_accounts.json', '.env'}
+_FORBIDDEN = {'secrets', 'auth.json', 'oauth_creds.json', 'credentials', 'google_accounts.json', '.env', '.credentials.json'}
+
+def is_forbidden(path: Path) -> bool:
+    resolved = path.resolve(strict=False)
+    parts = (*resolved.parts, *PureWindowsPath(str(resolved)).parts,
+             *path.parts, *PureWindowsPath(str(path)).parts)
+    return any(part.split(':', 1)[0].rstrip(' .').lower() in _FORBIDDEN for part in parts)
 
 def _path(value):
-    parts = (*Path(value).parts, *PureWindowsPath(value).parts)
-    if any(part.lower() in _FORBIDDEN for part in parts):
+    path = Path(os.path.expanduser(value))
+    if is_forbidden(path):
         raise ForbiddenPathError(f'Forbidden source path: {value}')
-    return Path(os.path.expanduser(value))
+    return path
 
 def load_config(config_dir: Path) -> Config:
     def read(name):

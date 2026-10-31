@@ -39,6 +39,7 @@ class ClaudeAdapterTests(unittest.TestCase):
         self.assertEqual(s.parent_id, 'claude_code:session')
 
     def test_incremental_second_poll_empty(self):
+        self.store.apply(self.batch, lambda *a: 'unassigned')
         batch = self.adapter.poll(self.store, self.cfg)
         self.assertEqual((batch.sessions, batch.events, batch.limits, batch.warnings), ([], [], [], 0))
 

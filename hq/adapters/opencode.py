@@ -13,6 +13,7 @@ from contextlib import closing
 from pathlib import Path
 
 from .base import preview, ro_connect
+from ..config import is_forbidden
 from ..records import Batch, EventRec, SessionRec
 
 _SESSION_SQL = ('SELECT id, parent_id, directory, title, model, time_created, time_updated, time_archived '
@@ -35,22 +36,23 @@ class OpencodeAdapter:
 
     def poll(self, store, cfg):
         sessions, events, warnings = [], [], 0
+        cursors = []
         for root in cfg.paths:
             path = Path(root)
-            if not path.is_file():
+            if is_forbidden(path) or not path.is_file():
                 continue
             with closing(ro_connect(path)) as conn:
-                s, e, w = self._read(conn, store, str(path))
+                s, e, w = self._read(conn, store, str(path), cursors)
             sessions += s
             events += e
             warnings += w
-        return Batch(sessions, events, [], [], warnings)
+        return Batch(sessions, events, [], [], warnings, cursors)
 
     def _cursor(self, store, key):
         cur = store.get_cursor(self.name, key)
         return cur[0] if cur else 0
 
-    def _read(self, conn, store, ref):
+    def _read(self, conn, store, ref, cursors):
         warnings = 0
         events = []
         keys = {t: f'{ref}:{t}' for t in ('session', 'message', 'part')}
@@ -113,7 +115,7 @@ class OpencodeAdapter:
                                        created / 1000, updated / 1000, archived / 1000 if archived else None,
                                        f'opencode:{parent}' if parent else None, ref))
 
-        store.set_cursor(self.name, keys['message'], new_msg_cur, 0.0)
-        store.set_cursor(self.name, keys['part'], new_part_cur, 0.0)
-        store.set_cursor(self.name, keys['session'], new_sess_cur, 0.0)
+        cursors.append((self.name, keys['message'], new_msg_cur, 0.0))
+        cursors.append((self.name, keys['part'], new_part_cur, 0.0))
+        cursors.append((self.name, keys['session'], new_sess_cur, 0.0))
         return sessions, events, warnings

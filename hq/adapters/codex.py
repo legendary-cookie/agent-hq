@@ -23,12 +23,13 @@ class CodexAdapter:
 
     def poll(self, store, cfg):
         sessions, events, limits, warnings = [], [], [], 0
+        cursors = []
         for path in iter_files(cfg, '**/*.jsonl'):
             key = str(path)
             old = store.get_cursor(self.name, key)
             lines, cursor = read_new_lines(path, old)
             if not lines:
-                store.set_cursor(self.name, key, *cursor)
+                cursors.append((self.name, key, *cursor))
                 continue
             # Metadata may have been read in a previous pass; recover it from the
             # complete prefix without emitting its events again.
@@ -94,5 +95,5 @@ class CodexAdapter:
             if state:
                 state['model'] = model
                 sessions.append(SessionRec(**state))
-            store.set_cursor(self.name, key, *cursor)
-        return Batch(sessions, events, limits, [], warnings)
+            cursors.append((self.name, key, *cursor))
+        return Batch(sessions, events, limits, [], warnings, cursors)

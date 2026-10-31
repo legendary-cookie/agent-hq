@@ -8,7 +8,7 @@ class Collector:
         self._stop = threading.Event()
         self._thread = None
         self._callbacks = []
-        self._health = {a.name: {'state': 'disabled', 'last_pass': None, 'warnings': 0, 'error': None} for a in adapters}
+        self._health = {a.name: {'state': 'disabled', 'last_pass': None, 'warnings': 0, 'error': None, 'last_error_at': None} for a in adapters}
         self._lock = threading.RLock()
 
     def on_change(self, callback):
@@ -22,19 +22,19 @@ class Collector:
         for adapter in self.adapters:
             source = self.cfg.sources.get(adapter.name)
             now = time.time()
+            last_error_at = self._health[adapter.name]['last_error_at']
             if source is None or not source.enabled:
-                state = {'state': 'disabled', 'last_pass': now, 'warnings': 0, 'error': None}
+                state = {'state': 'disabled', 'last_pass': now, 'warnings': 0, 'error': None, 'last_error_at': last_error_at}
             else:
                 try:
                     batch = adapter.poll(self.store, source)
-                except Exception as exc:  # Isolate adapter failures and report their cause.
-                    state = {'state': 'partial', 'last_pass': now, 'warnings': 0, 'error': str(exc)}
-                else:
                     written = self.store.apply(batch, lambda h, p, m: match_account(self.cfg, h, p, m))
                     if written:
                         self.store.derive_tasks({e.session_id for e in batch.events})
                     changed |= written
-                    state = {'state': 'ok', 'last_pass': now, 'warnings': batch.warnings, 'error': None}
+                    state = {'state': 'ok', 'last_pass': now, 'warnings': batch.warnings, 'error': None, 'last_error_at': last_error_at}
+                except Exception as exc:
+                    state = {'state': 'partial', 'last_pass': now, 'warnings': 0, 'error': str(exc), 'last_error_at': time.time()}
             with self._lock: self._health[adapter.name] = state
         if changed:
             with self._lock: callbacks = list(self._callbacks)
@@ -46,7 +46,8 @@ class Collector:
         self._stop.clear()
         def run():
             while not self._stop.is_set():
-                self.run_once()
+                try: self.run_once()
+                except Exception: pass
                 self._stop.wait(self.interval)
         self._thread = threading.Thread(target=run, daemon=True)
         self._thread.start()

@@ -11,7 +11,7 @@ class Range:
     prev_end: float
 
 def resolve_range(name, now, start=None, end=None):
-    day = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day = now.replace(tzinfo=None, hour=0, minute=0, second=0, microsecond=0)
     if name == 'today': a, b = day, day + timedelta(days=1); prev = day - timedelta(days=1)
     elif name == 'week':
         a = day - timedelta(days=day.weekday()); b = a + timedelta(days=7); prev = a - timedelta(days=7)
@@ -24,20 +24,20 @@ def resolve_range(name, now, start=None, end=None):
         if x >= y: raise ValueError('invalid range')
         return Range(x,y,x-(y-x),x)
     else: raise ValueError('invalid range')
-    return Range(a.timestamp(),b.timestamp(),prev.timestamp(),a.timestamp())
+    return Range(a.astimezone().timestamp(),b.astimezone().timestamp(),prev.astimezone().timestamp(),a.astimezone().timestamp())
 
 def value_usd(tokens_in, tokens_out, cache_read, cache_write, price):
     if price is None: return None
     return sum((n or 0)*p for n,p in zip((tokens_in,tokens_out,cache_read,cache_write),(price.input,price.output,price.cache_read,price.cache_write)))/1000000
 
 def _billing(now, day):
-    d=datetime.fromtimestamp(now).astimezone(); day=max(1,min(31,day))
+    d=datetime.fromtimestamp(now); day=max(1,min(31,day))
     def at(y,m): return d.replace(year=y,month=m,day=min(day,calendar.monthrange(y,m)[1]),hour=0,minute=0,second=0,microsecond=0)
     start=at(d.year,d.month)
     if d < start:
         y,m=(d.year-1,12) if d.month==1 else (d.year,d.month-1); start=at(y,m)
     y,m=(start.year+1,1) if start.month==12 else (start.year,start.month+1)
-    return start.timestamp(),at(y,m).timestamp()
+    return start.astimezone().timestamp(),at(y,m).astimezone().timestamp()
 
 def _rows(conn, sql, args=()):
     cur=conn.execute(sql,args); return [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]

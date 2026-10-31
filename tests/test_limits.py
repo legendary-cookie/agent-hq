@@ -1,4 +1,4 @@
-import tempfile, unittest
+import tempfile, unittest, sqlite3
 from pathlib import Path
 from hq.store import Store
 from hq.config import Config, Account
@@ -28,4 +28,5 @@ class LimitTests(unittest.TestCase):
     def test_recommend_bridge_import_failure_returns_none(self): self.assertIsNone(recommend_bridge(self.root/'missing','coding'))
     def test_recommend_bridge_explicit_paths(self):
         (self.root/'tracker.py').write_text('def recommend(task_kind, needs_execution=False, min_tier="cheap", prefer_free=False, now=None, db_path=None, providers_path=None):\n return [{"task":task_kind,"db":str(db_path),"providers":str(providers_path)}]\n')
-        result=recommend_bridge(self.root,'coding'); self.assertEqual(result[0]['db'],str(self.root/'usage.db')); self.assertEqual(result[0]['providers'],str(self.root/'providers.json'))
+        sqlite3.connect(self.root/'usage.db').close()
+        result=recommend_bridge(self.root,'coding'); self.assertNotEqual(result[0]['db'],str(self.root/'usage.db')); self.assertEqual(result[0]['providers'],str(self.root/'providers.json'))

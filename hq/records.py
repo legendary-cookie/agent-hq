@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 @dataclass(frozen=True)
@@ -60,3 +60,4 @@ class Batch:
     limits: list
     delegations: list
     warnings: int = 0
+    cursors: list = field(default_factory=list)

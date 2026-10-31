@@ -12,6 +12,7 @@ import sqlite3
 from pathlib import Path
 
 from .base import ro_connect, preview
+from ..config import is_forbidden
 from ..records import Batch, EventRec, SessionRec
 from ..tail import read_new_lines
 
@@ -30,20 +31,22 @@ class AntigravityAdapter:
     def poll(self, store, cfg):
         sessions, events, db_mtimes, refs = [], [], {}, {}
         metas = {}
+        cursors = []
         warnings = 0
         for root in cfg.paths:
             path = Path(root)
+            if is_forbidden(path): continue
             if path.is_file():
-                warnings += self._history(path, store, metas, events, refs)
+                warnings += self._history(path, store, metas, events, refs, cursors)
             elif path.is_dir():
-                warnings += self._conversations(path, store, metas, db_mtimes, refs, events)
+                warnings += self._conversations(path, store, metas, db_mtimes, refs, events, cursors)
         for cid, meta in sorted(metas.items()):
             last = max(meta['last'], db_mtimes.get(cid, 0.0))
             sessions.append(SessionRec(f'antigravity:{cid}', self.name, 'google', None,
                                        meta['ws'], None, meta['start'], last, None, None, refs[cid]))
-        return Batch(sessions, events, [], [], warnings)
+        return Batch(sessions, events, [], [], warnings, cursors)
 
-    def _history(self, path, store, metas, events, refs):
+    def _history(self, path, store, metas, events, refs, cursors):
         warnings = 0
         key = str(path)
         old = store.get_cursor(self.name, key)
@@ -67,7 +70,7 @@ class AntigravityAdapter:
                                        preview(row.get('display')), None, None, None, None, False, None))
             except (ValueError, TypeError, KeyError, AttributeError):
                 warnings += 1
-        store.set_cursor(self.name, key, *cursor)
+        cursors.append((self.name, key, *cursor))
         return warnings
 
     def _scan_prefix(self, path, upto, metas, refs):
@@ -86,9 +89,10 @@ class AntigravityAdapter:
                 warnings += 1
         return warnings
 
-    def _conversations(self, directory, store, metas, db_mtimes, refs, events):
+    def _conversations(self, directory, store, metas, db_mtimes, refs, events, cursors):
         warnings = 0
         for db_path in sorted(directory.glob('*.db')):
+            if is_forbidden(db_path): continue
             key = str(db_path)
             cid = db_path.stem
             refs.setdefault(cid, key)
@@ -104,9 +108,9 @@ class AntigravityAdapter:
             metas.setdefault(cid, {'start': mtime, 'last': mtime, 'ws': None})
             db_mtimes[cid] = mtime
             if old is None:
-                store.set_cursor(self.name, key, count, mtime)
+                cursors.append((self.name, key, count, mtime))
             elif count > old[0]:
                 events.append(EventRec(f'antigravity:{cid}', f'steps#{count}', mtime,
                                        'assistant', None, None, None, None, None, None, False, None))
-                store.set_cursor(self.name, key, count, mtime)
+                cursors.append((self.name, key, count, mtime))
         return warnings

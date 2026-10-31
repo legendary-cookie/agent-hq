@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .base import ro_connect
+from ..config import is_forbidden
 from ..records import Batch, DelegationRec, EventRec, LimitRec, SessionRec
 
 _CALLS_SQL = 'SELECT id, ts, provider, model, task_kind, outcome, tokens, duration_s, note FROM calls'
@@ -36,7 +37,7 @@ class ProviderUsageAdapter:
         sessions, events, limits, delegations, warnings = [], [], [], [], 0
         for root in cfg.paths:
             path = _db_path(Path(root))
-            if not path.is_file():
+            if is_forbidden(path) or not path.is_file():
                 continue
             with closing(ro_connect(path)) as conn:
                 for call_id, ts_text, provider, model, kind, outcome, tokens, duration, note in conn.execute(_CALLS_SQL):

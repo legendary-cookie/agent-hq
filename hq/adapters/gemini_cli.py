@@ -38,6 +38,7 @@ class GeminiCliAdapter:
 
     def poll(self, store, cfg):
         sessions, events, warnings = [], [], 0
+        cursors = []
         for path in iter_files(cfg, '**/*.jsonl'):
             key = str(path)
             old = store.get_cursor(self.name, key)
@@ -47,8 +48,8 @@ class GeminiCliAdapter:
             sessions.append(file_session)
             events.extend(file_events)
             warnings += file_warnings
-            store.set_cursor(self.name, key, *cursor)
-        return Batch([s for s in sessions if s is not None], events, [], [], warnings)
+            cursors.append((self.name, key, *cursor))
+        return Batch([s for s in sessions if s is not None], events, [], [], warnings, cursors)
 
     def _scan(self, path: Path, start: int, new_lines: list[str]):
         warnings = 0

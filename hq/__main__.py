@@ -25,7 +25,14 @@ def main(argv=None):
             for name,state in health.items(): print(f"{name:16} {state['state']:8} warnings={state['warnings']} {state['error'] or ''}")
             return int(any(s['state']=='partial' for s in health.values()))
         server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist'); collector.start()
-        if not args.no_browser: webbrowser.open(f'http://127.0.0.1:{server.server_port}/')
+        token_path=args.db.parent/'token'
+        fd=os.open(token_path,os.O_WRONLY | os.O_CREAT | os.O_TRUNC,0o600)
+        with os.fdopen(fd,'w',encoding='utf-8') as token_file:
+            if os.name != 'nt': os.fchmod(token_file.fileno(),0o600)
+            token_file.write(token)
+        url=f'http://127.0.0.1:{server.server_port}/#token={token}'
+        if args.no_browser: print(url,flush=True)
+        else: webbrowser.open(url)
         try: server.serve_forever()
         except KeyboardInterrupt: pass
         finally: server.server_close(); collector.stop()

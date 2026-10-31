@@ -58,7 +58,10 @@ class Store:
                 d = asdict(event)
                 if d['preview'] is not None: d['preview'] = d['preview'][:200]
                 c.execute('''INSERT INTO events (session_id,ext_id,ts,kind,tool,preview,tokens_in,tokens_out,tokens_cache_read,tokens_cache_write,tokens_estimated,model)
-                VALUES (:session_id,:ext_id,:ts,:kind,:tool,:preview,:tokens_in,:tokens_out,:tokens_cache_read,:tokens_cache_write,:tokens_estimated,:model) ON CONFLICT(session_id,ext_id) DO NOTHING''',d)
+                VALUES (:session_id,:ext_id,:ts,:kind,:tool,:preview,:tokens_in,:tokens_out,:tokens_cache_read,:tokens_cache_write,:tokens_estimated,:model) ON CONFLICT(session_id,ext_id) DO UPDATE SET
+                tokens_in=coalesce(excluded.tokens_in,events.tokens_in), tokens_out=coalesce(excluded.tokens_out,events.tokens_out),
+                tokens_cache_read=coalesce(excluded.tokens_cache_read,events.tokens_cache_read), tokens_cache_write=coalesce(excluded.tokens_cache_write,events.tokens_cache_write), model=coalesce(excluded.model,events.model)
+                WHERE (excluded.tokens_in IS NOT NULL AND excluded.tokens_in IS NOT events.tokens_in) OR (excluded.tokens_out IS NOT NULL AND excluded.tokens_out IS NOT events.tokens_out) OR (excluded.tokens_cache_read IS NOT NULL AND excluded.tokens_cache_read IS NOT events.tokens_cache_read) OR (excluded.tokens_cache_write IS NOT NULL AND excluded.tokens_cache_write IS NOT events.tokens_cache_write) OR (excluded.model IS NOT NULL AND excluded.model IS NOT events.model)''',d)
             for limit in batch.limits:
                 d = asdict(limit)
                 d['account_id'] = account_of(limit.harness, limit.provider, limit.scope)
@@ -68,7 +71,10 @@ class Store:
             for delegation in batch.delegations:
                 c.execute('''INSERT INTO delegations (ext_id,ts,provider,model,task_kind,outcome,tokens,duration_s,note)
                 VALUES (:ext_id,:ts,:provider,:model,:task_kind,:outcome,:tokens,:duration_s,:note) ON CONFLICT(ext_id) DO NOTHING''',asdict(delegation))
-            return c.total_changes > before
+            changed = c.total_changes > before
+            for cursor in batch.cursors:
+                c.execute('INSERT INTO cursors VALUES (?,?,?,?) ON CONFLICT(adapter,key) DO UPDATE SET offset=excluded.offset,mtime=excluded.mtime', cursor)
+            return changed
 
     def get_cursor(self, adapter, key) -> tuple[int,float] | None:
         with self._lock:

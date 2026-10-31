@@ -1,5 +1,10 @@
 import importlib.util
 import math
+import sqlite3
+import tempfile
+import time
+from contextlib import closing
+from .config import is_forbidden
 from pathlib import Path
 
 WINDOW_SECONDS={'5h':18000,'week':604800,'day':86400,'month':2592000}
@@ -51,12 +56,32 @@ def add_manual(store,account_id,window,used_percent,resets_at,now):
     with store._lock, store._writer as c:
         c.execute("insert into limit_snapshots(account_id,harness,provider,scope,window,used_percent,resets_at,source,recorded_at) values (?, '', '', '*', ?, ?, ?, 'manual', ?)",(account_id,window,used_percent,resets_at,now))
 
+_recommend_cache = {}
+recommend_error = None
+
 def recommend_bridge(pu_dir,task_kind):
+    global recommend_error
     path=Path(pu_dir)
+    key=(str(path.resolve()),task_kind)
+    now=time.monotonic()
+    cached=_recommend_cache.get(key)
+    if cached and now-cached[0]<30:
+        recommend_error=cached[2]
+        return cached[1]
+    result=None
     try:
+        if any(is_forbidden(p) for p in (path, path/'tracker.py', path/'usage.db', path/'providers.json')):
+            raise ValueError('forbidden recommendation path')
         spec=importlib.util.spec_from_file_location('_hq_tracker',path/'tracker.py')
-        if spec is None or spec.loader is None: return None
-        module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
-        return [dict(r) for r in module.recommend(task_kind,db_path=path/'usage.db',providers_path=path/'providers.json')]
-    except (OSError, ImportError, AttributeError, TypeError, ValueError, RuntimeError, SyntaxError):
-        return None
+        if spec is None or spec.loader is None: raise ImportError('tracker unavailable')
+        with tempfile.TemporaryDirectory() as tmp:
+            snapshot=Path(tmp)/'usage.db'
+            with closing(sqlite3.connect((path/'usage.db').resolve().as_uri()+'?mode=ro',uri=True)) as source, closing(sqlite3.connect(snapshot)) as dest:
+                source.backup(dest)
+            module=importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+            result=[dict(r) for r in module.recommend(task_kind,db_path=snapshot,providers_path=path/'providers.json')]
+        recommend_error=None
+    except Exception as exc:
+        recommend_error=str(exc)
+    _recommend_cache[key]=(now,result,recommend_error)
+    return result

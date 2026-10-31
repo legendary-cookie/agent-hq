@@ -1,4 +1,6 @@
 import json
+import hmac
+import math
 import queue
 import secrets
 import threading
@@ -11,12 +13,33 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 from .config import Config, SourceCfg, Account, Price, _path, save_config
 from .kpis import compute_kpis, resolve_range, session_value, _rows
+from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
 from .status import last_kinds, session_status
 import sqlite3
 
+def validate_settings(data, sources):
+    if data['sources'] != {k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in sources.items()}:
+        raise ValueError('sources require a restart')
+    def number(x): return type(x) in (int,float) and math.isfinite(x) and x >= 0
+    accounts=data['accounts']; prices=data['prices']; alert=data['alerts']
+    if not isinstance(accounts,list) or not isinstance(prices,dict) or not isinstance(alert,dict): raise ValueError('invalid settings')
+    for a in accounts:
+        if not isinstance(a,dict) or not all(isinstance(a[k],str) for k in ('id','provider','label')) or not (a['plan'] is None or isinstance(a['plan'],str)) or not (a['monthly_price_usd'] is None or number(a['monthly_price_usd'])) or type(a['billing_day']) is not int or not 1<=a['billing_day']<=31: raise ValueError('invalid account')
+        if not isinstance(a['match'],list) or not all(isinstance(r,dict) and all(isinstance(k,str) and isinstance(v,str) for k,v in r.items()) for r in a['match']): raise ValueError('invalid match')
+        if not isinstance(a['cap_tokens'],dict) or not all(isinstance(k,str) and type(v) is int and v>=0 for k,v in a['cap_tokens'].items()): raise ValueError('invalid caps')
+    for k,v in prices.items():
+        if not isinstance(k,str) or not isinstance(v,dict) or set(v)!={'input','output','cache_read','cache_write'} or not all(number(x) for x in v.values()): raise ValueError('invalid price')
+    if not isinstance(alert.get('thresholds'),list) or not all(number(x) and x<=100 for x in alert['thresholds']) or type(alert.get('toast')) is not bool: raise ValueError('invalid alerts')
+    if data['default_skin'] not in ('isometric','topdown','tower') or not isinstance(data['recommend_task_kind'],str): raise ValueError('invalid settings')
+    return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'])
+
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
     token=secrets.token_urlsafe(32); listeners=set(); lock=threading.Lock()
+    source=cfg.sources.get('provider_usage')
+    tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
+    if tracker_path and tracker_path.name == 'usage.db': tracker_path=tracker_path.parent
+    def recommend(kind): return recommend_bridge(tracker_path,kind) if tracker_path else None
     def changed():
         with lock:
             for q in listeners: q.put(time.time())
@@ -26,8 +49,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
         def send_json(self,status,data):
             body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
         def host_ok(self): return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
+        def token_ok(self, value): return isinstance(value,str) and hmac.compare_digest(value.encode(),token.encode())
         def write_ok(self):
-            return self.headers.get('X-HQ-Token')==token and self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
+            return self.token_ok(self.headers.get('X-HQ-Token')) and self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
         def parse_body(self):
             length=int(self.headers.get('Content-Length','0'))
             if length<0 or length>1048576: raise ValueError('invalid body size')
@@ -37,6 +61,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
         def do_GET(self):
             if not self.host_ok(): return self.send_json(403,{'error':'forbidden host'})
             parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query); now=time.time()
+            if path.startswith('/api/') and not (self.token_ok(self.headers.get('X-HQ-Token')) or (path=='/api/stream' and self.token_ok(query.get('token',[None])[0]))): return self.send_json(403,{'error':'forbidden'})
             def param(k,default=None): return query.get(k,[default])[0]
             try:
                 if path=='/api/stream':
@@ -55,17 +80,16 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                 if path=='/':
                     index=Path(static_dir)/'index.html' if static_dir else None
                     body=index.read_text(encoding='utf-8') if index and index.is_file() else '<html><head></head><body>UI not built yet</body></html>'
-                    meta=f'<meta name="hq-token" content="{token}">'; body=body.replace('</head>',meta+'</head>',1) if '</head>' in body else meta+body
                     data=body.encode(); self.send_response(200); self.send_header('Content-Type','text/html; charset=utf-8'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data); return
                 if not path.startswith('/api/') and static_dir:
                     root=Path(static_dir).resolve(); target=(root/unquote(path).lstrip('/')).resolve()
                     if target.is_relative_to(root) and target.is_file():
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.end_headers(); self.wfile.write(data); return
-                if path=='/api/health': return self.send_json(200,collector.health())
+                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error})
                 if path=='/api/settings': return self.send_json(200,{'sources':{k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in cfg.sources.items()},'accounts':[asdict(a) for a in cfg.accounts],'prices':{k:asdict(v) for k,v in cfg.prices.items()},'alerts':cfg.alerts,'default_skin':cfg.default_skin,'recommend_task_kind':cfg.recommend_task_kind})
                 if path=='/api/recommend':
-                    source=cfg.sources.get('provider_usage'); result=recommend_bridge(source.paths[0],param('task_kind',cfg.recommend_task_kind)) if source and source.enabled and source.paths else None
+                    result=recommend(param('task_kind',cfg.recommend_task_kind))
                     return self.send_json(200,result)
                 with closing(store.conn()) as conn:
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
@@ -81,8 +105,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                             if param('from'): sessions=[s for s in sessions if s['started_at']>=float(param('from'))]
                             if param('to'): sessions=[s for s in sessions if s['started_at']<float(param('to'))]
                             return self.send_json(200,sessions)
-                        counts={k:sum(s['status']==k for s in sessions) for k in ('working','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now); source=cfg.sources.get('provider_usage')
-                        return self.send_json(200,{'status_counts':counts,'best_now':recommend_bridge(source.paths[0],cfg.recommend_task_kind) if source and source.enabled and source.paths else None,'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]))})
+                        counts={k:sum(s['status']==k for s in sessions) for k in ('working','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
+                        return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]))})
                     if path.startswith('/api/sessions/'):
                         sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select * from sessions where id=?',(sid,))
                         if not rows: return self.send_json(404,{'error':'session not found'})
@@ -90,8 +114,12 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})
-            except (ValueError,TypeError,KeyError,OverflowError,json.JSONDecodeError) as exc: return self.send_json(400,{'error':str(exc)})
+            except (ValueError,TypeError,KeyError,AttributeError,OverflowError,json.JSONDecodeError) as exc: return self.send_json(400,{'error':str(exc)})
             except sqlite3.Error: return self.send_json(500,{'error':'database error'})
+        def other_request(self):
+            if not self.host_ok() or (urlsplit(self.path).path.startswith('/api/') and not self.token_ok(self.headers.get('X-HQ-Token'))): return self.send_json(403,{'error':'forbidden'})
+            return self.send_json(405,{'error':'method not allowed'})
+        do_HEAD = do_DELETE = do_PATCH = do_OPTIONS = other_request
         def do_POST(self): self.write_request('POST')
         def do_PUT(self): self.write_request('PUT')
         def write_request(self,method):
@@ -102,10 +130,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                     if data['account_id'] not in {a.id for a in cfg.accounts}: raise ValueError('unknown account')
                     add_manual(store,data['account_id'],data['window'],data['used_percent'],data.get('resets_at'),time.time()); changed(); return self.send_json(200,{'ok':True})
                 if method=='PUT' and path=='/api/settings':
-                    sources={k:SourceCfg(v['enabled'],[_path(p) for p in v['paths']]) for k,v in data['sources'].items()}
-                    new=Config(sources,[Account(**a) for a in data['accounts']],{k:Price(**v) for k,v in data['prices'].items()},data['alerts'],data['default_skin'],data['recommend_task_kind'])
+                    new=validate_settings(data,cfg.sources)
                     save_config(Path(config_dir),new); cfg.sources=new.sources; cfg.accounts=new.accounts; cfg.prices=new.prices; cfg.alerts=new.alerts; cfg.default_skin=new.default_skin; cfg.recommend_task_kind=new.recommend_task_kind; changed(); return self.send_json(200,{'ok':True})
                 return self.send_json(404,{'error':'not found'})
-            except (ValueError,TypeError,KeyError,OverflowError,OSError) as exc: return self.send_json(400,{'error':str(exc)})
+            except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc: return self.send_json(400,{'error':str(exc)})
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler); server.daemon_threads=True
     return server,token

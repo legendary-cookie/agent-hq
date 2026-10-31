@@ -15,14 +15,14 @@ This is **Milestone 1 (backend)**. The web UI and the office view are later mile
 python -m hq
 ```
 
-This starts the collector (reads new log lines every 5 s) and the API on `http://127.0.0.1:7420/`, then opens the browser.
+This starts the collector (reads new log lines every 5 s) and the API on `http://127.0.0.1:7420/`, then opens the browser with a per-launch token in the URL fragment. The token is also written to a file named `token` beside `hq.db`.
 
 | Flag | Meaning |
 |---|---|
 | `--port 7420` | API port |
 | `--config DIR` | config folder (default `config/`) |
 | `--db PATH` | database (default `%LOCALAPPDATA%\agent-hq\hq.db`, or `~/.local/share/agent-hq/hq.db`) |
-| `--no-browser` | do not open a browser |
+| `--no-browser` | print the token-bearing URL instead of opening a browser |
 | `--once` | run one collection pass, print a health table, exit (exit 1 if any reader is `partial`) |
 
 Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the WSL Codex logs: `\\wsl.localhost\Debian\...` is only visible to normal Windows processes.
@@ -46,13 +46,14 @@ Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the
 
 ## API
 
-`GET /api/overview`, `/api/sessions`, `/api/sessions/{id}`, `/api/kpis?range=today|week|month|custom&group_by=harness|provider|model|account`, `/api/limits`, `/api/recommend`, `/api/settings`, `/api/health`, `/api/stream` (Server-Sent Events). `POST /api/limits/manual` and `PUT /api/settings` need the per-launch token from the page's `hq-token` meta tag in `X-HQ-Token` and a same-origin `Origin`.
+`GET /api/overview`, `/api/sessions`, `/api/sessions/{id}`, `/api/kpis?range=today|week|month|custom&group_by=harness|provider|model|account`, `/api/limits`, `/api/recommend`, `/api/settings`, `/api/health`, `/api/stream` (Server-Sent Events). Every `/api/*` request requires the per-launch token in `X-HQ-Token`. `GET /api/stream` also accepts `?token=` for EventSource. POST and PUT require a same-origin `Origin`. `PUT /api/settings` validates settings and cannot change sources; edit `config/sources.json` and restart to change them.
 
 ## Privacy and safety
 
 - Binds `127.0.0.1` only; requests with any other `Host` get 403 (blocks DNS rebinding).
 - Read-only on every source: SQLite sources open with `mode=ro`; nothing is written to `usage.db` or any harness file.
-- The config loader refuses any path containing `secrets`, `auth.json`, `oauth_creds.json`, `credentials`, `google_accounts.json` or `.env`.
+- Source paths are checked at load and before access against `secrets`, `auth.json`, `oauth_creds.json`, `credentials`, `google_accounts.json`, `.env` and `.credentials.json`, including resolved paths and normalized segments. Directory walks skip forbidden directories.
+- Static files contain no injected token or collected data. Recommendations use a temporary snapshot of the read-only source database.
 - Previews are cut to 200 characters; full transcripts are not copied.
 - Nothing leaves the machine.
 
