@@ -18,10 +18,9 @@ export function bootstrapToken(
         storage.setItem('hq-token', token);
         return token;
       })
-      .catch(() => {
-        storage.removeItem('hq-token');
-        return null;
-      });
+      // A spent or expired code must not sign out a tab that already has a
+      // working token (e.g. re-opening an old launch link).
+      .catch(() => storage.getItem('hq-token'));
   }
   const token = new URLSearchParams(loc.hash.slice(1)).get('token');
   if (token) {

@@ -29,3 +29,12 @@ it('bootstrap exchanges code for token', async () => {
   expect(location.hash).toBe('#/dashboard');
   vi.unstubAllGlobals();
 });
+
+it('failed exchange keeps the existing token', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }));
+  sessionStorage.setItem('hq-token', 'working');
+  history.replaceState(null, '', '/#code=spent');
+  expect(await bootstrapToken(location, sessionStorage)).toBe('working');
+  expect(sessionStorage.getItem('hq-token')).toBe('working');
+  vi.unstubAllGlobals();
+});
