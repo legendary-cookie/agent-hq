@@ -43,18 +43,17 @@ export function Inspector({
 }) {
   const [selected, setSelected] = useState(sessionId);
   useEffect(() => setSelected(sessionId), [sessionId]);
-  const path = selected ? `/api/sessions/${encodeURIComponent(selected)}?limit=50` : null;
+  const path = selected
+    ? `/api/sessions/${encodeURIComponent(selected)}?limit=50&order=desc`
+    : null;
   const { data, loading, error } = useApi<SessionDetail>(path);
   const detail = data?.session.id === selected ? data : null;
   const parentId = detail?.session.parent_id;
-  const parentPath = parentId ? `/api/sessions/${encodeURIComponent(parentId)}?limit=50` : null;
+  const parentPath = parentId ? `/api/sessions/${encodeURIComponent(parentId)}?limit=1` : null;
   const { data: parent } = useApi<SessionDetail>(parentPath);
   if (!selected) return null;
   const session = detail?.session;
-  const latest = detail?.events
-    .slice()
-    .reverse()
-    .find((event) => event.tool || event.preview);
+  const latest = detail?.events[0];
   const duration =
     session?.started_at != null
       ? (session.ended_at ?? Date.now() / 1000) - session.started_at

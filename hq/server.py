@@ -60,7 +60,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
             return data
         def do_GET(self):
             if not self.host_ok(): return self.send_json(403,{'error':'forbidden host'})
-            parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query); now=time.time()
+            parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query,keep_blank_values=True); now=time.time()
             if path.startswith('/api/') and not (self.token_ok(self.headers.get('X-HQ-Token')) or (path=='/api/stream' and self.token_ok(query.get('token',[None])[0]))): return self.send_json(403,{'error':'forbidden'})
             def param(k,default=None): return query.get(k,[default])[0]
             try:
@@ -117,7 +117,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
                     if path.startswith('/api/sessions/'):
                         sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select * from sessions where id=?',(sid,))
                         if not rows: return self.send_json(404,{'error':'session not found'})
-                        s=rows[0]; events=_rows(conn,'select * from events where session_id=? order by ts,id limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
+                        order=param('order','asc')
+                        if order not in ('asc','desc'): raise ValueError('invalid order')
+                        s=rows[0]; events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})

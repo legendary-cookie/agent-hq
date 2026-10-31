@@ -111,8 +111,57 @@ it('Inspector renders timeline and subagents', async () => {
   fireEvent.click(screen.getByRole('button', { name: /Child agent/ }));
   await waitFor(() =>
     expect(vi.mocked(fetch)).toHaveBeenCalledWith(
-      '/api/sessions/child?limit=50',
+      '/api/sessions/child?limit=50&order=desc',
       expect.anything(),
     ),
+  );
+});
+
+it('Inspector shows latest events first', async () => {
+  const session = {
+    id: 's',
+    harness: 'Codex',
+    model: null,
+    account_id: null,
+    project: null,
+    started_at: null,
+    ended_at: null,
+    parent_id: 'p',
+    status: 'working',
+  };
+  const fetcher = vi.fn().mockImplementation(async (path: string) => ({
+    ok: true,
+    json: async () => ({
+      session: path.includes('/p?') ? { ...session, id: 'p', title: 'Parent' } : session,
+      events: [
+        { id: 2, ts: 2, kind: 'tool_call', tool: 'newest', preview: null },
+        { id: 1, ts: 1, kind: 'tool_call', tool: 'oldest', preview: null },
+      ],
+      children: [],
+      value: {
+        tokens: 0,
+        value_usd: 0,
+        unpriced_tokens: 0,
+        effective_cost_usd: null,
+        estimated: false,
+      },
+      account_limit: null,
+    }),
+  }));
+  vi.stubGlobal('fetch', fetcher);
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener() {}
+      close() {}
+    },
+  );
+  render(<Inspector sessionId="s" onClose={() => {}} />);
+  await waitFor(() => expect(screen.getAllByText('newest').length).toBe(2));
+  expect(fetcher).toHaveBeenCalledWith('/api/sessions/s?limit=50&order=desc', expect.anything());
+  expect(fetcher).toHaveBeenCalledWith('/api/sessions/p?limit=1', expect.anything());
+  const timeline = screen.getByText('Timeline').nextElementSibling!;
+  expect(timeline.textContent!.indexOf('newest')).toBeLessThan(
+    timeline.textContent!.indexOf('oldest'),
   );
 });

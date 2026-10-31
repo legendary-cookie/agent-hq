@@ -56,3 +56,13 @@ class UiApiTests(unittest.TestCase):
         port,_=self.start_server()
         with closing(http.client.HTTPConnection('127.0.0.1',port)) as c:
             c.request('GET','/api/series'); self.assertEqual(c.getresponse().status,403)
+
+    def test_session_events_desc_returns_latest_first(self):
+        import json
+        port, token = self.start_server()
+        with closing(http.client.HTTPConnection('127.0.0.1', port)) as c:
+            c.request('GET', '/api/sessions/a?limit=1&order=desc', headers={'X-HQ-Token': token})
+            events = json.loads(c.getresponse().read())['events']
+            self.assertEqual(events[0]['ext_id'], '0')
+            c.request('GET', '/api/sessions/a?order=invalid', headers={'X-HQ-Token': token})
+            self.assertEqual(c.getresponse().status, 400)
