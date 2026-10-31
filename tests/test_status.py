@@ -12,6 +12,7 @@ class LastKindsTests(unittest.TestCase):
         import sqlite3
         from hq.status import last_kinds
         c = sqlite3.connect(':memory:')
+        self.addCleanup(c.close)
         c.execute('create table events (id integer primary key, session_id text, ts real, kind text)')
         c.executemany('insert into events (session_id, ts, kind) values (?,?,?)',
                       [('a', 1, 'user'), ('a', 5, 'tool_call'), ('a', 5, 'turn_end'), ('b', 2, 'error')])
