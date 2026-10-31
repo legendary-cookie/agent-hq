@@ -179,7 +179,10 @@
   overflow-wrap: anywhere;
 }
 .inspector-list time {
+  flex: 0 0 3.2em;
   color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .inspector-list button {
   padding: 0;

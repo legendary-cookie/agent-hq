@@ -66,3 +66,38 @@ class UiApiTests(unittest.TestCase):
             self.assertEqual(events[0]['ext_id'], '0')
             c.request('GET', '/api/sessions/a?order=invalid', headers={'X-HQ-Token': token})
             self.assertEqual(c.getresponse().status, 400)
+
+
+class StaticCacheTests(unittest.TestCase):
+    def test_index_no_cache_assets_immutable(self):
+        import http.client
+        import threading
+        from hq.collector import Collector
+        from hq.config import Account, Config, save_config
+        from hq.server import make_server
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        dist = root / 'dist'
+        (dist / 'assets').mkdir(parents=True)
+        (dist / 'index.html').write_text('<html><head></head><body></body></html>')
+        (dist / 'assets' / 'index-abc123.js').write_text('1')
+        store = Store(root / 'db')
+        self.addCleanup(store.close)
+        cfg = Config({}, [Account('a', 'p', 'A', '', 20, 1, [], {})], {}, {'thresholds': [80], 'toast': False}, 'isometric', 'x')
+        save_config(root, cfg)
+        server, _ = make_server(store, Collector(store, cfg, []), cfg, root, port=0, static_dir=dist)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join()))
+
+        def cache_header(path):
+            c = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+            self.addCleanup(c.close)
+            c.request('GET', path)
+            r = c.getresponse()
+            r.read()
+            return r.getheader('Cache-Control')
+
+        self.assertEqual(cache_header('/'), 'no-cache')
+        self.assertEqual(cache_header('/assets/index-abc123.js'), 'public, max-age=31536000, immutable')

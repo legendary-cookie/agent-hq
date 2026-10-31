@@ -24,6 +24,7 @@ function Timeline({ events }: { events: SessionDetail['events'] }) {
             {new Date(event.ts * 1000).toLocaleTimeString(undefined, {
               hour: '2-digit',
               minute: '2-digit',
+              hourCycle: 'h23',
             })}
           </time>
           <span aria-label={event.kind}>●</span>

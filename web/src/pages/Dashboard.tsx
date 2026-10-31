@@ -1,3 +1,4 @@
+import { continuousBuckets } from '../lib/series';
 import { useState } from 'react';
 import {
   Area,
@@ -44,10 +45,14 @@ export function Dashboard() {
   const { data: sessions } = useApi<SessionRow[]>('/api/sessions');
   const unpriced = !!series?.length && series.every((row) => row.value_usd === null);
   const keys = [...new Set((series ?? []).map((row) => row.key))];
-  const dates = [...new Set((series ?? []).map((row) => row.t))].sort((a, b) => a - b);
+  const dates = continuousBuckets(
+    (series ?? []).map((row) => row.t),
+    range === 'today' ? 'hour' : 'day',
+  );
   const chart = dates.map((t) => {
     const rows = (series ?? []).filter((row) => row.t === t);
     const values: Record<string, number | string> = {
+      ...Object.fromEntries(keys.map((key) => [key, 0])),
       date:
         range === 'today'
           ? `${String(new Date(t * 1000).getHours()).padStart(2, '0')}:00`
