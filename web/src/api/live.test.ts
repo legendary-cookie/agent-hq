@@ -61,3 +61,21 @@ it('multiple subscribers share one EventSource', () => {
   stopSecond();
   expect(close).toHaveBeenCalledTimes(1);
 });
+
+it('SSE failures probe health and surface 403', async () => {
+  const fetcher = vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({}) });
+  vi.stubGlobal('fetch', fetcher);
+  const forbidden = vi.fn();
+  window.addEventListener('hq-forbidden', forbidden);
+  const stop = subscribeChanges(() => {});
+  MockSource.instances[0].onerror!();
+  vi.advanceTimersByTime(1000);
+  MockSource.instances[1].onerror!();
+  vi.advanceTimersByTime(2000);
+  MockSource.instances[2].onerror!();
+  await vi.waitFor(() => expect(forbidden).toHaveBeenCalledTimes(1));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher.mock.calls[0][0]).toBe('/api/health');
+  window.removeEventListener('hq-forbidden', forbidden);
+  stop();
+});

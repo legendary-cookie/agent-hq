@@ -157,6 +157,7 @@ export interface SeriesRow {
   t: number;
   key: string;
   tokens: number;
+  unpriced_tokens: number;
   value_usd: number | null;
   tasks: number;
   errors: number;

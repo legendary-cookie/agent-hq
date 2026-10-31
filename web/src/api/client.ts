@@ -35,6 +35,11 @@ export function useApi<T>(path: string | null): {
   const [revision, setRevision] = useState(0);
   const reload = useCallback(() => setRevision((n) => n + 1), []);
   useEffect(() => {
+    setData(null);
+    setError(null);
+    setLoading(false);
+  }, [path]);
+  useEffect(() => {
     if (!path) return;
     let active = true;
     setLoading(true);

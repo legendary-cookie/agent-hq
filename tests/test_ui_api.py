@@ -101,3 +101,54 @@ class StaticCacheTests(unittest.TestCase):
 
         self.assertEqual(cache_header('/'), 'no-cache')
         self.assertEqual(cache_header('/assets/index-abc123.js'), 'public, max-age=31536000, immutable')
+
+class ReviewKpiTests(unittest.TestCase):
+    setUp = UiApiTests.setUp
+    start_server = UiApiTests.start_server
+    def test_series_day_bucket_single_on_dst_day(self):
+        import os, time
+        from hq.kpis import series, Range
+        if not hasattr(time, 'tzset'): self.skipTest('tzset unavailable')
+        previous = os.environ.get('TZ')
+        def restore():
+            if previous is None: os.environ.pop('TZ', None)
+            else: os.environ['TZ'] = previous
+            time.tzset()
+        self.addCleanup(restore)
+        os.environ['TZ'] = 'America/New_York'; time.tzset()
+        if time.localtime(datetime(2026, 7, 1).timestamp()).tm_isdst != 1: self.skipTest('timezone data unavailable')
+        self.conn.execute('delete from events'); self.conn.execute('delete from tasks')
+        for i, hour in enumerate((0, 12)):
+            ts = datetime(2026, 3, 8, hour, 30).timestamp()
+            self.conn.execute("insert into events(session_id,ext_id,ts,kind,tokens_in) values ('a',?,?, 'message',1)", (f'dst{i}', ts))
+        self.conn.commit()
+        rows = series(self.conn, self.cfg, Range(datetime(2026,3,8).timestamp(), datetime(2026,3,9).timestamp(),0,0), 'day', 'provider')
+        self.assertEqual(len(rows), 1); self.assertEqual(rows[0]['tokens'], 2)
+    def test_series_reports_unpriced_tokens(self):
+        from hq.kpis import series
+        rows = series(self.conn, self.cfg, self.rng, 'day', 'provider')
+        self.assertTrue(all(r['unpriced_tokens'] == 120 for r in rows))
+    def test_session_detail_has_computed_status(self):
+        import json
+        port, token = self.start_server()
+        with closing(http.client.HTTPConnection('127.0.0.1', port)) as c:
+            c.request('GET', '/api/sessions/a', headers={'X-HQ-Token':token})
+            detail = json.loads(c.getresponse().read())
+            c.request('GET', '/api/sessions', headers={'X-HQ-Token':token})
+            rows = json.loads(c.getresponse().read())
+        self.assertEqual(detail['session']['status'], next(r['status'] for r in rows if r['id']=='a'))
+    def test_sessions_enrichment_only_for_returned_rows(self):
+        import json
+        from unittest.mock import patch
+        import hq.server as module
+        original = module._rows; calls = []
+        def capture(conn, sql, args=()):
+            if 'tool_rank' in sql: calls.append((sql, args))
+            return original(conn, sql, args)
+        port, token = self.start_server()
+        with patch.object(module, '_rows', side_effect=capture):
+            with closing(http.client.HTTPConnection('127.0.0.1', port)) as c:
+                c.request('GET', '/api/sessions?limit=1', headers={'X-HQ-Token':token})
+                rows = json.loads(c.getresponse().read())
+        self.assertEqual(len(rows), 1); self.assertEqual(rows[0]['tokens'], 240)
+        self.assertEqual(list(calls[0][1]), [rows[0]['id']]); self.assertIn(' IN ', calls[0][0].upper())

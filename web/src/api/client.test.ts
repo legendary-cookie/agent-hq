@@ -41,3 +41,35 @@ it('shows token help on 403', async () => {
   render(createElement(App));
   await waitFor(() => expect(screen.getByText(/Open Agent HQ from the link/)).toBeInTheDocument());
 });
+
+it('useApi clears data when path changes', async () => {
+  const { renderHook } = await import('@testing-library/react');
+  const { useApi } = await import('./client');
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener() {}
+      close() {}
+    },
+  );
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockImplementation((path: string) =>
+        path === '/a'
+          ? Promise.resolve({ ok: true, json: async () => ({ name: 'a' }) })
+          : new Promise(() => {}),
+      ),
+  );
+  const { result, rerender } = renderHook(
+    ({ path }: { path: string | null }) => useApi<{ name: string }>(path),
+    { initialProps: { path: '/a' as string | null } },
+  );
+  await waitFor(() => expect(result.current.data?.name).toBe('a'));
+  rerender({ path: '/b' });
+  expect(result.current.data).toBeNull();
+  rerender({ path: null });
+  expect(result.current.data).toBeNull();
+  expect(result.current.loading).toBe(false);
+});

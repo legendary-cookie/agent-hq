@@ -68,16 +68,17 @@ def series(conn, cfg, rng: Range, bucket: Literal["hour", "day"], by: Literal["h
     sessions = {s['id']: s for s in _rows(conn, 'select * from sessions')}
     rows = {}
     def row(ts, session, model=None):
-        dt = datetime.fromtimestamp(ts).astimezone()
+        dt = datetime.fromtimestamp(ts)
         dt = dt.replace(minute=0, second=0, microsecond=0, **({'hour': 0} if bucket == 'day' else {}))
         key = (model or session.get('model')) if by == 'model' else session.get('account_id' if by == 'account' else by)
         k = (dt.timestamp(), key or 'unknown')
-        return rows.setdefault(k, {'t': k[0], 'key': k[1], 'tokens': 0, 'value_usd': None, 'tasks': 0, 'errors': 0})
+        return rows.setdefault(k, {'t': k[0], 'key': k[1], 'tokens': 0, 'value_usd': None, 'unpriced_tokens': 0, 'tasks': 0, 'errors': 0})
     for e in _rows(conn, 'select * from events where ts>=? and ts<?', (rng.start, rng.end)):
         s = sessions.get(e['session_id'], {})
         r = row(e['ts'], s, e['model']); nums = [e[k] or 0 for k in ('tokens_in','tokens_out','tokens_cache_read','tokens_cache_write')]
         r['tokens'] += sum(nums); r['errors'] += e['kind'] == 'error'
         v = value_usd(*nums, cfg.prices.get(e['model'] or s.get('model')))
+        if v is None: r['unpriced_tokens'] += sum(nums)
         if v is not None and sum(nums): r['value_usd'] = (r['value_usd'] or 0) + v
     for task in _rows(conn, 'select * from tasks where started_at>=? and started_at<?', (rng.start, rng.end)):
         row(task['started_at'], sessions.get(task['session_id'], {}))['tasks'] += 1

@@ -103,15 +103,19 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         sessions=_rows(conn,'select * from sessions order by last_event_at desc'); last=last_kinds(conn)
                         for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now)
                         if path=='/api/sessions':
-                            enriched = _rows(conn, '''SELECT session_id, max(CASE WHEN rn=1 THEN kind END) last_kind, max(CASE WHEN tool_rank=1 AND kind='tool_call' THEN tool END) last_tool, max(CASE WHEN preview_rank=1 THEN preview END) last_preview, sum(coalesce(tokens_in,0)+coalesce(tokens_out,0)+coalesce(tokens_cache_read,0)+coalesce(tokens_cache_write,0)) tokens FROM (SELECT *, row_number() over (partition by session_id order by ts desc,id desc) rn, row_number() over (partition by session_id order by (kind='tool_call') desc,ts desc,id desc) tool_rank, row_number() over (partition by session_id order by (preview is not null) desc,ts desc,id desc) preview_rank FROM events) GROUP BY session_id''')
-                            extra={e['session_id']:e for e in enriched}
-                            for s in sessions:
-                                e=extra.get(s['id'], {}); s.update(last_kind=e.get('last_kind'),last_tool=e.get('last_tool'),last_preview=e.get('last_preview'),tokens=e.get('tokens',0))
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
                                 if param(key): sessions=[s for s in sessions if s[col]==param(key)]
                             if param('from'): sessions=[s for s in sessions if s['started_at']>=float(param('from'))]
                             if param('to'): sessions=[s for s in sessions if s['started_at']<float(param('to'))]
-                            return self.send_json(200,sessions[:min(2000,max(1,int(param("limit","500"))))])
+                            sessions=sessions[:min(2000,max(1,int(param('limit','500'))))]
+                            ids=[s['id'] for s in sessions]; extra={}
+                            for offset in range(0,len(ids),900):
+                                chunk=ids[offset:offset+900]; placeholders=','.join('?' for _ in chunk)
+                                enriched=_rows(conn, f'''SELECT session_id, max(CASE WHEN rn=1 THEN kind END) last_kind, max(CASE WHEN tool_rank=1 AND kind='tool_call' THEN tool END) last_tool, max(CASE WHEN preview_rank=1 THEN preview END) last_preview, sum(coalesce(tokens_in,0)+coalesce(tokens_out,0)+coalesce(tokens_cache_read,0)+coalesce(tokens_cache_write,0)) tokens FROM (SELECT *, row_number() over (partition by session_id order by ts desc,id desc) rn, row_number() over (partition by session_id order by (kind='tool_call') desc,ts desc,id desc) tool_rank, row_number() over (partition by session_id order by (preview is not null) desc,ts desc,id desc) preview_rank FROM events WHERE session_id IN ({placeholders})) GROUP BY session_id''', chunk)
+                                extra.update({e['session_id']:e for e in enriched})
+                            for s in sessions:
+                                e=extra.get(s['id'], {}); s.update(last_kind=e.get('last_kind'),last_tool=e.get('last_tool'),last_preview=e.get('last_preview'),tokens=e.get('tokens',0))
+                            return self.send_json(200,sessions)
                         counts={k:sum(s['status']==k for s in sessions) for k in ('working','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
                         return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]))})
                     if path.startswith('/api/sessions/'):
@@ -119,7 +123,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         if not rows: return self.send_json(404,{'error':'session not found'})
                         order=param('order','asc')
                         if order not in ('asc','desc'): raise ValueError('invalid order')
-                        s=rows[0]; events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
+                        s=rows[0]; s['status']=session_status(s['last_event_at'],last_kinds(conn).get(sid),s['ended_at'],now); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})
@@ -132,9 +136,18 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def do_POST(self): self.write_request('POST')
         def do_PUT(self): self.write_request('PUT')
         def write_request(self,method):
-            if not self.host_ok() or not self.write_ok(): return self.send_json(403,{'error':'forbidden'})
+            path=urlsplit(self.path).path
+            exchange=method=='POST' and path=='/api/exchange'
+            origin_ok=self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
+            if not self.host_ok() or not origin_ok or (not exchange and not self.write_ok()): return self.send_json(403,{'error':'forbidden'})
             try:
-                data=self.parse_body(); path=urlsplit(self.path).path
+                data=self.parse_body()
+                if exchange:
+                    code=data.get('code')
+                    with lock:
+                        valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
+                        if valid: self.server.bootstrap_code=None
+                    return self.send_json(200,{'token':token}) if valid else self.send_json(403,{'error':'forbidden'})
                 if method=='POST' and path=='/api/limits/manual':
                     if data['account_id'] not in {a.id for a in cfg.accounts}: raise ValueError('unknown account')
                     add_manual(store,data['account_id'],data['window'],data['used_percent'],data.get('resets_at'),time.time()); changed(); return self.send_json(200,{'ok':True})
@@ -142,6 +155,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     new=validate_settings(data,cfg.sources)
                     save_config(Path(config_dir),new); cfg.sources=new.sources; cfg.accounts=new.accounts; cfg.prices=new.prices; cfg.alerts=new.alerts; cfg.default_skin=new.default_skin; cfg.recommend_task_kind=new.recommend_task_kind; changed(); return self.send_json(200,{'ok':True})
                 return self.send_json(404,{'error':'not found'})
-            except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc: return self.send_json(400,{'error':str(exc)})
+            except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc:
+                return self.send_json(403,{'error':'forbidden'}) if exchange else self.send_json(400,{'error':str(exc)})
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler); server.daemon_threads=True
+    server.bootstrap_code=secrets.token_urlsafe(24); server.bootstrap_expires=time.monotonic()+120
     return server,token

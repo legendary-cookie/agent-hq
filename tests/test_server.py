@@ -33,3 +33,25 @@ class ServerTests(unittest.TestCase):
     def test_unknown_route_404_json(self): self.assertIn('error',self.req('/bad')[1])
     def test_sse_receives_changed(self):
         c=http.client.HTTPConnection('127.0.0.1',self.port,timeout=3); self.addCleanup(c.close); c.request('GET','/api/stream?token='+self.token); r=c.getresponse(); self.col._callbacks[0](); self.assertEqual(r.readline(),b'event: changed\n'); self.assertTrue(r.readline().startswith(b'data: '))
+
+    def test_exchange_code_single_use(self):
+        h={'Origin':f'http://127.0.0.1:{self.port}'}; data={'code':self.server.bootstrap_code}
+        self.assertEqual(self.req('/api/exchange','POST',data,h), (200, {'token':self.token}))
+        self.assertEqual(self.req('/api/exchange','POST',data,h)[0],403)
+    def test_exchange_code_expires(self):
+        from unittest.mock import patch
+        h={'Origin':f'http://127.0.0.1:{self.port}'}
+        with patch('hq.server.time.monotonic', return_value=self.server.bootstrap_expires + 1):
+            self.assertEqual(self.req('/api/exchange','POST',{'code':self.server.bootstrap_code},h)[0],403)
+    def test_exchange_requires_same_origin(self):
+        data={'code':self.server.bootstrap_code}
+        self.assertEqual(self.req('/api/exchange','POST',data,{'Origin':'http://evil.com'})[0],403)
+        self.assertEqual(self.req('/api/exchange','POST',data,{})[0],403)
+        self.assertEqual(self.req('/api/exchange','POST',data,{'Host':'evil.com','Origin':'http://evil.com'})[0],403)
+
+class TokenRotationTests(unittest.TestCase):
+    def test_rotate_token_replaces_file(self):
+        from hq.__main__ import load_token
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'token'; old=load_token(path); new=load_token(path, rotate=True)
+            self.assertNotEqual(old,new); self.assertEqual(path.read_text(),new)

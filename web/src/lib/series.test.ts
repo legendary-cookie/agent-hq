@@ -20,3 +20,11 @@ describe('continuousBuckets', () => {
     expect(continuousBuckets([], 'day')).toEqual([]);
   });
 });
+
+it('bucketKey groups same local day', async () => {
+  const { bucketKey } = await import('./series');
+  const a = new Date(2026, 2, 8, 0).getTime() / 1000;
+  const b = new Date(2026, 2, 8, 23).getTime() / 1000;
+  expect(bucketKey(a, 'day')).toBe(bucketKey(b, 'day'));
+  expect(bucketKey(a, 'hour')).not.toBe(bucketKey(b, 'hour'));
+});

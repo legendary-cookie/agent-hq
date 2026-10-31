@@ -50,3 +50,15 @@ it('Dashboard requests hourly series for today', () => {
   render(<Dashboard />);
   expect(apiCalls).toHaveBeenCalledWith('/api/series?range=today&bucket=hour&by=harness');
 });
+
+it('Dashboard plots tokens when any row is unpriced', () => {
+  const original = structuredClone(series);
+  try {
+    Object.assign(series[0], { value_usd: 1 });
+    Object.assign(series[0], { unpriced_tokens: 10 });
+    render(<Dashboard />);
+    expect(screen.getByRole('heading', { name: 'Tokens' })).toBeInTheDocument();
+  } finally {
+    Object.assign(series[0], original[0]);
+  }
+});

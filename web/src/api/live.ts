@@ -1,9 +1,12 @@
+import { api } from './client';
+
 const subscribers = new Set<() => void>();
 let source: EventSource | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
 let debounce: ReturnType<typeof setTimeout> | undefined;
 let delay = 1000;
 let reconnecting = false;
+let errors = 0;
 
 function notify() {
   subscribers.forEach((subscriber) => subscriber());
@@ -24,12 +27,15 @@ function connect() {
     if (reconnecting) notify();
     reconnecting = false;
     delay = 1000;
+    errors = 0;
   };
   connection.onerror = () => {
     if (source !== connection) return;
     connection.close();
     source = undefined;
     reconnecting = true;
+    errors += 1;
+    if (errors === 3) void api('/api/health').catch(() => {});
     timer = setTimeout(connect, delay);
     delay = Math.min(delay * 2, 15000);
   };
@@ -48,6 +54,7 @@ export function subscribeChanges(onChange: () => void): () => void {
       clearTimeout(debounce);
       delay = 1000;
       reconnecting = false;
+      errors = 0;
     }
   };
 }

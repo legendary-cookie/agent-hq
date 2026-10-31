@@ -9,7 +9,12 @@ export function continuousBuckets(times: number[], bucket: 'hour' | 'day'): numb
   const last = Math.max(...times);
   const result: number[] = [];
   if (bucket === 'hour') {
-    for (let t = first; t <= last; t += 3600) result.push(t);
+    const seen = new Set<string>();
+    for (let t = first; t <= last; t += 3600) {
+      const key = bucketKey(t, 'hour');
+      if (!seen.has(key)) result.push(t);
+      seen.add(key);
+    }
     return result;
   }
   const day = new Date(first * 1000);
@@ -18,4 +23,11 @@ export function continuousBuckets(times: number[], bucket: 'hour' | 'day'): numb
     day.setDate(day.getDate() + 1);
   }
   return result;
+}
+
+export function bucketKey(t: number, bucket: 'hour' | 'day'): string {
+  const date = new Date(t * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  return bucket === 'hour' ? `${day}T${pad(date.getHours())}` : day;
 }
