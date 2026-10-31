@@ -3,6 +3,10 @@
     system-ui, sans-serif;
   color: #1d1d1f;
   background: #f5f5f7;
+  --text: #1d1d1f;
+  --panel: rgba(255, 255, 255, 0.72);
+  --shadow: rgba(0, 0, 0, 0.12);
+  --alert-bg: #fff3df;
   --accent: #0071e3;
   --surface: #fff;
   --sidebar: rgba(245, 245, 247, 0.8);
@@ -17,6 +21,10 @@
   :root {
     color: #f5f5f7;
     background: #1c1c1e;
+    --text: #f5f5f7;
+    --panel: rgba(28, 28, 30, 0.72);
+    --shadow: rgba(0, 0, 0, 0.3);
+    --alert-bg: #493721;
     --surface: #2c2c2e;
     --sidebar: rgba(35, 35, 37, 0.8);
     --muted: #98989d;

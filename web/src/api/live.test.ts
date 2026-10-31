@@ -44,3 +44,20 @@ it('reconnects SSE and refetches', () => {
   expect(cb).toHaveBeenCalledTimes(1);
   stop();
 });
+it('multiple subscribers share one EventSource', () => {
+  const first = vi.fn();
+  const second = vi.fn();
+  const stopFirst = subscribeChanges(first);
+  const stopSecond = subscribeChanges(second);
+  expect(MockSource.instances).toHaveLength(1);
+  const source = MockSource.instances[0];
+  const close = vi.spyOn(source, 'close');
+  source.listeners.changed();
+  vi.advanceTimersByTime(1000);
+  expect(first).toHaveBeenCalledTimes(1);
+  expect(second).toHaveBeenCalledTimes(1);
+  stopFirst();
+  expect(close).not.toHaveBeenCalled();
+  stopSecond();
+  expect(close).toHaveBeenCalledTimes(1);
+});
