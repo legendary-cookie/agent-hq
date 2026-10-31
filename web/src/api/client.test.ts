@@ -3,7 +3,41 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react';
 import { createElement } from 'react';
 import { api, ApiError } from './client';
 import { App } from '../app/App';
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
-it('sends token header', async () => { sessionStorage.setItem('hq-token','abc'); const fetcher=vi.fn().mockResolvedValue({ok:true,json:async()=>({})}); vi.stubGlobal('fetch',fetcher); await api('/api/health'); expect(new Headers(fetcher.mock.calls[0][1].headers).get('X-HQ-Token')).toBe('abc'); });
-it('throws ApiError with status', async () => { vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:403,json:async()=>({error:'forbidden'})})); await expect(api('/api/health')).rejects.toMatchObject({status:403}); expect(new ApiError(403)).toBeInstanceOf(Error); });
-it('shows token help on 403', async () => { vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:false,status:403,json:async()=>({error:'forbidden'})})); vi.stubGlobal('EventSource', class { addEventListener() {} close() {} }); render(createElement(App)); await waitFor(()=>expect(screen.getByText(/Open Agent HQ from the link/)).toBeInTheDocument()); });
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+it('sends token header', async () => {
+  sessionStorage.setItem('hq-token', 'abc');
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+  vi.stubGlobal('fetch', fetcher);
+  await api('/api/health');
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get('X-HQ-Token')).toBe('abc');
+});
+it('throws ApiError with status', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: 'forbidden' }) }),
+  );
+  await expect(api('/api/health')).rejects.toMatchObject({ status: 403 });
+  expect(new ApiError(403)).toBeInstanceOf(Error);
+});
+it('shows token help on 403', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: 'forbidden' }) }),
+  );
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener() {}
+      close() {}
+    },
+  );
+  render(createElement(App));
+  await waitFor(() => expect(screen.getByText(/Open Agent HQ from the link/)).toBeInTheDocument());
+});
