@@ -35,12 +35,18 @@ export function AlertBanner({
     (item) => item.window === alert.window && item.scope === alert.scope,
   );
   const label = card?.label ?? alert.account_id;
+  const labels: Record<string, string> = {
+    '5h': '5 hours',
+    week: 'Week',
+    day: 'Day',
+    month: 'Month',
+  };
   const subject =
-    alert.level === 'blocked' && alert.scope && alert.scope !== '*'
-      ? alert.scope
-      : alert.window === '5h'
-        ? '5 hours'
-        : (alert.window ?? 'limit');
+    alert.level === 'blocked'
+      ? alert.scope && alert.scope !== '*'
+        ? alert.scope
+        : 'all models'
+      : (labels[alert.window ?? ''] ?? alert.window ?? 'limit');
   const reset = window?.resets_at
     ? ` until ${new Date(window.resets_at * 1000).toLocaleString(undefined, {
         weekday: 'short',

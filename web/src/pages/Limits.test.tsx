@@ -30,6 +30,7 @@ function setup(fail = false) {
 it('Limits unknown window', async () => {
   setup();
   expect(await screen.findByText('Unknown')).toBeInTheDocument();
+  expect(screen.getByText('No limit data yet')).toBeInTheDocument();
   expect(document.querySelector('.limit-fill')).toBeNull();
   expect(document.body.textContent).not.toContain('NaN');
 });

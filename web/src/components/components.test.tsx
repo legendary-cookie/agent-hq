@@ -165,3 +165,17 @@ it('Inspector shows latest events first', async () => {
     timeline.textContent!.indexOf('oldest'),
   );
 });
+
+it('AlertBanner reads all models for star scope', () => {
+  render(
+    <AlertBanner
+      alerts={[{ account_id: 'a', window: '5h', scope: '*', level: 'blocked', used_percent: null }]}
+    />,
+  );
+  expect(screen.getByRole('alert')).toHaveTextContent('a · all models blocked');
+  expect(
+    selectSidebarLimits([
+      { account_id: 'a', label: 'A', windows: [windowData(null, 'blocked')] },
+    ])[0].window,
+  ).toBe('all models');
+});

@@ -38,7 +38,9 @@ export function Dashboard() {
   const [selected, setSelected] = useState<string | null>(null);
   const { data: overview } = useApi<Overview>('/api/overview');
   const { data: kpis, error } = useApi<Kpis>(`/api/kpis?range=${range}`);
-  const { data: series } = useApi<SeriesRow[]>(`/api/series?range=${range}&bucket=day&by=${group}`);
+  const { data: series } = useApi<SeriesRow[]>(
+    `/api/series?range=${range}&bucket=${range === 'today' ? 'hour' : 'day'}&by=${group}`,
+  );
   const { data: sessions } = useApi<SessionRow[]>('/api/sessions');
   const unpriced = !!series?.length && series.every((row) => row.value_usd === null);
   const keys = [...new Set((series ?? []).map((row) => row.key))];
@@ -46,7 +48,10 @@ export function Dashboard() {
   const chart = dates.map((t) => {
     const rows = (series ?? []).filter((row) => row.t === t);
     const values: Record<string, number | string> = {
-      date: dateLabel(t),
+      date:
+        range === 'today'
+          ? `${String(new Date(t * 1000).getHours()).padStart(2, '0')}:00`
+          : dateLabel(t),
       tasks: rows.reduce((sum, row) => sum + row.tasks, 0),
       errors: rows.reduce((sum, row) => sum + row.errors, 0),
     };
@@ -150,14 +155,10 @@ export function Dashboard() {
               </Pill>
             )}
             <Pill>
-              Today:{' '}
-              {fmtUsd(overview.value.total_usd, {
-                unpricedTokens: overview.value.unpriced_tokens,
-                estimated: overview.value.estimated,
-              })}
-              {overview.value.unpriced_tokens > 0 &&
-                ` (${fmtTokens(overview.value.unpriced_tokens)} unpriced tokens)`}{' '}
-              value · {fmtTokens(totalTokens(overview.tokens))} tokens
+              Today · {fmtTokens(totalTokens(overview.tokens))} tokens ·{' '}
+              {overview.value.total_usd === 0 && overview.value.unpriced_tokens > 0
+                ? 'value unpriced'
+                : fmtUsd(overview.value.total_usd, { estimated: overview.value.estimated })}
             </Pill>
           </div>
         )}
@@ -171,14 +172,14 @@ export function Dashboard() {
                   label={label}
                   value={value}
                   delta={fmtDelta(current, previous)}
+                  hint={
+                    label === 'API value' && kpis.value.unpriced_tokens > 0
+                      ? `${fmtTokens(kpis.value.unpriced_tokens)} tokens unpriced`
+                      : undefined
+                  }
                 />
               ))}
             </div>
-            {kpis.value.unpriced_tokens > 0 && (
-              <p className="dashboard-note">
-                {fmtTokens(kpis.value.unpriced_tokens)} unpriced tokens
-              </p>
-            )}
             <div className="dashboard-charts">
               <section className="dashboard-card dashboard-wide">
                 <h2>{unpriced ? 'Tokens' : 'API value'}</h2>
@@ -232,7 +233,10 @@ export function Dashboard() {
                           type="category"
                           dataKey="model"
                           stroke="var(--muted)"
-                          width={90}
+                          width={150}
+                          tickFormatter={(name: string) =>
+                            name.length > 22 ? `${name.slice(0, 21)}…` : name
+                          }
                           tick={{ fontSize: 11 }}
                         />
                         <Tooltip contentStyle={tooltip} formatter={(n: number) => fmtTokens(n)} />
@@ -290,9 +294,7 @@ export function Dashboard() {
                             <td>{session?.harness ?? '—'}</td>
                             <td className="dashboard-number">{fmtTokens(item.tokens)}</td>
                             <td className="dashboard-number">
-                              {item.value_usd === null
-                                ? `unpriced (${fmtTokens(item.tokens)})`
-                                : fmtUsd(item.value_usd)}
+                              {item.value_usd === null ? 'unpriced' : fmtUsd(item.value_usd)}
                             </td>
                           </tr>
                         );

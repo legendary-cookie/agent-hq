@@ -18,9 +18,16 @@ export function selectSidebarLimits(cards: LimitCard[], n = 4) {
         .map((window) => ({
           label: card.label,
           window:
-            window.scope && window.scope !== '*' && window.source === 'blocked'
-              ? window.scope
-              : window.window!,
+            window.source === 'blocked'
+              ? window.scope && window.scope !== '*'
+                ? window.scope
+                : 'all models'
+              : ((
+                  { '5h': '5 hours', week: 'Week', day: 'Day', month: 'Month' } as Record<
+                    string,
+                    string
+                  >
+                )[window.window!] ?? window.window!),
           percent: window.used_percent,
           source: window.source,
           stale: window.stale,

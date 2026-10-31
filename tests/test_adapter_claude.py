@@ -48,6 +48,16 @@ class ClaudeAdapterTests(unittest.TestCase):
         path.write_text('not json\n', encoding='utf-8')
         self.assertEqual(self.adapter.poll(self.store, SourceCfg(True, [path])).warnings, 1)
 
+    def test_tool_result_nested_content_preview_is_text(self):
+        import json
+        root = Path(self.tmp.name)
+        row = {'type': 'user', 'sessionId': 'nested', 'timestamp': '2026-10-30T10:00:00Z',
+               'uuid': 'result', 'message': {'content': [{'type': 'tool_result', 'content': [
+                   {'type': 'text', 'text': 'first'}, {'type': 'text', 'content': [{'text': 'second'}]}]}]}}
+        (root / 'nested.jsonl').write_text(json.dumps(row) + '\n', encoding='utf-8')
+        batch = self.adapter.poll(self.store, SourceCfg(True, [root]))
+        self.assertEqual(next(e.preview for e in batch.events if e.kind == 'tool_result'), 'first second')
+
 
 class ClaudeSplitMessageTests(unittest.TestCase):
     def test_split_message_tokens_counted_once(self):

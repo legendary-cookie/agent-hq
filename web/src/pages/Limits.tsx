@@ -16,7 +16,7 @@ function windowLabel(item: LimitWindow) {
     day: 'Day',
     month: 'Month',
   };
-  return item.window ? (labels[item.window] ?? item.window) : 'Unknown window';
+  return item.window ? (labels[item.window] ?? item.window) : 'No limit data yet';
 }
 
 function ManualLimit({ accountId, reload }: { accountId: string; reload: () => void }) {
@@ -113,7 +113,11 @@ export function Limits() {
         {data?.map((card) => (
           <section className="limits-card" key={card.account_id}>
             <h2>{card.label}</h2>
-            {card.windows.length === 0 && <EmptyState title="No limit data" />}
+            {card.windows.length === 0 && (
+              <div>
+                <strong>No limit data yet</strong> <span className="limits-badge">Unknown</span>
+              </div>
+            )}
             {card.windows.map((item, index) => (
               <div className="limits-window" key={`${item.window}-${item.scope}-${index}`}>
                 <div className="limits-window-heading">

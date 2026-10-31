@@ -33,3 +33,13 @@ it('Agents nests children under parent', () => {
   expect(rows[2]).toHaveTextContent('Child');
   expect(within(rows[2]).getByText('Child').closest('td')).toHaveClass('agents-child');
 });
+
+it('Agents title has no stray dot', () => {
+  state.sessions = sessions;
+  render(<Agents />);
+  const row = screen.getByText('Parent').closest('tr')!;
+  const dot = row.querySelector('.status-dot')!;
+  expect(dot).toBeInTheDocument();
+  expect(dot).toHaveClass('agents-status-dot');
+  expect(within(row).getByRole('button', { name: 'Parent' })).toHaveTextContent(/^Parent$/);
+});

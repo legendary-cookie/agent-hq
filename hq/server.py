@@ -34,8 +34,8 @@ def validate_settings(data, sources):
     if data['default_skin'] not in ('isometric','topdown','tower') or not isinstance(data['recommend_task_kind'],str): raise ValueError('invalid settings')
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'])
 
-def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None):
-    token=secrets.token_urlsafe(32); listeners=set(); lock=threading.Lock()
+def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None):
+    token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
     tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
     if tracker_path and tracker_path.name == 'usage.db': tracker_path=tracker_path.parent

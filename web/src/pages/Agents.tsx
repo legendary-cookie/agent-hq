@@ -115,7 +115,7 @@ export function Agents() {
                 <tr key={row.id} onClick={() => setSelected(row.id)}>
                   <td>
                     <span
-                      className={`status-dot status-${row.status ?? 'idle'}`}
+                      className={`status-dot agents-status-dot status-${row.status ?? 'idle'}`}
                       aria-label={row.status ?? 'unknown'}
                     />
                   </td>

@@ -77,3 +77,7 @@
 .agents-child {
   color: var(--muted);
 }
+
+.agents-status-dot {
+  margin-right: 0;
+}
