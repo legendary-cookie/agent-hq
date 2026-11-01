@@ -34,7 +34,11 @@ Independent review (risk gate)
   - Every refresh enriched all sessions.
 
 Verified (2026-10-31, real logs)
-- Tests: 40 web, 120 Python (on Windows; the two DST tests skip without `tzset` and pass on Linux).
+- Re-check by the same reviewer: all 7 fixed, no new high or medium. A low follow-up was fixed too: a spent launch link no longer signs out a working tab.
+- Known limits:
+  - A launch link opened more than 120 s after start shows the token help page. Restart, or use `#token=`.
+  - Scripts that POST to the API must send a same-origin `Origin` header.
+- Tests: 41 web, 120 Python (on Windows; the two DST tests skip without `tzset` and pass on Linux).
 - Launch flow in the browser: the code was exchanged, the URL cleaned to `#/dashboard` with no token in it, and reusing the code returned 403.
 - Browser checks:
   - Every page in light mode at 1280–1440 px and in dark mode at 1280 px.
