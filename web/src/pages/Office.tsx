@@ -4,6 +4,7 @@ import type { DelegationRow, Overview, SessionRow, Settings } from '../api/types
 import { Inspector } from '../components/Inspector';
 import { Segmented } from '../components/Segmented';
 import { StatusPills } from '../components/StatusPills';
+import { harnessLabel } from '../office/colors';
 import { PixiStage } from '../office/PixiStage';
 import { buildScene } from '../office/scene';
 import type { Scene } from '../office/scene';
@@ -143,7 +144,7 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
           {scene.npcs.map((npc) => (
             <li key={npc.id}>
               <button type="button" onClick={() => setSelected(npc.sessionId)}>
-                {npc.harness} · {npc.state} · {npc.title}
+                {harnessLabel(npc.harness)} · {npc.state} · {npc.title}
               </button>
             </li>
           ))}

@@ -1,4 +1,5 @@
-import { Application, Container, Graphics, Text } from 'pixi.js';
+import { Application, Container, Graphics } from 'pixi.js';
+import { harnessLabel } from '../../colors';
 import { drawDesk, drawLabel, drawPerson } from '../../draw';
 import { approach } from '../../motion';
 import { pickNpc } from '../../pick';
@@ -51,24 +52,36 @@ export class IsometricSkin implements Skin {
         .fill(tile.alternate ? theme.floor : theme.floorAlt)
         .stroke({ color: theme.wall, width: 0.5, alpha: 0.2 });
     });
-    layout.rooms.forEach((room) => {
+    if (layout.floorShape.length) {
+      const edge = layout.floorShape;
       floor
-        .moveTo(room.shape[3].x, room.shape[3].y)
-        .lineTo(room.shape[0].x, room.shape[0].y)
-        .lineTo(room.shape[1].x, room.shape[1].y)
+        .moveTo(edge[3].x, edge[3].y)
+        .lineTo(edge[0].x, edge[0].y)
+        .lineTo(edge[1].x, edge[1].y)
         .stroke({ color: theme.wall, width: 2, alpha: 0.6 });
-      const label = new Container();
-      drawLabel(label, room.label);
-      label.position.set(room.labelAt.x, room.labelAt.y - 18);
-      this.app.stage.addChild(label);
-    });
+    }
     this.app.stage.addChildAt(floor, 0);
     const objects: { depth: number; display: Container }[] = [];
     for (const desk of layout.desks) {
       const g = new Graphics();
       drawDesk(g);
+      if (scene.npcs.some((npc) => npc.deskId === desk.id && npc.state === 'idle')) g.alpha = 0.5;
       g.position.set(desk.at.x, desk.at.y);
       objects.push({ depth: desk.at.y, display: g });
+    }
+    if (layout.furniture) {
+      const sofa = new Graphics();
+      sofa.roundRect(-23, -16, 46, 15, 5).fill(theme.wall);
+      sofa.roundRect(-21, -8, 42, 10, 4).fill(theme.muted);
+      sofa.position.set(layout.furniture.sofa.x, layout.furniture.sofa.y);
+      sofa.scale.set(layout.scale);
+      objects.push({ depth: layout.furniture.sofa.y, display: sofa });
+      const table = new Graphics();
+      table.ellipse(0, 0, 13, 7).fill(theme.wall);
+      table.ellipse(0, -3, 13, 7).fill(theme.floorAlt);
+      table.position.set(layout.furniture.table.x, layout.furniture.table.y);
+      table.scale.set(layout.scale);
+      objects.push({ depth: layout.furniture.table.y, display: table });
     }
     let idle = 0;
     this.targets = scene.npcs.map((npc) => {
@@ -92,9 +105,10 @@ export class IsometricSkin implements Skin {
       const display = new Container();
       display.addChild(g);
       if (this.hovered === npc.id) {
-        const title = new Text({ text: npc.title, style: { fontSize: 11, fill: theme.text } });
-        title.position.set(at.x - title.width / 2, at.y - 58);
-        display.addChild(title);
+        const pill = new Container();
+        drawLabel(pill, `${harnessLabel(npc.harness)} · ${npc.title}`, theme.floorAlt, theme.text);
+        pill.position.set(at.x, at.y - 58);
+        display.addChild(pill);
       }
       objects.push({ depth: at.y, display });
       return { id: npc.id, at, depth: at.y };
@@ -120,6 +134,12 @@ export class IsometricSkin implements Skin {
     objects
       .sort((a, b) => a.depth - b.depth)
       .forEach((item) => this.app.stage.addChild(item.display));
+    for (const room of layout.rooms) {
+      const label = new Container();
+      drawLabel(label, room.label, theme.floorAlt, theme.muted);
+      label.position.set(room.labelAt.x, room.labelAt.y - 10);
+      this.app.stage.addChild(label);
+    }
   }
   destroy() {
     this.host?.removeEventListener('mousemove', this.move);

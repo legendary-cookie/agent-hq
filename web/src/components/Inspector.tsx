@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useApi } from '../api/client';
 import type { SessionDetail } from '../api/types';
 import { fmtDuration, fmtTokens, fmtUsd } from '../lib/format';
+import { harnessLabel } from '../office/colors';
 import { LimitBar } from './LimitBar';
 import './components.css';
 
@@ -78,7 +79,9 @@ export function Inspector({
       {error && !detail && <p>Unable to load session.</p>}
       {session && detail && (
         <>
-          <div className="inspector-title">{session.harness ?? 'Agent'}</div>
+          <div className="inspector-title">
+            {session.harness ? harnessLabel(session.harness) : 'Agent'}
+          </div>
           <div className="inspector-subtitle">
             {session.model ?? '—'} · {session.account_id ?? '—'}
           </div>
