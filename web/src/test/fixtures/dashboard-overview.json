@@ -1,0 +1,26 @@
+{
+  "status_counts": {
+    "working": 1,
+    "waiting": 1,
+    "idle": 0
+  },
+  "best_now": [
+    {
+      "provider": "provider-a",
+      "model": "model-a"
+    }
+  ],
+  "value": {
+    "total_usd": 0,
+    "unpriced_tokens": 1500,
+    "estimated": false
+  },
+  "tokens": {
+    "input": 1000,
+    "output": 200,
+    "cache_read": 300,
+    "cache_write": 0,
+    "cache_hit_ratio": 0.2
+  },
+  "alerts": []
+}

@@ -1,0 +1,310 @@
+import { useEffect, useState } from 'react';
+import type { FormEvent } from 'react';
+import { api, useApi } from '../api/client';
+import type { Health, Kpis, Settings as SettingsData } from '../api/types';
+import { EmptyState } from '../components/EmptyState';
+import './settings.css';
+
+type Price = SettingsData['prices'][string];
+const priceFields: { key: keyof Price; label: string }[] = [
+  { key: 'input', label: 'Input' },
+  { key: 'output', label: 'Output' },
+  { key: 'cache_read', label: 'Cache read' },
+  { key: 'cache_write', label: 'Cache write' },
+];
+
+export function Settings() {
+  const { data, error: settingsError } = useApi<SettingsData>('/api/settings');
+  const { data: kpis, error: kpisError } = useApi<Kpis>('/api/kpis?range=month');
+  const { data: health, error: healthError } = useApi<Health>('/api/health');
+  const [draft, setDraft] = useState<SettingsData | null>(null);
+  const [pendingPrices, setPendingPrices] = useState<
+    Record<string, Partial<Record<keyof Price, string>>>
+  >({});
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    if (data) setDraft((current) => current ?? data);
+  }, [data]);
+  useEffect(() => {
+    if (!saved) return;
+    const timer = setTimeout(() => setSaved(false), 3000);
+    return () => clearTimeout(timer);
+  }, [saved]);
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (!draft) return;
+    if (
+      Object.values(pendingPrices).some((price) =>
+        priceFields.some(({ key }) => price[key] === undefined || price[key] === ''),
+      )
+    ) {
+      setError('Enter all four prices for each new model.');
+      return;
+    }
+    const prices = { ...draft.prices };
+    for (const [model, price] of Object.entries(pendingPrices)) {
+      prices[model] = {
+        input: Number(price.input),
+        output: Number(price.output),
+        cache_read: Number(price.cache_read),
+        cache_write: Number(price.cache_write),
+      };
+    }
+    setSaving(true);
+    setError('');
+    setSaved(false);
+    try {
+      await api('/api/settings', { method: 'PUT', body: JSON.stringify({ ...draft, prices }) });
+      setDraft({ ...draft, prices });
+      setPendingPrices({});
+      setSaved(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const unpriced = (kpis?.top_models ?? []).filter(
+    (item) => draft && !(item.model in draft.prices),
+  );
+  const models = [
+    ...new Set([...unpriced.map((item) => item.model), ...Object.keys(draft?.prices ?? {})]),
+  ];
+  return (
+    <div className="settings-page">
+      <h1>Settings</h1>
+      {(settingsError || kpisError || healthError) && (
+        <p role="alert">{(settingsError || kpisError || healthError)?.message}</p>
+      )}
+      {!draft && !settingsError && <p>Loading settings…</p>}
+      {draft && (
+        <form onSubmit={save}>
+          <section className="settings-card">
+            <h2>Plans</h2>
+            {draft.accounts.length === 0 ? (
+              <EmptyState title="No accounts" />
+            ) : (
+              <table>
+                <thead>
+                  <tr>
+                    <th>Account</th>
+                    <th>Plan</th>
+                    <th className="settings-number">Monthly price ($)</th>
+                    <th className="settings-number">Billing day</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {draft.accounts.map((account, index) => (
+                    <tr key={account.id}>
+                      {(['label', 'plan', 'monthly_price_usd', 'billing_day'] as const).map(
+                        (field) => (
+                          <td key={field}>
+                            <input
+                              aria-label={`${account.id} ${field}`}
+                              type={
+                                field === 'monthly_price_usd' || field === 'billing_day'
+                                  ? 'number'
+                                  : 'text'
+                              }
+                              min={
+                                field === 'billing_day'
+                                  ? 1
+                                  : field === 'monthly_price_usd'
+                                    ? 0
+                                    : undefined
+                              }
+                              max={field === 'billing_day' ? 31 : undefined}
+                              step={field === 'monthly_price_usd' ? 'any' : undefined}
+                              value={account[field] ?? ''}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setDraft({
+                                  ...draft,
+                                  accounts: draft.accounts.map((item, i) =>
+                                    i !== index
+                                      ? item
+                                      : {
+                                          ...item,
+                                          [field]:
+                                            field === 'monthly_price_usd'
+                                              ? value === ''
+                                                ? null
+                                                : Number(value)
+                                              : field === 'billing_day'
+                                                ? Number(value)
+                                                : field === 'plan'
+                                                  ? value || null
+                                                  : value,
+                                        },
+                                  ),
+                                });
+                              }}
+                            />
+                          </td>
+                        ),
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </section>
+          <section className="settings-card">
+            <h2>Model prices</h2>
+            <p className="settings-hint">Prices per million tokens.</p>
+            {models.length === 0 ? (
+              <EmptyState title="No models" />
+            ) : (
+              <div className="settings-models">
+                {models.map((model) => (
+                  <div className="settings-model" key={model}>
+                    <div>
+                      <strong>{model}</strong>
+                      {!draft.prices[model] && <span className="settings-hint"> · Unpriced</span>}
+                    </div>
+                    <div className="settings-price-fields">
+                      {priceFields.map(({ key, label }) => (
+                        <label key={key}>
+                          {label}
+                          <input
+                            aria-label={`${model} ${label}`}
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={draft.prices[model]?.[key] ?? pendingPrices[model]?.[key] ?? ''}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              if (!draft.prices[model]) {
+                                setPendingPrices({
+                                  ...pendingPrices,
+                                  [model]: { ...pendingPrices[model], [key]: value },
+                                });
+                                return;
+                              }
+                              setDraft({
+                                ...draft,
+                                prices: {
+                                  ...draft.prices,
+                                  [model]: {
+                                    ...(draft.prices[model] ?? {
+                                      input: 0,
+                                      output: 0,
+                                      cache_read: 0,
+                                      cache_write: 0,
+                                    }),
+                                    [key]: Number(value),
+                                  },
+                                },
+                              });
+                            }}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="settings-card">
+            <h2>Alerts</h2>
+            <div className="settings-alerts">
+              {draft.alerts.thresholds.map((threshold, index) => (
+                <label key={index}>
+                  Threshold {index + 1} (%)
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="any"
+                    value={threshold}
+                    onChange={(event) =>
+                      setDraft({
+                        ...draft,
+                        alerts: {
+                          ...draft.alerts,
+                          thresholds: draft.alerts.thresholds.map((value, i) =>
+                            i === index ? Number(event.target.value) : value,
+                          ),
+                        },
+                      })
+                    }
+                  />
+                </label>
+              ))}
+              <label className="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={draft.alerts.toast}
+                  onChange={(event) =>
+                    setDraft({ ...draft, alerts: { ...draft.alerts, toast: event.target.checked } })
+                  }
+                />{' '}
+                Toast notifications
+              </label>
+            </div>
+          </section>
+          <section className="settings-card">
+            <h2>Default office skin</h2>
+            <label>
+              Skin
+              <select
+                value={draft.default_skin}
+                onChange={(event) => setDraft({ ...draft, default_skin: event.target.value })}
+              >
+                <option value="isometric">Isometric</option>
+                <option value="topdown">Top-down</option>
+                <option value="tower">Tower</option>
+              </select>
+            </label>
+          </section>
+          <section className="settings-card">
+            <h2>Sources</h2>
+            <p className="settings-hint">Edit config/sources.json and restart to change sources.</p>
+            {Object.entries(draft.sources).length === 0 ? (
+              <EmptyState title="No sources" />
+            ) : (
+              Object.entries(draft.sources).map(([name, source]) => {
+                const entry = health?.[name];
+                const state =
+                  entry &&
+                  typeof entry === 'object' &&
+                  'state' in entry &&
+                  typeof entry.state === 'string'
+                    ? entry.state
+                    : 'unknown';
+                return (
+                  <div className="settings-source" key={name}>
+                    <div>
+                      <strong>{name}</strong> <span className="settings-hint">· {state}</span>
+                    </div>
+                    {source.paths.length ? (
+                      source.paths.map((path) => (
+                        <div className="settings-path" key={path}>
+                          {path}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="settings-hint">No paths configured</div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </section>
+          {error && <p role="alert">{error}</p>}
+          <div className="settings-actions">
+            <button type="submit" disabled={saving}>
+              Save settings
+            </button>
+            {saved && <span role="status">Saved</span>}
+          </div>
+        </form>
+      )}
+    </div>
+  );
+}

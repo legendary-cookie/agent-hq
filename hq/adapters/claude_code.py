@@ -14,7 +14,11 @@ def _text(content):
     if isinstance(content, str):
         return content
     if isinstance(content, list):
-        return ' '.join(str(b.get('text', b.get('content', ''))) for b in content if isinstance(b, dict) and b.get('type') in ('text', 'tool_result'))
+        return ' '.join(text for item in content if (text := _text(item)))
+    if isinstance(content, dict):
+        if content.get('type') not in (None, 'text', 'tool_result'):
+            return None
+        return _text(content.get('text', content.get('content')))
     return None
 
 

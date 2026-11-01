@@ -1,0 +1,83 @@
+.agents-layout {
+  display: flex;
+  gap: 20px;
+  min-width: 0;
+}
+.agents-page {
+  flex: 1;
+  min-width: 0;
+}
+.agents-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 18px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.agents-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agents-statuses button,
+.agents-filters select {
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+}
+.agents-statuses button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.agents-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.agents-table th,
+.agents-table td {
+  overflow: hidden;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agents-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.agents-table th:first-child {
+  width: 20px;
+}
+.agents-table button {
+  overflow: hidden;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agents-table tbody tr {
+  cursor: pointer;
+}
+.agents-table .agents-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.agents-child {
+  color: var(--muted);
+}
+
+.agents-status-dot {
+  margin-right: 0;
+}

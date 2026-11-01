@@ -2,6 +2,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import calendar
+from typing import Literal
 
 @dataclass(frozen=True)
 class Range:
@@ -61,6 +62,28 @@ def session_value(conn,cfg,session_id):
         if denom: cost=account.monthly_price_usd*numer/denom
     return {'tokens':total,'value_usd':val,'unpriced_tokens':unpriced,'effective_cost_usd':cost,'estimated':est}
 
+def series(conn, cfg, rng: Range, bucket: Literal["hour", "day"], by: Literal["harness", "provider", "model", "account"]) -> list[dict]:
+    if bucket not in ('hour', 'day') or by not in ('harness', 'provider', 'model', 'account'):
+        raise ValueError('invalid series grouping')
+    sessions = {s['id']: s for s in _rows(conn, 'select * from sessions')}
+    rows = {}
+    def row(ts, session, model=None):
+        dt = datetime.fromtimestamp(ts)
+        dt = dt.replace(minute=0, second=0, microsecond=0, **({'hour': 0} if bucket == 'day' else {}))
+        key = (model or session.get('model')) if by == 'model' else session.get('account_id' if by == 'account' else by)
+        k = (dt.timestamp(), key or 'unknown')
+        return rows.setdefault(k, {'t': k[0], 'key': k[1], 'tokens': 0, 'value_usd': None, 'unpriced_tokens': 0, 'tasks': 0, 'errors': 0})
+    for e in _rows(conn, 'select * from events where ts>=? and ts<?', (rng.start, rng.end)):
+        s = sessions.get(e['session_id'], {})
+        r = row(e['ts'], s, e['model']); nums = [e[k] or 0 for k in ('tokens_in','tokens_out','tokens_cache_read','tokens_cache_write')]
+        r['tokens'] += sum(nums); r['errors'] += e['kind'] == 'error'
+        v = value_usd(*nums, cfg.prices.get(e['model'] or s.get('model')))
+        if v is None: r['unpriced_tokens'] += sum(nums)
+        if v is not None and sum(nums): r['value_usd'] = (r['value_usd'] or 0) + v
+    for task in _rows(conn, 'select * from tasks where started_at>=? and started_at<?', (rng.start, rng.end)):
+        row(task['started_at'], sessions.get(task['session_id'], {}))['tasks'] += 1
+    return [rows[k] for k in sorted(rows)]
+
 def compute_kpis(conn,cfg,rng,group_by,now):
     if group_by not in (None,'harness','provider','model','account'): raise ValueError('invalid group_by')
     def calculate(start,end,lists=True, filter_group=None):
@@ -70,12 +93,12 @@ def compute_kpis(conn,cfg,rng,group_by,now):
         if filter_group:
             key,value=filter_group; col='account_id' if key=='account' else key
             events=[e for e in events if byid.get(e['session_id'],{}).get(col)==value]; tasks=[t for t in tasks if byid.get(t['session_id'],{}).get(col)==value]; sessions=[s for s in sessions if s.get(col)==value]
-        totals=[0]*4; priced=0.; unpriced=0; estimated=False; values=defaultdict(float); models=defaultdict(int); times=defaultdict(list)
+        totals=[0]*4; priced=0.; unpriced=0; estimated=False; values=defaultdict(float); session_tokens=defaultdict(int); priced_sessions=set(); models=defaultdict(int); times=defaultdict(list)
         for e in events:
             s=byid.get(e['session_id'],{}); nums=[e[k] or 0 for k in ('tokens_in','tokens_out','tokens_cache_read','tokens_cache_write')]; n=sum(nums)
-            totals=[a+b for a,b in zip(totals,nums)]; model=e['model'] or s.get('model'); models[model or 'unknown']+=n
+            session_tokens[e['session_id']]+=n; totals=[a+b for a,b in zip(totals,nums)]; model=e['model'] or s.get('model'); models[model or 'unknown']+=n
             v=value_usd(*nums,cfg.prices.get(model)); unpriced+=n if v is None else 0
-            if v is not None: priced+=v; values[e['session_id']]+=v
+            if v is not None: priced+=v; values[e['session_id']]+=v; priced_sessions.add(e['session_id']) if n else None
             estimated |= bool(n and e['tokens_estimated']); times[e['session_id']].append(e['ts'])
         hours=sum(sum(b-a for a,b in zip(ts,ts[1:]) if b-a<=600) for ts in times.values())/3600
         ok=sum(t['outcome']=='ok' for t in tasks); err=sum(t['outcome']=='error' for t in tasks); tools=sum(e['kind']=='tool_call' for e in events); errors=sum(e['kind']=='error' for e in events)
@@ -103,9 +126,16 @@ def compute_kpis(conn,cfg,rng,group_by,now):
         for d in delegations: providers[d['provider']]+=1; outcomes[d['task_kind']][d['outcome']]+=1
         result={'activity':{'active_agents':active,'sessions_started':sum(start<=s['started_at']<end for s in sessions if s['started_at'] is not None),'tasks':len(tasks),'tool_calls':tools,'agent_hours':hours,'average_task_duration':sum(durations)/len(durations) if durations else None},'quality':{'success_rate':ok/(ok+err) if ok+err else None,'errors_per_100_tool_calls':errors*100/tools if tools else None,'delegation_outcomes':dict(outcomes)},'tokens':dict(zip(('input','output','cache_read','cache_write'),totals)) | {'cache_hit_ratio':totals[2]/(totals[0]+totals[2]) if totals[0]+totals[2] else None},'value':{'total_usd':priced,'unpriced_tokens':unpriced,'estimated':estimated},'plan_roi':roi,'quota_use':dict(quota),'routing':{'delegations_per_provider':dict(providers),'blocked_count':len(blocks),'hours_blocked':dict(blocked)}}
         if lists:
-            projects=defaultdict(float)
-            for sid,v in values.items(): projects[byid.get(sid,{}).get('project') or 'unknown']+=v
-            result.update(top_sessions=[{'session_id':k,'value_usd':v} for k,v in sorted(values.items(),key=lambda x:-x[1])],top_projects=[{'project':k,'value_usd':v} for k,v in sorted(projects.items(),key=lambda x:-x[1])],top_models=[{'model':k,'tokens':v} for k,v in sorted(models.items(),key=lambda x:-x[1])])
+            def ranked(items, name):
+                return sorted(items, key=lambda x: (x['value_usd'] is None, -(x['value_usd'] or 0), -x['tokens'], x[name]))[:20]
+            session_rows = [{'session_id': sid, 'tokens': n, 'value_usd': values[sid] if sid in priced_sessions else None} for sid,n in session_tokens.items()]
+            projects = {}
+            for item in session_rows:
+                key = byid.get(item['session_id'], {}).get('project') or 'unknown'
+                p = projects.setdefault(key, {'project': key, 'tokens': 0, 'value_usd': None})
+                p['tokens'] += item['tokens']
+                if item['value_usd'] is not None: p['value_usd'] = (p['value_usd'] or 0) + item['value_usd']
+            result.update(top_sessions=ranked(session_rows, 'session_id'), top_projects=ranked(list(projects.values()), 'project'), top_models=[{'model':k,'tokens':v} for k,v in sorted(models.items(),key=lambda x:-x[1])])
         return result
     result=calculate(rng.start,rng.end); result['previous']=calculate(rng.prev_start,rng.prev_end,False)
     if group_by:
