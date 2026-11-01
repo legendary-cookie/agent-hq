@@ -6,6 +6,7 @@ export interface Skin {
   render(scene: Scene, dt: number, theme: Theme): void;
   pick(x: number, y: number): string | null;
   resize(width: number, height: number): void;
+  setSelected?(id: string | null): void;
   destroy(): void;
 }
 export type Theme = {

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-export type Route = 'dashboard' | 'agents' | 'limits' | 'settings';
+export type Route = 'office' | 'dashboard' | 'agents' | 'limits' | 'settings';
 export function parseRoute(hash: string): Route {
   const route = hash.replace(/^#\/?/, '');
-  return (['dashboard', 'agents', 'limits', 'settings'] as string[]).includes(route)
+  return (['office', 'dashboard', 'agents', 'limits', 'settings'] as string[]).includes(route)
     ? (route as Route)
-    : 'dashboard';
+    : 'office';
 }
 export function useRoute(): [Route, (r: Route) => void] {
   const [route, setRoute] = useState<Route>(() => parseRoute(location.hash));

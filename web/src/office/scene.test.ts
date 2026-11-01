@@ -116,10 +116,7 @@ describe('scene', () => {
     });
   });
   it('first scene animates no history', () => {
-    const sessions = [
-      session('p', { harness: 'claude_code' }),
-      session('c', { parent_id: 'p' }),
-    ];
+    const sessions = [session('p', { harness: 'claude_code' }), session('c', { parent_id: 'p' })];
     expect(buildScene(sessions, [delegation], new Map(), now).walks).toHaveLength(0);
   });
   it('delegation seen late still walks once', () => {

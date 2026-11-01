@@ -4,7 +4,7 @@ export function bootstrapToken(
 ): string | null | Promise<string | null> {
   const code = new URLSearchParams(loc.hash.slice(1)).get('code');
   if (code) {
-    history.replaceState(null, '', `${loc.pathname}${loc.search}#/dashboard`);
+    history.replaceState(null, '', `${loc.pathname}${loc.search}#/office`);
     return (
       fetch('/api/exchange', {
         method: 'POST',
@@ -27,7 +27,7 @@ export function bootstrapToken(
   const token = new URLSearchParams(loc.hash.slice(1)).get('token');
   if (token) {
     storage.setItem('hq-token', token);
-    history.replaceState(null, '', `${loc.pathname}${loc.search}#/dashboard`);
+    history.replaceState(null, '', `${loc.pathname}${loc.search}#/office`);
     return token;
   }
   return storage.getItem('hq-token');

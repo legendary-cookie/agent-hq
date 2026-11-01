@@ -34,6 +34,7 @@ export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Prop
     const tick = (time: number) => {
       if (!active || document.visibilityState === 'hidden') return;
       const dt = previous === null ? 0 : (time - previous) / 1000;
+      instance?.setSelected?.(current.current.selectedId);
       instance?.render(current.current.scene, dt, readTheme(element));
       previous = time;
       frame = requestAnimationFrame(tick);
@@ -72,5 +73,5 @@ export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Prop
       if (!mounting) instance?.destroy();
     };
   }, [skin, skinFactory]);
-  return <div ref={host} />;
+  return <div ref={host} className="office-canvas" />;
 }
