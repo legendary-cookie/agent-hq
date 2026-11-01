@@ -115,6 +115,29 @@ describe('scene', () => {
       startedAt: now,
     });
   });
+  it('first scene animates no history', () => {
+    const sessions = [
+      session('p', { harness: 'claude_code' }),
+      session('c', { parent_id: 'p' }),
+    ];
+    expect(buildScene(sessions, [delegation], new Map(), now).walks).toHaveLength(0);
+  });
+  it('delegation seen late still walks once', () => {
+    // A delegation reaches the page 3-7 s after it happened (tracker log, 5 s
+    // collector pass, 1 s debounce); it must still animate once, starting now.
+    const m = new Map<string, string>();
+    const sessions = [session('p', { harness: 'claude_code' }), session('c')];
+    const prev = buildScene(sessions, [], m, now);
+    const late = { ...delegation, id: 'late', ts: now + 1 };
+    const next = buildScene(sessions, [late], m, now + 8, prev);
+    expect(next.walks).toContainEqual({
+      npcId: 'p',
+      fromRoomId: 'claude_code',
+      toRoomId: 'codex',
+      startedAt: now + 8,
+    });
+    expect(buildScene(sessions, [late], m, now + 9, next).walks).toHaveLength(1);
+  });
   it('walks expire after 3 s', () => {
     const m = new Map<string, string>();
     const sessions = [session('p', { harness: 'claude_code' }), session('c')];

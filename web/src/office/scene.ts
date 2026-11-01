@@ -86,10 +86,11 @@ export function buildScene(
   }));
   rooms.push({ id: 'break', harness: null, label: 'Break room', capacity: 0 });
   const walks = (prev?.walks ?? []).filter((w) => now - w.startedAt <= 3);
+  // Walks animate changes since the previous scene; the first scene shows no history.
   const previousIds = new Set(prev?.npcs.map((n) => n.id) ?? []);
   for (const npc of npcs) {
     const parent = npcs.find((n) => n.id === npc.parentId);
-    if (!previousIds.has(npc.id) && parent)
+    if (prev && !previousIds.has(npc.id) && parent)
       walks.push({
         npcId: npc.id,
         fromRoomId: parent.harness,
@@ -101,19 +102,21 @@ export function buildScene(
   const source = included
     .filter((s) => harnessOf(s) === 'claude_code')
     .sort((a, b) => (b.last_event_at ?? 0) - (a.last_event_at ?? 0))[0];
+  // A delegation is new if it is newer than anything the previous scene saw, however
+  // old it is by the time it reaches the page; its walk starts now and lasts 3 s.
   for (const d of delegations) {
     if (
+      prev &&
       d.ts > latest &&
       source &&
       ['codex', 'antigravity', 'hermes', 'opencode'].includes(d.provider) &&
-      harnesses.includes(d.provider) &&
-      now - d.ts <= 3
+      harnesses.includes(d.provider)
     )
       walks.push({
         npcId: source.id,
         fromRoomId: 'claude_code',
         toRoomId: d.provider,
-        startedAt: d.ts,
+        startedAt: now,
       });
   }
   const scene = { rooms, desks, npcs, walks };
