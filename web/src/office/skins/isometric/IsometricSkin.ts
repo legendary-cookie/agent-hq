@@ -1,5 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js';
-import { harnessLabel } from '../../colors';
+import { HARNESS_COLORS, harnessLabel } from '../../colors';
 import { drawDesk, drawLabel, drawPerson } from '../../draw';
 import { approach } from '../../motion';
 import { pickNpc } from '../../pick';
@@ -52,6 +52,15 @@ export class IsometricSkin implements Skin {
         .fill(tile.alternate ? theme.floor : theme.floorAlt)
         .stroke({ color: theme.wall, width: 0.5, alpha: 0.2 });
     });
+    for (const room of layout.rooms) {
+      const color = room.harness
+        ? (HARNESS_COLORS[room.harness] ?? HARNESS_COLORS.unknown)
+        : '#a89b8c';
+      floor
+        .poly(room.shape.flatMap((point) => [point.x, point.y]))
+        .fill({ color, alpha: 0.1 })
+        .stroke({ color, width: 1.5, alpha: 0.35 });
+    }
     if (layout.floorShape.length) {
       const edge = layout.floorShape;
       floor
@@ -136,7 +145,13 @@ export class IsometricSkin implements Skin {
       .forEach((item) => this.app.stage.addChild(item.display));
     for (const room of layout.rooms) {
       const label = new Container();
-      drawLabel(label, room.label, theme.floorAlt, theme.muted);
+      const labelTheme = theme as Theme & { labelBg?: string; labelText?: string };
+      drawLabel(
+        label,
+        room.label,
+        labelTheme.labelBg ?? theme.floorAlt,
+        labelTheme.labelText ?? theme.muted,
+      );
       label.position.set(room.labelAt.x, room.labelAt.y - 10);
       this.app.stage.addChild(label);
     }

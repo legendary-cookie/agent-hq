@@ -81,3 +81,30 @@ it('break spots do not overlap', () => {
     }
   }
 });
+it('break room size follows idle count', () => {
+  const idleScene: Scene = {
+    rooms: [
+      { id: 'codex', label: 'Codex', harness: 'codex', capacity: 6 },
+      { id: 'break', label: 'Break room', harness: null, capacity: 0 },
+    ],
+    desks: [],
+    npcs: Array.from({ length: 13 }, (_, i) => ({
+      id: String(i),
+      sessionId: String(i),
+      harness: 'codex',
+      title: String(i),
+      model: null,
+      state: 'idle',
+      color: '#3a7bd5',
+      deskId: null,
+      targetRoomId: 'break',
+      parentId: null,
+    })),
+    walks: [],
+  };
+  const layout = layoutIsometric(idleScene, { width: 1600, height: 1200 });
+  const room = layout.rooms.find((item) => item.id === 'break')!;
+  expect(room.grid.width * room.grid.height).toBeLessThanOrEqual(6 * (2 + 2));
+  expect(layout.breakSpots).toHaveLength(13);
+  expect(layout.rooms.map((item) => item.label)).toEqual(['Codex · 13', 'Break room · 13']);
+});

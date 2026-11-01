@@ -10,13 +10,15 @@ export function approach(current: Point, target: Point, speed: number, dt: numbe
 export function bob(t: number, phase: number): number {
   return 2 * Math.sin(t * 6 + phase);
 }
-export function readTheme(el: HTMLElement): Theme {
+export function readTheme(el: HTMLElement): Theme & { labelBg: string; labelText: string } {
   const css = getComputedStyle(el);
   const value = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
   return {
     floor: value('--office-floor', '#f2f2f7'),
     floorAlt: value('--office-floor-alt', '#e5e5ea'),
     wall: value('--office-wall', '#c7c7cc'),
+    labelBg: value('--office-label-bg', '#e5e5ea'),
+    labelText: value('--office-label-text', '#6e6e73'),
     text: value('--text', '#1d1d1f'),
     muted: value('--muted', '#8e8e93'),
     reducedMotion:

@@ -15,7 +15,7 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
   ];
   const heights = roomsOrdered.map((room) =>
     room.id === 'break'
-      ? Math.max(6, Math.ceil(Math.max(8, idleCount) / 3) * 2 + 4)
+      ? Math.max(2, Math.ceil(idleCount / 4))
       : Math.max(2, Math.ceil(room.capacity / 6) * 2),
   );
   const rowHeights = Array.from({ length: Math.ceil(roomsOrdered.length / 2) }, (_, i) =>
@@ -25,7 +25,7 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
     room,
     x: (i % 2) * 7,
     y: rowHeights.slice(0, Math.floor(i / 2)).reduce((a, b) => a + b + 1, 0),
-    rows: rowHeights[Math.floor(i / 2)],
+    rows: heights[i],
   }));
   const width = roomsOrdered.length > 1 ? 13 : roomsOrdered.length ? 6 : 0;
   const height = rowHeights.reduce((a, b) => a + b, 0) + Math.max(0, rowHeights.length - 1);
@@ -70,7 +70,12 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
   });
   const rooms = zones.map(({ room, x, y, rows }) => ({
     id: room.id,
-    label: harnessLabel(room.harness ?? 'break'),
+    label: `${harnessLabel(room.harness ?? 'break')} · ${
+      room.id === 'break'
+        ? idleCount
+        : scene.npcs.filter((npc) => npc.harness === room.harness).length
+    }`,
+    harness: room.harness,
     labelAt: point(x + 3, y),
     shape: [point(x, y), point(x + 6, y), point(x + 6, y + rows), point(x, y + rows)],
     grid: { x, y, width: 6, height: rows },
@@ -87,12 +92,12 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
   );
   const zone = zones.find((z) => z.room.id === 'break');
   const breakSpots = zone
-    ? Array.from({ length: Math.max(8, idleCount) }, (_, i) =>
-        point(zone.x + 1 + (i % 3) * 2, zone.y + 4 + Math.floor(i / 3) * 2),
+    ? Array.from({ length: idleCount }, (_, i) =>
+        point(zone.x + 0.7 + (i % 4) * 1.1, zone.y + 0.5 + Math.floor(i / 4)),
       )
     : [];
   const furniture = zone
-    ? { sofa: point(zone.x + 4.5, zone.y + 1), table: point(zone.x + 2, zone.y + 2) }
+    ? { sofa: point(zone.x + 5.3, zone.y + 0.5), table: point(zone.x + 5.3, zone.y + 1.5) }
     : null;
   return {
     rooms,
