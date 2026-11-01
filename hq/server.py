@@ -92,6 +92,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     result=recommend(param('task_kind',cfg.recommend_task_kind))
                     return self.send_json(200,result)
                 with closing(store.conn()) as conn:
+                    if path=='/api/delegations': return self.send_json(200,_rows(conn,'select ext_id as id, ts, provider, model, task_kind, outcome from delegations order by ts desc, id desc limit ?', (min(200,max(1,int(param('limit','20')))),)))
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
                     if path=='/api/series':
                         rng=resolve_range(param('range','today'),datetime.now().astimezone(),param('from'),param('to'))

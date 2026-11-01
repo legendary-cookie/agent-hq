@@ -32,6 +32,32 @@ class UiApiTests(unittest.TestCase):
         def close(): server.shutdown(); server.server_close(); thread.join()
         self.addCleanup(close)
         return server.server_port, token
+    def test_delegations_newest_first_and_limited(self):
+        import json
+        self.conn.executemany("insert into delegations(ext_id,ts,provider,model,task_kind,outcome) values (?,?,?,?,?,?)", [(str(i), i, 'codex', 'model', 'coding', 'ok') for i in range(3)])
+        self.conn.commit()
+        port, token = self.start_server()
+        with closing(http.client.HTTPConnection('127.0.0.1', port)) as c:
+            c.request('GET', '/api/delegations?limit=2', headers={'X-HQ-Token': token})
+            rows = json.loads(c.getresponse().read())
+        self.assertEqual([r['id'] for r in rows], ['2', '1'])
+
+    def test_delegations_has_no_note(self):
+        import json
+        self.conn.execute("insert into delegations(ext_id,ts,provider,model,task_kind,outcome,note) values ('x',1,'codex','m','coding','ok','secret')")
+        self.conn.commit()
+        port, token = self.start_server()
+        with closing(http.client.HTTPConnection('127.0.0.1', port)) as c:
+            c.request('GET', '/api/delegations', headers={'X-HQ-Token': token})
+            row = json.loads(c.getresponse().read())[0]
+        self.assertEqual(set(row), {'id', 'ts', 'provider', 'model', 'task_kind', 'outcome'})
+
+    def test_delegations_requires_token(self):
+        port, _ = self.start_server()
+        with closing(http.client.HTTPConnection('127.0.0.1', port)) as c:
+            c.request('GET', '/api/delegations')
+            self.assertEqual(c.getresponse().status, 403)
+
     def test_series_by_provider_per_day(self):
         from hq.kpis import series
         rows=series(self.conn,self.cfg,self.rng,'day','provider')
