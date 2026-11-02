@@ -38,6 +38,33 @@
       "paths": [
         "~/.claude/provider-usage"
       ]
+    },
+    "kimi": {
+      "enabled": false,
+      "paths": [
+        "~/.kimi-code/sessions",
+        "~/.kimi/sessions"
+      ]
+    },
+    "dsh": {
+      "enabled": false,
+      "paths": [
+        "~/.dsh/sessions"
+      ]
+    },
+    "zylos": {
+      "enabled": false,
+      "paths": [
+        "~/zylos/comm-bridge/c4.db"
+      ]
+    },
+    "deepseek_balance": {
+      "enabled": false,
+      "paths": []
+    },
+    "importer": {
+      "enabled": false,
+      "paths": []
     }
   },
   "alerts": {
@@ -48,5 +75,13 @@
     "toast": false
   },
   "default_skin": "isometric",
-  "recommend_task_kind": "implementation"
+  "recommend_task_kind": "implementation",
+  "relabel": [
+    {
+      "under": "~/zylos",
+      "harness": "zylos"
+    }
+  ],
+  "zylos_previews": false,
+  "deepseek_alert": 5.0
 }

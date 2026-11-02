@@ -18,7 +18,7 @@ from .limits import limit_cards, alerts, add_manual, recommend_bridge
 from .status import last_kinds, session_status
 import sqlite3
 
-def validate_settings(data, sources):
+def validate_settings(data, sources, relabel=None):
     if data['sources'] != {k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in sources.items()}:
         raise ValueError('sources require a restart')
     def number(x): return type(x) in (int,float) and math.isfinite(x) and x >= 0
@@ -32,7 +32,11 @@ def validate_settings(data, sources):
         if not isinstance(k,str) or not isinstance(v,dict) or set(v)!={'input','output','cache_read','cache_write'} or not all(number(x) for x in v.values()): raise ValueError('invalid price')
     if not isinstance(alert.get('thresholds'),list) or not all(number(x) and x<=100 for x in alert['thresholds']) or type(alert.get('toast')) is not bool: raise ValueError('invalid alerts')
     if data['default_skin'] not in ('isometric','topdown','tower') or not isinstance(data['recommend_task_kind'],str): raise ValueError('invalid settings')
-    return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'])
+    previews = data.get('zylos_previews', False)
+    deepseek_alert = data.get('deepseek_alert', 5.0)
+    if type(previews) is not bool or not number(deepseek_alert):
+        raise ValueError('invalid source settings')
+    return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None):
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock()
@@ -87,7 +91,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
                 if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error})
-                if path=='/api/settings': return self.send_json(200,{'sources':{k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in cfg.sources.items()},'accounts':[asdict(a) for a in cfg.accounts],'prices':{k:asdict(v) for k,v in cfg.prices.items()},'alerts':cfg.alerts,'default_skin':cfg.default_skin,'recommend_task_kind':cfg.recommend_task_kind})
+                if path=='/api/settings': return self.send_json(200,{'sources':{k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in cfg.sources.items()},'accounts':[asdict(a) for a in cfg.accounts],'prices':{k:asdict(v) for k,v in cfg.prices.items()},'alerts':cfg.alerts,'default_skin':cfg.default_skin,'recommend_task_kind':cfg.recommend_task_kind,'zylos_previews':cfg.zylos_previews,'deepseek_alert':cfg.deepseek_alert})
                 if path=='/api/recommend':
                     result=recommend(param('task_kind',cfg.recommend_task_kind))
                     return self.send_json(200,result)
@@ -153,8 +157,18 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if data['account_id'] not in {a.id for a in cfg.accounts}: raise ValueError('unknown account')
                     add_manual(store,data['account_id'],data['window'],data['used_percent'],data.get('resets_at'),time.time()); changed(); return self.send_json(200,{'ok':True})
                 if method=='PUT' and path=='/api/settings':
-                    new=validate_settings(data,cfg.sources)
-                    save_config(Path(config_dir),new); cfg.sources=new.sources; cfg.accounts=new.accounts; cfg.prices=new.prices; cfg.alerts=new.alerts; cfg.default_skin=new.default_skin; cfg.recommend_task_kind=new.recommend_task_kind; changed(); return self.send_json(200,{'ok':True})
+                    new=validate_settings(data,cfg.sources,cfg.relabel)
+                    save_config(Path(config_dir), new)
+                    cfg.sources = new.sources
+                    cfg.accounts = new.accounts
+                    cfg.prices = new.prices
+                    cfg.alerts = new.alerts
+                    cfg.default_skin = new.default_skin
+                    cfg.recommend_task_kind = new.recommend_task_kind
+                    cfg.zylos_previews = new.zylos_previews
+                    cfg.deepseek_alert = new.deepseek_alert
+                    changed()
+                    return self.send_json(200, {'ok': True})
                 return self.send_json(404,{'error':'not found'})
             except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc:
                 return self.send_json(403,{'error':'forbidden'}) if exchange else self.send_json(400,{'error':str(exc)})

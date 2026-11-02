@@ -14,6 +14,7 @@ class SessionRec:
     ended_at: float | None
     parent_id: str | None
     source_ref: str
+    imported: bool = False
 
 @dataclass(frozen=True)
 class EventRec:
