@@ -106,7 +106,7 @@ def compute_kpis(conn,cfg,rng,group_by,now):
         from .status import session_status
         from .status import last_kinds
         last=last_kinds(conn)
-        active=sum(session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now)=='working' for s in sessions if s['last_event_at'] is not None)
+        active=sum(session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now,imported=bool(s['imported'])) in ('working', 'active') for s in sessions if s['last_event_at'] is not None)
         roi={}
         for a in cfg.accounts:
             b0,b1=_billing(now,a.billing_day); v=0

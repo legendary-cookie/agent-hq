@@ -1,5 +1,7 @@
-def session_status(last_event_at, last_kind, ended_at, now) -> str:
+def session_status(last_event_at, last_kind, ended_at, now, imported=False) -> str:
     age = now - last_event_at
+    if imported:
+        return 'active' if age < 600 else 'idle' if age < 86400 else 'done'
     if ended_at is not None or age >= 86400:
         return 'done'
     if last_kind == 'error':
