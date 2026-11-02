@@ -91,7 +91,10 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
                 if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error})
-                if path=='/api/settings': return self.send_json(200,{'sources':{k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in cfg.sources.items()},'accounts':[asdict(a) for a in cfg.accounts],'prices':{k:asdict(v) for k,v in cfg.prices.items()},'alerts':cfg.alerts,'default_skin':cfg.default_skin,'recommend_task_kind':cfg.recommend_task_kind,'zylos_previews':cfg.zylos_previews,'deepseek_alert':cfg.deepseek_alert})
+                if path=='/api/settings':
+                    with closing(store.conn()) as conn:
+                        models = compute_kpis(conn,cfg,resolve_range('month',datetime.now().astimezone()),None,now)['top_models']
+                    return self.send_json(200,{'sources':{k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in cfg.sources.items()},'accounts':[asdict(a) for a in cfg.accounts],'prices':{k:asdict(v) for k,v in cfg.prices.items()},'alerts':cfg.alerts,'default_skin':cfg.default_skin,'recommend_task_kind':cfg.recommend_task_kind,'zylos_previews':cfg.zylos_previews,'deepseek_alert':cfg.deepseek_alert,'price_sources':{row['model']:cfg.pricebook.source(row['model']) for row in models}})
                 if path=='/api/recommend':
                     result=recommend(param('task_kind',cfg.recommend_task_kind))
                     return self.send_json(200,result)
@@ -122,7 +125,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                                 e=extra.get(s['id'], {}); s.update(last_kind=e.get('last_kind'),last_tool=e.get('last_tool'),last_preview=e.get('last_preview'),tokens=e.get('tokens',0))
                             return self.send_json(200,sessions)
                         counts={k:sum(s['status']==k for s in sessions) for k in ('working','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
-                        return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]))})
+                        return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path.startswith('/api/sessions/'):
                         sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select * from sessions where id=?',(sid,))
                         if not rows: return self.send_json(404,{'error':'session not found'})
@@ -162,6 +165,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     cfg.sources = new.sources
                     cfg.accounts = new.accounts
                     cfg.prices = new.prices
+                    cfg.pricebook.user = cfg.prices
                     cfg.alerts = new.alerts
                     cfg.default_skin = new.default_skin
                     cfg.recommend_task_kind = new.recommend_task_kind
