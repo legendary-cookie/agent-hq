@@ -196,3 +196,33 @@ class InstallCommandTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'PATH|current directory'):
                 importer.install(Path(tmp) / 'tools')
             run.assert_not_called()
+
+
+class ImporterDetectionTests(unittest.TestCase):
+    """The importer belongs to one data folder (its tools/ dir), so it is enabled by
+    the presence of its executable there, never by a flag written into config/."""
+
+    def test_enabled_when_executable_exists_in_data_folder(self):
+        import os
+        import tempfile
+        from hq.collector import Collector
+        from hq.config import Config, SourceCfg
+        from hq.store import Store
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        store = Store(root / 'hq.db')
+        self.addCleanup(store.close)
+        cfg = Config({'importer': SourceCfg(False, [])}, [], {}, {'thresholds': [80], 'toast': False}, 'isometric', 'x')
+        Collector(store, cfg, [])
+        self.assertFalse(cfg.sources['importer'].enabled)
+        bin_dir = root / 'tools' / 'node_modules' / '.bin'
+        bin_dir.mkdir(parents=True)
+        (bin_dir / ('llm-usage.cmd' if os.name == 'nt' else 'llm-usage')).write_text('')
+        Collector(store, cfg, [])
+        self.assertTrue(cfg.sources['importer'].enabled)
+
+    def test_install_does_not_write_config(self):
+        from hq import server
+        self.assertNotIn('save_config(Path(config_dir), cfg)\n                            with collector._lock:\n                                collector._health[\'importer\']',
+                         Path(server.__file__).read_text(encoding='utf-8'))

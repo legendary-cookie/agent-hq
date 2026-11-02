@@ -10,6 +10,11 @@ class Collector:
             source = cfg.sources.get(name)
             if source and not source.enabled:
                 source.enabled = any(path.exists() for path in source.paths)
+        importer = cfg.sources.get('importer')
+        if importer and not importer.enabled:
+            # The importer belongs to this data folder: on when its executable is installed here.
+            exe = 'llm-usage.cmd' if os.name == 'nt' else 'llm-usage'
+            importer.enabled = (store.path.parent / 'tools' / 'node_modules' / '.bin' / exe).is_file()
         balance = cfg.sources.get('deepseek_balance')
         if balance and not balance.enabled:
             key_file = store.path.parent / 'secrets' / 'deepseek_api_key'

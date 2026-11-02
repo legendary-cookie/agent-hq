@@ -1,3 +1,4 @@
+from contextlib import closing
 import sqlite3
 import tempfile
 import unittest
@@ -39,7 +40,7 @@ class ZylosTests(unittest.TestCase):
         self.assertEqual(len([e for e in self.poll().events if e.kind == 'error']), 1)
 
     def test_bad_timestamp_row_skipped_and_cursor_advances(self):
-        with sqlite3.connect(self.path) as conn:
+        with closing(sqlite3.connect(self.path)) as conn, conn:
             conn.executemany("INSERT INTO conversations(direction,channel,content,timestamp) VALUES ('in','system','x',?)", [('bad',), (None,), ('2026-01-01T01:03:00+01:00',), ('2026-01-01T00:04:00Z',)])
         batch = self.poll()
         self.assertEqual(batch.warnings, 2)

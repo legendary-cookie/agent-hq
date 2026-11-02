@@ -167,8 +167,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     def run_install():
                         try:
                             install(store.path.parent / 'tools')
+                            # In memory only: the importer is tied to this data folder and is
+                            # re-detected from its executable at startup; config/ is not written.
                             cfg.sources['importer'].enabled = True
-                            save_config(Path(config_dir), cfg)
                             with collector._lock:
                                 collector._health['importer'].update(state='ok', error=None)
                         except (OSError, RuntimeError, ValueError, KeyError) as exc:
