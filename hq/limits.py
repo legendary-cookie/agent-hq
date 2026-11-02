@@ -37,11 +37,16 @@ def limit_cards(conn,cfg,now):
             windows.append({'window':window,'scope':scope,'used_percent':100.0 if source=='blocked' else pct,'resets_at':reset,'source':source,'stale':stale,'age_s':age,'forecast_s':seconds,'burn_tokens_per_h':burn})
         if not windows: windows=[{'window':None,'scope':'*','used_percent':None,'resets_at':None,'source':'unknown','stale':False,'age_s':None,'forecast_s':None,'burn_tokens_per_h':0}]
         cards.append({'account_id':account.id,'label':account.label,'windows':windows})
+    rows = conn.execute("SELECT b.currency,b.total,b.granted,b.topped_up,b.recorded_at FROM balances b WHERE b.account_id='deepseek-api' AND b.recorded_at<=? AND b.recorded_at=(SELECT max(b2.recorded_at) FROM balances b2 WHERE b2.account_id=b.account_id AND b2.currency=b.currency AND b2.recorded_at<=?) ORDER BY b.currency", (now, now)).fetchall()
+    for currency, total, granted, topped_up, recorded_at in rows:
+        cards.append({'account_id': 'deepseek-api', 'label': 'DeepSeek API', 'balance': {'currency': currency, 'total': total, 'granted': granted, 'topped_up': topped_up, 'recorded_at': recorded_at}, 'windows': []})
     return cards
 
-def alerts(cards, thresholds):
+def alerts(cards, thresholds, deepseek_alert=5.0):
     levels=sorted(thresholds); result=[]
     for card in cards:
+        if card.get('balance') and card['balance']['total'] < deepseek_alert:
+            result.append({'account_id': card['account_id'], 'level': 'low_balance', 'balance': card['balance']})
         for window in card['windows']:
             pct=window['used_percent']; level=None
             if window['source']=='blocked': level='blocked'
