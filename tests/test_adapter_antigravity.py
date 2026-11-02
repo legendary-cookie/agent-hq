@@ -84,3 +84,63 @@ class AntigravityAdapterTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def _varint(value):
+    result = bytearray()
+    while value >= 128:
+        result.append((value & 127) | 128)
+        value >>= 7
+    return bytes(result + bytes([value]))
+
+
+def _int_field(number, value):
+    return _varint(number * 8) + _varint(value)
+
+
+def _bytes_field(number, value):
+    return _varint(number * 8 + 2) + _varint(len(value)) + value
+
+
+def _metadata(response=b'response-1', model=b'gemini-test'):
+    usage = _int_field(2, 100) + _int_field(3, 30) + _int_field(5, 12) + _bytes_field(11, response)
+    timestamp = _int_field(1, 1700000000) + _int_field(2, 500000000)
+    chat = _bytes_field(4, usage) + _bytes_field(9, _bytes_field(4, timestamp)) + _bytes_field(19, model)
+    return _bytes_field(1, chat)
+
+
+class AntigravityMetadataTests(AntigravityAdapterTests):
+    def add_metadata(self, blobs):
+        import sqlite3
+        path = self.conv_dir / 'agy-c1.db'
+        build_conversation_db(path, 1)
+        conn = sqlite3.connect(path)
+        try:
+            conn.execute('CREATE TABLE gen_metadata (data BLOB)')
+            conn.executemany('INSERT INTO gen_metadata VALUES (?)', [(blob,) for blob in blobs])
+            conn.commit()
+        finally:
+            conn.close()
+
+    def test_usage_from_gen_metadata(self):
+        self.add_metadata([_metadata()])
+        event = next(e for e in self.poll().events if e.ext_id == 'resp:response-1')
+        self.assertEqual((event.tokens_in, event.tokens_out, event.tokens_cache_read, event.ts), (100, 30, 12, 1700000000.5))
+
+    def test_repeated_response_id_counted_once(self):
+        self.add_metadata([_metadata(), _metadata()])
+        batch = self.poll()
+        self.assertEqual(len([e for e in batch.events if e.ext_id == 'resp:response-1']), 1)
+        self.store.apply(batch, lambda *args: 'unassigned')
+        self.store.apply(self.poll(), lambda *args: 'unassigned')
+        conn = self.store.conn()
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM events WHERE ext_id='resp:response-1'").fetchone()[0], 1)
+        finally:
+            conn.close()
+
+    def test_model_from_field_19(self):
+        self.add_metadata([_metadata()])
+        batch = self.poll()
+        self.assertEqual(next(e for e in batch.events if e.ext_id.startswith('resp:')).model, 'gemini-test')
+        self.assertEqual(next(s for s in batch.sessions if s.id == 'antigravity:agy-c1').model, 'gemini-test')
