@@ -135,7 +135,7 @@ def compute_kpis(conn,cfg,rng,group_by,now):
                 p = projects.setdefault(key, {'project': key, 'tokens': 0, 'value_usd': None})
                 p['tokens'] += item['tokens']
                 if item['value_usd'] is not None: p['value_usd'] = (p['value_usd'] or 0) + item['value_usd']
-            result.update(top_sessions=ranked(session_rows, 'session_id'), top_projects=ranked(list(projects.values()), 'project'), top_models=[{'model':k,'tokens':v} for k,v in sorted(models.items(),key=lambda x:-x[1])])
+            result.update(top_sessions=ranked(session_rows, 'session_id'), top_projects=ranked(list(projects.values()), 'project'), top_models=[{'model':k,'tokens':v} for k,v in sorted(models.items(),key=lambda x:-x[1]) if not k.startswith('<')])
         return result
     result=calculate(rng.start,rng.end); result['previous']=calculate(rng.prev_start,rng.prev_end,False)
     if group_by:

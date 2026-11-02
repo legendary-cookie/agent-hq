@@ -40,7 +40,11 @@ def install(tools_dir):
     npm = shutil.which('npm')
     if not npm:
         raise RuntimeError('npm was not found on PATH; install Node.js 20+ to use the long-tail importer')
-    _run([npm, 'install', '--prefix', str(tools_dir), 'llm-usage-metrics@0.12.1'], timeout=_INSTALL_TIMEOUT)
+    npm_dir = Path(npm).resolve().parent
+    path_dirs = {Path(entry).resolve() for entry in os.environ.get('PATH', '').split(os.pathsep) if entry}
+    if npm_dir == Path.cwd().resolve() or npm_dir not in path_dirs:
+        raise RuntimeError('npm must be in a PATH directory other than the current directory')
+    _run([npm, 'install', '--ignore-scripts', '--prefix', str(tools_dir), 'llm-usage-metrics@0.12.1'], timeout=_INSTALL_TIMEOUT)
 
 
 def _timestamp(value):
@@ -80,7 +84,7 @@ class ImporterAdapter:
         if not self._sources or now - self._last_import < 300:
             return Batch([], [], [], [])
         cursor = store.get_cursor(self.name, _CURSOR)
-        since = datetime.fromtimestamp(cursor[1] if cursor else 0, timezone.utc).isoformat().replace('+00:00', 'Z')
+        since = datetime.fromtimestamp(max(0, cursor[1] - 86400) if cursor else 0, timezone.utc).isoformat().replace('+00:00', 'Z')
         output = _run([str(executable), 'events', '--source', ','.join(self._sources), '--since', since])
         sessions, events, warnings = [], [], 0
         latest = cursor[1] if cursor else 0
@@ -94,7 +98,7 @@ class ImporterAdapter:
                 ts = _timestamp(row['timestamp'])
                 model = row.get('model')
                 sessions.append(SessionRec(sid, source, row.get('provider'), model, row.get('repoRoot'), None, ts, ts, None, None, 'llm-usage-metrics', True))
-                events.append(EventRec(sid, hashlib.sha1(line.encode('utf-8')).hexdigest()[:16], ts, 'assistant', None, None, row['inputTokens'], row['outputTokens'] + row['reasoningTokens'], row['cacheReadTokens'], row['cacheWriteTokens'], False, model))
+                events.append(EventRec(sid, hashlib.sha1('|'.join(str(row.get(k, '')) for k in ('source', 'sessionId', 'timestamp', 'model', 'inputTokens', 'outputTokens')).encode('utf-8')).hexdigest(), ts, 'assistant', None, None, row['inputTokens'], row['outputTokens'] + row['reasoningTokens'], row['cacheReadTokens'], row['cacheWriteTokens'], False, model))
                 latest = max(latest, ts)
             except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
                 warnings += 1

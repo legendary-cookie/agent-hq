@@ -39,7 +39,7 @@ def validate_settings(data, sources, relabel=None):
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None):
-    token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock()
+    token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
     tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
     if tracker_path and tracker_path.name == 'usage.db': tracker_path=tracker_path.parent
@@ -160,9 +160,11 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         if valid: self.server.bootstrap_code=None
                     return self.send_json(200,{'token':token}) if valid else self.send_json(403,{'error':'forbidden'})
                 if method=='POST' and path=='/api/importer/install':
+                    if not install_lock.acquire(blocking=False):
+                        return self.send_json(409, {'error': 'install already running'})
+                    with collector._lock:
+                        collector._health['importer'].update(state='installing', error=None)
                     def run_install():
-                        with collector._lock:
-                            collector._health['importer'].update(state='installing', error=None)
                         try:
                             install(store.path.parent / 'tools')
                             cfg.sources['importer'].enabled = True
@@ -172,6 +174,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         except (OSError, RuntimeError, ValueError, KeyError) as exc:
                             with collector._lock:
                                 collector._health['importer'].update(state='partial', error=str(exc), last_error_at=time.time())
+                        finally:
+                            install_lock.release()
                     threading.Thread(target=run_install, daemon=True).start()
                     return self.send_json(200, {'started': True})
                 if method=='POST' and path=='/api/limits/manual':

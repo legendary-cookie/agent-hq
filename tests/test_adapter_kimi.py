@@ -60,3 +60,12 @@ class KimiTests(unittest.TestCase):
         batch = self.adapter.poll(self.store, self.cfg)
         self.assertEqual(len(batch.events), 1)
         self.assertNotEqual(batch.events[0].ext_id, '0')
+
+    def test_locked_kimi_file_counts_warning(self):
+        import sqlite3
+        from unittest.mock import patch
+        self.write('a/wire.jsonl', [])
+        with patch('hq.adapters.kimi.read_new_lines', side_effect=sqlite3.OperationalError('locked')):
+            batch = self.adapter.poll(self.store, self.cfg)
+        self.assertEqual(batch.warnings, 1)
+        self.assertFalse(batch.cursors)

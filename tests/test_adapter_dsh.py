@@ -29,7 +29,7 @@ class DshTests(unittest.TestCase):
         self.assertEqual(next(e.tool for e in batch.events if e.kind == 'tool_call'), 'bash')
     def test_route_sets_provider_model(self):
         self.plain(); session = self.adapter.poll(self.store, self.cfg).sessions[0]
-        self.assertEqual((session.id,session.provider,session.model),('dsh:abc','deepseek','deepseek-chat'))
+        self.assertEqual((session.id,session.provider,session.model),('dsh:abc','other','deepseek-chat'))
     @unittest.skipUnless(zstd_frames.available, 'compression.zstd unavailable')
     def test_plain_and_zstd_logs_equal(self):
         from compression import zstd
@@ -48,3 +48,17 @@ class DshTests(unittest.TestCase):
         batch = self.adapter.poll(self.store,self.cfg); self.store.apply(batch,lambda *args:'unassigned')
         conn = self.store.conn(); self.addCleanup(conn.close)
         self.assertEqual(conn.execute("SELECT count(*) FROM events WHERE kind='assistant'").fetchone()[0], 2)
+
+    def test_damaged_file_does_not_stop_other_dsh_files(self):
+        from unittest.mock import patch
+        bad = self.cfg.paths[0] / 'session-bad.jsonl'; bad.write_text('bad')
+        self.plain()
+        from hq.adapters.dsh import read_new_lines
+        def read(path, old):
+            if path == bad: raise ValueError('damaged')
+            return read_new_lines(path, old)
+        with patch('hq.adapters.dsh.read_new_lines', side_effect=read):
+            batch = self.adapter.poll(self.store, self.cfg)
+        self.assertEqual(batch.warnings, 1)
+        self.assertTrue(batch.events)
+        self.assertFalse(any(c[1] == str(bad) for c in batch.cursors))

@@ -5,7 +5,8 @@ import os
 import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.parse import urlsplit
+from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 from ..records import Batch
 
@@ -21,10 +22,19 @@ def load_key(db_dir: Path) -> str | None:
         return None
 
 
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise HTTPError(req.full_url, code, 'redirect refused', headers, fp)
+
+
 def fetch_balance(key: str, url: str = 'https://api.deepseek.com/user/balance', timeout: float = 10) -> list[dict]:
-    request = Request(url, headers={'Authorization': 'Bearer ' + key})
     try:
-        with urlopen(request, timeout=timeout) as response:
+        parsed = urlsplit(url)
+        if parsed.scheme != 'https' and not (parsed.scheme == 'http' and parsed.hostname in ('localhost', '127.0.0.1')):
+            raise ValueError('insecure URL')
+        request = Request(url)
+        request.add_unredirected_header('Authorization', 'Bearer ' + key)
+        with build_opener(_NoRedirect()).open(request, timeout=timeout) as response:
             payload = json.load(response)
         infos = payload['balance_infos']
         if not isinstance(infos, list):

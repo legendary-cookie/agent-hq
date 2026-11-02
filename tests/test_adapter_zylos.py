@@ -38,6 +38,15 @@ class ZylosTests(unittest.TestCase):
     def test_failed_delivery_is_error(self):
         self.assertEqual(len([e for e in self.poll().events if e.kind == 'error']), 1)
 
+    def test_bad_timestamp_row_skipped_and_cursor_advances(self):
+        with sqlite3.connect(self.path) as conn:
+            conn.executemany("INSERT INTO conversations(direction,channel,content,timestamp) VALUES ('in','system','x',?)", [('bad',), (None,), ('2026-01-01T01:03:00+01:00',), ('2026-01-01T00:04:00Z',)])
+        batch = self.poll()
+        self.assertEqual(batch.warnings, 2)
+        self.assertEqual([e.ext_id for e in batch.events if e.kind != 'error'], ['c4:1','c4:2','c4:5','c4:6'])
+        self.store.apply(batch, lambda *args: 'unassigned')
+        self.assertEqual(self.poll().events, [])
+
     def test_cursor_resumes(self):
         self.store.apply(self.poll(), lambda *args: 'unassigned')
         self.assertEqual(self.poll().events, [])

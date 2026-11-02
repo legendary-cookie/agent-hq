@@ -65,3 +65,23 @@ class BalanceTests(unittest.TestCase):
         self.collector.run_once()
         self.assertEqual(self.collector.health()['deepseek_balance']['state'], 'partial')
         self.assertEqual(FakeHandler.calls, 1)
+
+    def test_redirect_is_not_followed_and_key_not_sent(self):
+        from hq.adapters.deepseek_balance import fetch_balance
+        class Redirect(BaseHTTPRequestHandler):
+            def log_message(self, *args): pass
+            def do_GET(self):
+                self.send_response(302); self.send_header('Location', f'http://127.0.0.1:{self.server.target}/'); self.end_headers()
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Redirect); server.target = self.server.server_port
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        self.addCleanup(thread.join); self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
+        with self.assertRaises(RuntimeError) as error:
+            fetch_balance('test-secret', f'http://127.0.0.1:{server.server_port}/')
+        self.assertNotIn('test-secret', str(error.exception))
+        self.assertEqual(FakeHandler.calls, 0)
+
+    def test_http_url_refused_for_remote_host(self):
+        from hq.adapters.deepseek_balance import fetch_balance
+        with patch('urllib.request.OpenerDirector.open') as op:
+            with self.assertRaises(RuntimeError): fetch_balance('test-secret', 'http://example.com/')
+            op.assert_not_called()

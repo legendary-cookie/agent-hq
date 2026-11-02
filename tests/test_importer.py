@@ -72,7 +72,25 @@ else: print((root / 'events.jsonl').read_text(), end='')
         self.apply(self.adapter.poll(self.store, self.source))
         with closing(self.store.conn()) as conn:
             self.assertEqual(conn.execute('select count(*) from events').fetchone()[0], 1)
-        self.assertIn('2026-01-02', self.calls()[-1]['args'][-1])
+        self.assertIn('2026-01-01', self.calls()[-1]['args'][-1])
+
+    def test_late_event_with_older_timestamp_imported(self):
+        self.apply(self.adapter.poll(self.store, self.source))
+        late = dict(self.event, sessionId='late', timestamp='2026-01-01T12:00:00Z')
+        (self.tools / 'events.jsonl').write_text(json.dumps(late) + '\n')
+        self.adapter._last_import = 0
+        self.apply(self.adapter.poll(self.store, self.source))
+        self.assertIn('2026-01-01T03:04:05', self.calls()[-1]['args'][-1])
+        with closing(self.store.conn()) as conn:
+            self.assertEqual(conn.execute('select count(*) from events').fetchone()[0], 2)
+
+    def test_reformatted_output_not_duplicated(self):
+        self.apply(self.adapter.poll(self.store, self.source))
+        (self.tools / 'events.jsonl').write_text(json.dumps(self.event, sort_keys=True, separators=(',', ':')) + '\n')
+        self.adapter._last_import = 0
+        self.apply(self.adapter.poll(self.store, self.source))
+        with closing(self.store.conn()) as conn:
+            self.assertEqual(conn.execute('select count(*) from events').fetchone()[0], 1)
 
     def test_imported_status_by_recency(self):
         self.assertEqual(session_status(1000, 'error', 1001, 1599, imported=True), 'active')
@@ -91,6 +109,26 @@ else: print((root / 'events.jsonl').read_text(), end='')
             self.adapter.poll(self.store, self.source)
         for call in self.calls():
             self.assertFalse(any(part in k.upper() for k in call['env'] for part in ('KEY', 'TOKEN', 'SECRET', 'PASSWORD')))
+
+    def test_second_install_rejected_while_running(self):
+        import http.client, threading
+        from hq.server import make_server
+        started, release = threading.Event(), threading.Event()
+        def install(_):
+            started.set(); release.wait(5)
+        patcher = patch('hq.adapters.importer.install', install); patcher.start(); self.addCleanup(patcher.stop)
+        server, token = make_server(self.store, Collector(self.store, self.cfg, []), self.cfg, self.root, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
+        def cleanup():
+            release.set(); server.shutdown(); server.server_close(); thread.join()
+        self.addCleanup(cleanup)
+        def request():
+            with closing(http.client.HTTPConnection('127.0.0.1', server.server_port)) as conn:
+                conn.request('POST', '/api/importer/install', '{}', {'Origin': f'http://127.0.0.1:{server.server_port}', 'X-HQ-Token': token})
+                response = conn.getresponse(); return response.status, json.loads(response.read())
+        self.assertEqual(request()[0], 200)
+        self.assertTrue(started.wait(2))
+        self.assertEqual(request(), (409, {'error':'install already running'}))
 
     def test_install_requires_token(self):
         from hq.server import make_server
@@ -129,9 +167,9 @@ class InstallCommandTests(unittest.TestCase):
 
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        with patch('shutil.which', return_value=r'C:\node\npm.cmd'), patch('subprocess.run', fake_run):
+        with patch('shutil.which', return_value='/opt/node/npm'), patch.dict(os.environ, {'PATH': '/opt/node'}), patch('subprocess.run', fake_run):
             importer.install(Path(tmp.name) / 'tools')
-        self.assertEqual(seen['args'][0], r'C:\node\npm.cmd')
+        self.assertEqual(seen['args'][0], '/opt/node/npm')
         self.assertEqual(seen['args'][-1], 'llm-usage-metrics@0.12.1')
         self.assertFalse(seen['shell'])
         self.assertGreaterEqual(seen['timeout'], 300)
@@ -145,3 +183,16 @@ class InstallCommandTests(unittest.TestCase):
         with patch('shutil.which', return_value=None):
             with self.assertRaisesRegex(RuntimeError, 'npm'):
                 importer.install(Path(tmp.name) / 'tools')
+
+    def test_install_uses_ignore_scripts(self):
+        from hq.adapters import importer
+        with tempfile.TemporaryDirectory() as tmp, patch('shutil.which', return_value='/opt/node/npm'), patch.dict(os.environ, {'PATH':'/opt/node'}), patch('hq.adapters.importer._run') as run:
+            importer.install(Path(tmp) / 'tools')
+            self.assertIn('--ignore-scripts', run.call_args.args[0])
+
+    def test_npm_in_current_dir_refused(self):
+        from hq.adapters import importer
+        with tempfile.TemporaryDirectory() as tmp, patch('shutil.which', return_value=str(Path.cwd() / 'npm')), patch.dict(os.environ, {'PATH':'.:/usr/bin'}), patch('hq.adapters.importer._run') as run:
+            with self.assertRaisesRegex(RuntimeError, 'PATH|current directory'):
+                importer.install(Path(tmp) / 'tools')
+            run.assert_not_called()

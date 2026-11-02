@@ -29,11 +29,13 @@ class FrameTests(unittest.TestCase):
         data = zstd.compress(b'a\n') + zstd.compress(b'b\n') + tail[:len(tail) // 2]
         self.assertEqual(b''.join(zstd_frames.iter_frames(data)), b'a\nb\n')
 
-    def test_broken_middle_frame_raises(self):
+    def test_broken_middle_frame_skipped(self):
         from compression import zstd
-        data = zstd.compress(b'a') + b'\x28\xb5\x2f\xfd\xff' + zstd.compress(b'b')
-        with self.assertRaises(ValueError):
-            list(zstd_frames.iter_frames(data))
+        frame = zstd.compress(b'broken' * 100)
+        data = zstd.compress(b'a') + frame[:len(frame)//2] + zstd.compress(b'b')
+        skipped = []
+        self.assertEqual(list(zstd_frames.iter_frames(data, on_skip=lambda: skipped.append(1))), [b'a', b'b'])
+        self.assertEqual(skipped, [1])
 
 
 class GroundworkTests(unittest.TestCase):
@@ -43,9 +45,12 @@ class GroundworkTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
 
     def test_normalize_provider(self):
-        self.assertEqual(normalize_provider('opencode', 'deepseek-v4.1-flash-free'), 'deepseek')
+        self.assertEqual(normalize_provider(None, 'deepseek-v4.1-flash-free'), 'deepseek')
         self.assertEqual(normalize_provider(None, 'kimi-k2'), 'moonshot')
         self.assertEqual(normalize_provider('openai', 'gpt-6'), 'openai')
+
+    def test_existing_provider_not_overwritten(self):
+        self.assertEqual(normalize_provider('ninerouter', 'deepseek-chat'), 'ninerouter')
 
     def test_relabel_under_zylos(self):
         store = Store(self.root / 'db')
@@ -53,7 +58,7 @@ class GroundworkTests(unittest.TestCase):
         session = SessionRec('s', 'claude_code', 'opencode', 'deepseek-v4', '~/zylos/workspace', None, 0, 1, None, None, 'source')
         store.apply(Batch([session], [], [], []), lambda *args: 'a', [(Path('~/zylos').expanduser(), 'zylos')])
         with closing(store.conn()) as conn:
-            self.assertEqual(conn.execute('select harness, provider from sessions').fetchone(), ('zylos', 'deepseek'))
+            self.assertEqual(conn.execute('select harness, provider from sessions').fetchone(), ('zylos', 'opencode'))
 
     def test_imported_column_and_balances_table_exist_after_migration(self):
         path = self.root / 'db'

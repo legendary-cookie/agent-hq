@@ -24,6 +24,7 @@ class ZylosAdapter:
 
     def poll(self, store, cfg):
         sessions, events, cursors = [], [], []
+        warnings = 0
         for source in cfg.paths:
             path = Path(source)
             if is_forbidden(path) or not path.is_file():
@@ -38,13 +39,19 @@ class ZylosAdapter:
                 conn.close()
             timestamps = []
             for row_id, direction, channel, content, status, timestamp in rows:
-                ts = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
+                try:
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    ts = (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).timestamp()
+                except (ValueError, TypeError, AttributeError, OverflowError):
+                    warnings += 1
+                    continue
                 timestamps.append(ts)
                 text = content[:200] if self._previews(cfg) and content is not None else None
                 events.append(EventRec('zylos:comm', f'c4:{row_id}', ts, 'user' if direction == 'in' else 'assistant', channel, text, None, None, None, None, False, None))
                 if status == 'failed':
                     events.append(EventRec('zylos:comm', f'c4:{row_id}:error', ts, 'error', channel, None, None, None, None, None, False, None))
-            if rows:
+            if timestamps:
                 sessions.append(SessionRec('zylos:comm', self.name, None, None, str(Path('~/zylos').expanduser()), 'Zylos messages', min(timestamps), max(timestamps), None, None, str(path)))
+            if rows:
                 cursors.append((self.name, str(path), rows[-1][0], path.stat().st_mtime))
-        return Batch(sessions, events, [], [], 0, cursors)
+        return Batch(sessions, events, [], [], warnings, cursors)
