@@ -25,7 +25,8 @@
 - **Original art only.** Characters, desks and rooms are drawn in code with PixiJS `Graphics`: simple shapes in the minimal Apple-like style, not copied sprites. There are no bitmap assets, so no licence questions.
 - **Colour:**
   - Status colours: working `#34c759`, needs you `#ff9f0a`, error `#ff3b30`, idle `#aeaeb2`.
-  - Harness colours: claude_code `#ff9f0a`, codex `#34c759`, antigravity `#5e5ce6`, gemini_cli `#64d2ff`, opencode `#bf5af2`, hermes `#ffd60a`, unknown `#8e8e93`.
+  - Harness colours: claude_code `#c96442`, codex `#3a7bd5`, antigravity `#7d5ce6`, gemini_cli `#4fa8d8`, opencode `#2bb3a3`, hermes `#b08968`, unknown `#8e8e93`.
+  - These were changed after the first visual check: the original palette reused the status colours, so state wasn't readable at a glance. Body colour is the harness; state shows only as ring, bubble and puff.
   - The floor and walls come from CSS variables, so light and dark mode both work.
 - **Performance:**
   - 60 NPCs animate at 60 fps on this PC; check it with the synthetic scene in Task 7.
