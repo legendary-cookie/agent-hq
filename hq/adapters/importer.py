@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -16,10 +17,14 @@ _ENV_SECRET = re.compile('KEY|TOKEN|SECRET|PASSWORD', re.I)
 _CURSOR = 'events'
 
 
-def _run(args):
+_RUN_TIMEOUT = 60
+_INSTALL_TIMEOUT = 300  # a first npm install downloads the package and its dependencies
+
+
+def _run(args, timeout=_RUN_TIMEOUT):
     env = {key: value for key, value in os.environ.items() if not _ENV_SECRET.search(key)}
     try:
-        result = subprocess.run(args, shell=False, timeout=60, env=env, capture_output=True, text=True, check=False)
+        result = subprocess.run(args, shell=False, timeout=timeout, env=env, capture_output=True, text=True, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f'Importer command unavailable or timed out: {exc}') from exc
     if result.returncode:
@@ -31,7 +36,11 @@ def install(tools_dir):
     tools_dir = Path(tools_dir)
     if is_forbidden(tools_dir):
         raise ValueError('Forbidden importer tools path')
-    _run(['npm', 'install', '--prefix', str(tools_dir), 'llm-usage-metrics@0.12.1'])
+    # On Windows npm is npm.cmd; shell=False needs its full path to launch it.
+    npm = shutil.which('npm')
+    if not npm:
+        raise RuntimeError('npm was not found on PATH; install Node.js 20+ to use the long-tail importer')
+    _run([npm, 'install', '--prefix', str(tools_dir), 'llm-usage-metrics@0.12.1'], timeout=_INSTALL_TIMEOUT)
 
 
 def _timestamp(value):

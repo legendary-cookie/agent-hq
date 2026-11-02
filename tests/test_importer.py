@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+import subprocess
 import unittest
 from contextlib import closing
 from pathlib import Path
@@ -110,3 +111,37 @@ else: print((root / 'events.jsonl').read_text(), end='')
         response = conn.getresponse()
         self.assertEqual(response.status, 403)
         response.read()
+
+
+class InstallCommandTests(unittest.TestCase):
+    """On Windows npm is npm.cmd: shell=False cannot launch a bare 'npm', so the
+    install must resolve the real path, and allow more than the 60 s run timeout."""
+
+    def test_install_resolves_npm_path_and_uses_long_timeout(self):
+        from unittest.mock import patch
+        import tempfile
+        from hq.adapters import importer
+        seen = {}
+
+        def fake_run(args, **kwargs):
+            seen['args'], seen['timeout'], seen['shell'] = args, kwargs.get('timeout'), kwargs.get('shell')
+            return subprocess.CompletedProcess(args, 0, '', '')
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with patch('shutil.which', return_value=r'C:\node\npm.cmd'), patch('subprocess.run', fake_run):
+            importer.install(Path(tmp.name) / 'tools')
+        self.assertEqual(seen['args'][0], r'C:\node\npm.cmd')
+        self.assertEqual(seen['args'][-1], 'llm-usage-metrics@0.12.1')
+        self.assertFalse(seen['shell'])
+        self.assertGreaterEqual(seen['timeout'], 300)
+
+    def test_install_without_npm_explains(self):
+        from unittest.mock import patch
+        import tempfile
+        from hq.adapters import importer
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with patch('shutil.which', return_value=None):
+            with self.assertRaisesRegex(RuntimeError, 'npm'):
+                importer.install(Path(tmp.name) / 'tools')

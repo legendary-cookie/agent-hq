@@ -161,10 +161,14 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     return self.send_json(200,{'token':token}) if valid else self.send_json(403,{'error':'forbidden'})
                 if method=='POST' and path=='/api/importer/install':
                     def run_install():
+                        with collector._lock:
+                            collector._health['importer'].update(state='installing', error=None)
                         try:
                             install(store.path.parent / 'tools')
                             cfg.sources['importer'].enabled = True
                             save_config(Path(config_dir), cfg)
+                            with collector._lock:
+                                collector._health['importer'].update(state='ok', error=None)
                         except (OSError, RuntimeError, ValueError, KeyError) as exc:
                             with collector._lock:
                                 collector._health['importer'].update(state='partial', error=str(exc), last_error_at=time.time())
