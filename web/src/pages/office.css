@@ -60,6 +60,17 @@ main:has(.office-layout) {
   position: absolute;
   inset: 0;
 }
+.office-start-error {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--panel);
+  color: var(--muted);
+  text-align: center;
+}
 .office-empty {
   position: absolute;
   top: 50%;

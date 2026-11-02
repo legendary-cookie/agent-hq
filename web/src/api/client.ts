@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { subscribeChanges } from './live';
+import { changeCounter, subscribeChanges } from './live';
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -17,7 +17,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   ) {
     return request<T>(path, init);
   }
-  const key = JSON.stringify([path, sessionStorage.getItem('hq-token')]);
+  const key = JSON.stringify([path, sessionStorage.getItem('hq-token'), changeCounter]);
   const existing = inFlight.get(key);
   if (existing) return existing as Promise<T>;
   const promise = request<T>(path, init);

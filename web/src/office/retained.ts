@@ -10,6 +10,10 @@ import { layoutIsometric } from './skins/isometric/layout';
 import { layoutTopdown } from './skins/topdown/layout';
 import { layoutTower, towerWalkPath } from './skins/tower/layout';
 
+export function hoverTitle(title: string): string {
+  return title.length > 80 ? `${title.slice(0, 80)}…` : title;
+}
+
 type Kind = 'isometric' | 'topdown' | 'tower';
 type Layout =
   | ReturnType<typeof layoutIsometric>
@@ -43,6 +47,7 @@ function alongPath(path: Point[], progress: number): Point {
 export class RetainedSkin implements Skin {
   private app = new Application();
   private host: HTMLElement | null = null;
+  private initialized = false;
   private width = 800;
   private height = 500;
   private key = '';
@@ -63,6 +68,7 @@ export class RetainedSkin implements Skin {
     id: string;
     at: Point;
     depth: number;
+    scale?: number;
   }[] = [];
   private hovered: string | null = null;
   private selected: string | null = null;
@@ -78,6 +84,7 @@ export class RetainedSkin implements Skin {
   async mount(host: HTMLElement) {
     this.host = host;
     await this.app.init({ backgroundAlpha: 0, antialias: this.kind !== 'topdown', resizeTo: host });
+    this.initialized = true;
     host.appendChild(this.app.canvas);
     this.objects.sortableChildren = true;
     this.hover.addChild(this.hoverBackground, this.hoverText);
@@ -88,6 +95,7 @@ export class RetainedSkin implements Skin {
   resize(width: number, height: number) {
     this.width = width;
     this.height = height;
+    if (this.initialized) this.app.renderer.resize(width, height);
   }
   setSelected(id: string | null) {
     this.selected = id;
@@ -326,7 +334,12 @@ export class RetainedSkin implements Skin {
       person.body.y = offset;
       person.bubble.y = offset;
       person.puff.y = offset;
-      this.targets.push({ id: npc.id, at: displayAt, depth: displayAt.y });
+      this.targets.push({
+        id: npc.id,
+        at: displayAt,
+        depth: displayAt.y,
+        scale: (this.kind === 'tower' ? layout.scale : 1) * (this.hovered === npc.id ? 1.1 : 1),
+      });
     }
     this.paths.clear();
     if (this.kind !== 'tower' && !theme.reducedMotion)
@@ -356,7 +369,7 @@ export class RetainedSkin implements Skin {
     if (npc && person?.at && this.hover.visible) {
       const signature = JSON.stringify([npc.title, npc.harness, theme.floorAlt, theme.text]);
       if (signature !== this.hoverSignature) {
-        this.hoverText.text = `${harnessLabel(npc.harness)} · ${npc.title}`;
+        this.hoverText.text = `${harnessLabel(npc.harness)} · ${hoverTitle(npc.title)}`;
         this.hoverText.style.fill = theme.text;
         this.hoverText.position.set(-this.hoverText.width / 2, -this.hoverText.height / 2);
         this.hoverBackground
@@ -380,6 +393,9 @@ export class RetainedSkin implements Skin {
   destroy() {
     this.host?.removeEventListener('mousemove', this.move);
     this.host?.removeEventListener('mouseleave', this.leave);
-    this.app.destroy(true, { children: true });
+    if (this.initialized) {
+      this.initialized = false;
+      this.app.destroy(true, { children: true });
+    }
   }
 }

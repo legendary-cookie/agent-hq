@@ -111,3 +111,60 @@ it('ticker shows newest recent delegation', async () => {
   render(<Office skinFactory={factory} />);
   expect(await screen.findByText(/delegated implementation to codex · gpt/)).toBeInTheDocument();
 });
+it('no walks when data first arrives', async () => {
+  const sceneModule = await import('../office/scene');
+  const build = vi.spyOn(sceneModule, 'buildScene');
+  sessions = [
+    { ...session, id: 'parent', harness: 'claude_code' },
+    { ...session, id: 'child', parent_id: 'parent' },
+  ];
+  delegations = [
+    {
+      id: 'd',
+      ts: Date.now() / 1000,
+      provider: 'codex',
+      model: 'm',
+      task_kind: 'work',
+      outcome: 'ok',
+    },
+  ];
+  render(<Office skinFactory={factory} />);
+  await screen.findByRole('button', { name: /codex.*Build feature/i });
+  expect(build.mock.results[build.mock.results.length - 1]?.value.walks).toEqual([]);
+  build.mockRestore();
+});
+it('filtering does not move seats', async () => {
+  const sceneModule = await import('../office/scene');
+  const build = vi.spyOn(sceneModule, 'buildScene');
+  sessions = [
+    { ...session, id: 'parent', harness: 'claude_code' },
+    { ...session, id: 'child', parent_id: 'parent' },
+  ];
+  render(<Office skinFactory={factory} />);
+  await screen.findByRole('button', { name: /codex.*Build feature/i });
+  const initial = build.mock.results[build.mock.results.length - 1]?.value.npcs.find(
+    (n: { id: string }) => n.id === 'child',
+  )?.deskId;
+  fireEvent.change(screen.getByLabelText('Harness'), { target: { value: 'claude_code' } });
+  fireEvent.change(screen.getByLabelText('Harness'), { target: { value: '' } });
+  const last = build.mock.results[build.mock.results.length - 1]?.value;
+  expect(last.npcs.find((n: { id: string }) => n.id === 'child').deskId).toBe(initial);
+  expect(last.walks).toEqual([]);
+  build.mockRestore();
+});
+it('mount failure shows fallback', async () => {
+  const failedFactory = async () =>
+    ({
+      mount: async () => {
+        throw new Error('WebGL');
+      },
+      render: vi.fn(),
+      pick: vi.fn(),
+      resize: vi.fn(),
+      destroy: vi.fn(),
+    }) as Skin;
+  render(<Office skinFactory={failedFactory} />);
+  expect(
+    await screen.findByText('The office view could not start (WebGL unavailable).'),
+  ).toBeInTheDocument();
+});

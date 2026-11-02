@@ -43,24 +43,36 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
   }, [settings]);
   // Dev-only performance check: `?synthetic=60` replaces live sessions with fakes.
   const synthetic = import.meta.env.DEV ? syntheticCount(location.search) : 0;
-  const filtered = useMemo(
-    () =>
-      (synthetic ? makeSyntheticSessions(synthetic, Date.now() / 1000) : (sessions ?? [])).filter(
-        (s) => (!harness || s.harness === harness) && (!account || s.account_id === account),
-      ),
-    [sessions, harness, account, synthetic],
+  const allSessions = useMemo(
+    () => (synthetic ? makeSyntheticSessions(synthetic, Date.now() / 1000) : (sessions ?? [])),
+    [sessions, synthetic],
   );
-  const scene = useMemo(() => {
+  const fullScene = useMemo(() => {
+    const loaded = sessions !== null && delegations !== null;
     const next = buildScene(
-      filtered,
+      allSessions,
       delegations ?? [],
       memory.current,
       Date.now() / 1000,
-      previous.current,
+      loaded ? previous.current : undefined,
     );
-    previous.current = next;
+    if (loaded) previous.current = next;
     return next;
-  }, [filtered, delegations]);
+  }, [allSessions, sessions, delegations]);
+  const scene = useMemo(() => {
+    const visible = new Set(
+      allSessions
+        .filter(
+          (s) => (!harness || s.harness === harness) && (!account || s.account_id === account),
+        )
+        .map((s) => s.id),
+    );
+    return {
+      ...fullScene,
+      npcs: fullScene.npcs.filter((npc) => visible.has(npc.sessionId)),
+      walks: fullScene.walks.filter((walk) => visible.has(walk.npcId)),
+    };
+  }, [allSessions, fullScene, harness, account]);
   const latest = [...(delegations ?? [])].sort((a, b) => b.ts - a.ts)[0];
   useEffect(() => {
     if (!latest || Date.now() / 1000 - latest.ts > 60 || latest.ts > Date.now() / 1000) return;

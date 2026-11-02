@@ -114,3 +114,24 @@ it('live false does not refetch on change', async () => {
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
   expect(fetcher.mock.calls.filter(([path]) => path === '/settings-test')).toHaveLength(1);
 });
+it('refresh after change does not reuse in-flight request', async () => {
+  const { renderHook, act } = await import('@testing-library/react');
+  const { useApi } = await import('./client');
+  let changed!: () => void;
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener(_: string, cb: () => void) {
+        changed = cb;
+      }
+      close() {}
+    },
+  );
+  const fetcher = vi.fn().mockImplementation(() => new Promise(() => {}));
+  vi.stubGlobal('fetch', fetcher);
+  renderHook(() => useApi('/pending-change'));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  act(() => changed());
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+});

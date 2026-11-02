@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { readTheme } from './motion';
 import type { Scene } from './scene';
 import type { Skin, SkinId } from './skin';
@@ -13,11 +13,13 @@ type Props = {
 };
 export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Props) {
   const host = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
   const current = useRef({ scene, selectedId, onPick });
   current.current = { scene, selectedId, onPick };
   useEffect(() => {
     const element = host.current;
     if (!element) return;
+    setFailed(false);
     let active = true;
     let instance: Skin | null = null;
     let mounting = false;
@@ -48,22 +50,29 @@ export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Prop
     };
     document.addEventListener('visibilitychange', visibility);
     element.addEventListener('click', click);
-    (skinFactory ? skinFactory(skin) : SKINS[skin].create()).then(async (created) => {
-      if (!active) {
-        created.destroy();
-        return;
-      }
-      instance = created;
-      mounting = true;
-      await created.mount(element);
-      mounting = false;
-      if (!active) {
-        created.destroy();
-        return;
-      }
-      resize();
-      visibility();
-    });
+    (skinFactory ? skinFactory(skin) : SKINS[skin].create())
+      .then(async (created) => {
+        if (!active) {
+          created.destroy();
+          return;
+        }
+        instance = created;
+        mounting = true;
+        await created.mount(element);
+        mounting = false;
+        if (!active) {
+          created.destroy();
+          return;
+        }
+        resize();
+        visibility();
+      })
+      .catch(() => {
+        mounting = false;
+        instance?.destroy();
+        instance = null;
+        if (active) setFailed(true);
+      });
     return () => {
       active = false;
       cancelAnimationFrame(frame);
@@ -73,5 +82,13 @@ export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Prop
       if (!mounting) instance?.destroy();
     };
   }, [skin, skinFactory]);
-  return <div ref={host} className="office-canvas" />;
+  return (
+    <div ref={host} className="office-canvas">
+      {failed && (
+        <div className="office-start-error" role="alert">
+          The office view could not start (WebGL unavailable).
+        </div>
+      )}
+    </div>
+  );
 }
