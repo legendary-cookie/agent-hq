@@ -226,3 +226,13 @@ class ImporterDetectionTests(unittest.TestCase):
         from hq import server
         self.assertNotIn('save_config(Path(config_dir), cfg)\n                            with collector._lock:\n                                collector._health[\'importer\']',
                          Path(server.__file__).read_text(encoding='utf-8'))
+
+
+class ImporterEventKeyTests(unittest.TestCase):
+    def test_events_differing_only_in_cache_or_reasoning_are_kept_apart(self):
+        from hq.adapters import importer
+        base = {'source': 'goose', 'sessionId': 's', 'timestamp': '2026-11-03T10:00:00Z', 'model': 'm',
+                'inputTokens': 10, 'outputTokens': 5, 'reasoningTokens': 0, 'cacheReadTokens': 0, 'cacheWriteTokens': 0}
+        other = dict(base, cacheReadTokens=999, reasoningTokens=3)
+        self.assertNotEqual(importer.event_key(base), importer.event_key(other))
+        self.assertEqual(importer.event_key(base), importer.event_key(dict(base)))

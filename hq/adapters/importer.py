@@ -15,6 +15,14 @@ from ..records import Batch, EventRec, SessionRec
 _EXCLUDED = frozenset({'claude', 'codex', 'opencode', 'gemini', 'antigravity', 'kimi', 'dsh'})
 _ENV_SECRET = re.compile('KEY|TOKEN|SECRET|PASSWORD', re.I)
 _CURSOR = 'events'
+_KEY_FIELDS = ('source', 'sessionId', 'timestamp', 'model', 'inputTokens', 'outputTokens',
+               'reasoningTokens', 'cacheReadTokens', 'cacheWriteTokens')
+
+
+def event_key(row: dict) -> str:
+    """Stable id for an imported event: the same usage re-imported (or re-formatted
+    by the tool) keeps its id; events differing in any token count stay apart."""
+    return hashlib.sha1('|'.join(str(row.get(k, '')) for k in _KEY_FIELDS).encode('utf-8')).hexdigest()
 
 
 _RUN_TIMEOUT = 60
@@ -98,7 +106,7 @@ class ImporterAdapter:
                 ts = _timestamp(row['timestamp'])
                 model = row.get('model')
                 sessions.append(SessionRec(sid, source, row.get('provider'), model, row.get('repoRoot'), None, ts, ts, None, None, 'llm-usage-metrics', True))
-                events.append(EventRec(sid, hashlib.sha1('|'.join(str(row.get(k, '')) for k in ('source', 'sessionId', 'timestamp', 'model', 'inputTokens', 'outputTokens')).encode('utf-8')).hexdigest(), ts, 'assistant', None, None, row['inputTokens'], row['outputTokens'] + row['reasoningTokens'], row['cacheReadTokens'], row['cacheWriteTokens'], False, model))
+                events.append(EventRec(sid, event_key(row), ts, 'assistant', None, None, row['inputTokens'], row['outputTokens'] + row['reasoningTokens'], row['cacheReadTokens'], row['cacheWriteTokens'], False, model))
                 latest = max(latest, ts)
             except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
                 warnings += 1
