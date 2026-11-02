@@ -5,7 +5,7 @@ A local dashboard for watching AI coding agents across harnesses: Claude Code, C
 Status:
 - **Milestone 1:** backend. Done.
 - **Milestone 2:** web UI with Dashboard, Agents, Limits and Settings. Done.
-- **Milestone 3:** the isometric office view. Next.
+- **Milestone 3:** the office view, with isometric, top-down and tower skins. Done.
 
 Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
@@ -44,6 +44,20 @@ If a page shows "Open Agent HQ from the link…", restart and use the new link, 
 
 ## Web UI
 
+**Office** (the start page) shows every agent from the last 24 hours as a small figure in an office:
+- One zone per harness, tinted in that harness's colour and labelled with its agent count, plus a break room.
+- Figures are coloured by harness. Their state shows as a ring and marker:
+  - **Working:** green ring and a gentle typing bob.
+  - **Needs you:** orange ring and a "!" bubble.
+  - **Error:** red ring and a red puff.
+  - **Idle:** grey ring. The figure waits in the break room and keeps its desk reserved, shown dimmed.
+- Agents keep their desk as others come and go.
+- A new subagent, or a Claude → Codex/Antigravity/Hermes/opencode delegation, makes a figure walk between zones. A small ticker shows the latest delegation.
+- Hover shows the agent's title. Click opens the same inspector as the Agents page.
+- Skins: **Isometric** (default), **Top-down** and **Tower**, one floor per harness with a lift. Your choice is remembered; the default is set in Settings.
+- Harness and account filters. A hidden list of agents is available to screen readers.
+- With reduced motion on, figures move without walking.
+
 - **Dashboard:**
   - Range: today, week or month. Group by harness, provider, model or account.
   - KPI tiles with change against the previous period.
@@ -61,7 +75,7 @@ If a page shows "Open Agent HQ from the link…", restart and use the new link, 
 
 Everything refreshes live when new log lines arrive. Light and dark mode follow the system. The layout works from 1024 px wide.
 
-For UI development, run `python -m hq --no-browser`, then `npm --prefix web run dev`. Open the dev URL with `#token=<token>`; the dev server forwards `/api` to port 7420.
+For UI development, run `python -m hq --no-browser`, then `npm --prefix web run dev`. Open the dev URL with `#token=<token>`; the dev server forwards `/api` to port 7420. In the dev build only, `?synthetic=60` replaces the office's agents with 60 fake ones, for checking performance.
 
 | Flag | Meaning |
 |---|---|

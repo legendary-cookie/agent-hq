@@ -6,12 +6,14 @@ import { useApi } from '../api/client';
 import { useRoute } from './router';
 import { TokenHelp } from './TokenHelp';
 import type { Route } from './router';
+import { Office } from '../pages/Office';
 import { Dashboard } from '../pages/Dashboard';
 import { Agents } from '../pages/Agents';
 import { Limits } from '../pages/Limits';
 import { Settings } from '../pages/Settings';
 
 const PAGES: Record<Route, () => JSX.Element> = {
+  office: Office,
   dashboard: Dashboard,
   agents: Agents,
   limits: Limits,

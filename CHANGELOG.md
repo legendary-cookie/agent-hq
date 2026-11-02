@@ -1,5 +1,54 @@
 # Changelog
 
+## 0.3.0 (2026-11-02): office view, Milestone 3
+
+Added
+- **Office page, now the start page:** every agent from the last 24 h is a figure in an office.
+  - One tinted zone per harness, plus a break room.
+  - The figure's body is coloured by harness. Its state shows as a ring, with a "!" bubble when it needs you and a red puff on error.
+  - Idle agents wait in the break room with their desk kept, shown dimmed.
+  - Desks stay stable as agents come and go.
+  - New subagents and delegations walk between zones, and a ticker shows the latest delegation.
+  - Hover shows the title; click opens the inspector.
+  - Filters by harness and account, and a hidden agent list for screen readers.
+- **Three skins:** Isometric (default), Top-down, and Tower (one floor per harness, with a lift). The choice is remembered; the default comes from Settings.
+- **Under the hood:**
+  - PixiJS 8, loaded only when the Office opens. All art is drawn in code, with no bitmap assets.
+  - A retained scene graph: the static layer is rebuilt only when rooms, size or theme change, and each NPC is one persistent object.
+- **API:** `GET /api/delegations` returns the delegation feed (no notes).
+- **Dev only:** `?synthetic=N` for performance checks, removed from production builds.
+
+Fixed (found by checking the running office on real data)
+- **Walks never showed:** delegations reach the page 3–7 s late, which the first walk rule missed.
+- **History animated:** the first scene made every existing subagent walk.
+- **Scattered layout:** rooms floated as separate plates. Labels used raw ids and were covered by figures. Harness colours were the same as status colours.
+- **Dark mode:** the office floor ignored it.
+- **1–2 fps with 60 agents:** every skin rebuilt the whole stage and every text label each frame. Now **100 fps** for all three skins, the display's refresh rate.
+- **Tower cut off:** its bottom floor was hidden by page scroll.
+- **Duplicate requests:** each refresh sent some requests twice.
+- **Node 25+ tests:** a broken global `localStorage` failed the Office tests on Windows.
+
+Independent review (risk gate)
+- Reviewer: a fresh Claude Opus agent. Security clean (the delegations endpoint, rendering of titles, nothing leaving the machine). 3 medium, 3 low and 1 minor finding, all fixed test-first:
+  - History animated on first load.
+  - The canvas didn't follow the stage's size.
+  - Tower clicks picked the wrong agent at small scale.
+  - Filters reshuffled desks.
+  - A refresh could reuse a stale request.
+  - Teardown crashed before start, and a failed WebGL start left a blank stage.
+  - Very long hover titles.
+
+Verified (2026-11-02)
+- Tests: 100 web, 123 Python (two DST tests skip on Windows).
+- Real logs, light and dark mode: all three skins showed the right agents in the right zones. Click opened the right session, with no console errors.
+- 60 synthetic agents: 100 fps in each skin, against a no-canvas baseline of 100 fps.
+- 30 skin switches left 1 canvas, and the JS heap went from 22 MB to 16 MB.
+- With the inspector open and closed, the canvas width follows the stage (966 → 666 → 966 px).
+
+Known limits
+- With hundreds of agents, Isometric and Top-down get crowded and partly clipped.
+- Reduced motion is covered by tests and code review only, because this browser can't emulate the setting.
+
 ## 0.2.0 (2026-10-31): web UI, Milestone 2
 
 Added

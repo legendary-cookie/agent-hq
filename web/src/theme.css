@@ -16,6 +16,11 @@
   --waiting: #ff9f0a;
   --error: #ff3b30;
   --idle: #aeaeb2;
+  --office-floor: #f2f2f7;
+  --office-floor-alt: #e9e9ee;
+  --office-wall: #c7c7cc;
+  --office-label-bg: #ffffff;
+  --office-label-text: #6e6e73;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -29,6 +34,11 @@
     --sidebar: rgba(35, 35, 37, 0.8);
     --muted: #98989d;
     --border: rgba(255, 255, 255, 0.12);
+    --office-floor: #2c2c2e;
+    --office-floor-alt: #323234;
+    --office-wall: #636366;
+    --office-label-bg: #48484a;
+    --office-label-text: #f5f5f7;
   }
 }
 * {

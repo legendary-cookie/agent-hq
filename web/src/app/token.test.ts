@@ -5,7 +5,7 @@ it('stores token from hash and rewrites hash', () => {
   history.replaceState(null, '', '/#token=abc');
   expect(bootstrapToken(location, sessionStorage)).toBe('abc');
   expect(sessionStorage.getItem('hq-token')).toBe('abc');
-  expect(location.hash).toBe('#/dashboard');
+  expect(location.hash).toBe('#/office');
 });
 it('falls back to stored token', () => {
   sessionStorage.setItem('hq-token', 'saved');
@@ -26,7 +26,7 @@ it('bootstrap exchanges code for token', async () => {
     expect.objectContaining({ method: 'POST', body: JSON.stringify({ code: 'once' }) }),
   );
   expect(sessionStorage.getItem('hq-token')).toBe('exchanged');
-  expect(location.hash).toBe('#/dashboard');
+  expect(location.hash).toBe('#/office');
   vi.unstubAllGlobals();
 });
 

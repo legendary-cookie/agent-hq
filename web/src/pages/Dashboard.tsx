@@ -16,7 +16,7 @@ import type { KpiBlock, Kpis, Overview, SeriesRow, SessionRow, Tokens } from '..
 import { EmptyState } from '../components/EmptyState';
 import { Inspector } from '../components/Inspector';
 import { KpiTile } from '../components/KpiTile';
-import { Pill } from '../components/Pill';
+import { StatusPills } from '../components/StatusPills';
 import { Segmented } from '../components/Segmented';
 import { fmtDelta, fmtPct, fmtTokens, fmtUsd } from '../lib/format';
 import './dashboard.css';
@@ -154,24 +154,7 @@ export function Dashboard() {
             />
           </div>
         </div>
-        {overview && (
-          <div className="dashboard-pills">
-            <Pill color="var(--working)">{overview.status_counts.working ?? 0} working</Pill>
-            <Pill color="var(--waiting)">{overview.status_counts.waiting ?? 0} needs you</Pill>
-            <Pill color="var(--idle)">{overview.status_counts.idle ?? 0} idle</Pill>
-            {overview.best_now?.[0] && (
-              <Pill>
-                Best now: {overview.best_now[0].provider} · {overview.best_now[0].model}
-              </Pill>
-            )}
-            <Pill>
-              Today · {fmtTokens(totalTokens(overview.tokens))} tokens ·{' '}
-              {overview.value.total_usd === 0 && overview.value.unpriced_tokens > 0
-                ? 'value unpriced'
-                : fmtUsd(overview.value.total_usd, { estimated: overview.value.estimated })}
-            </Pill>
-          </div>
-        )}
+        {overview && <StatusPills overview={overview} />}
         {error && !kpis && <p>Unable to load dashboard.</p>}
         {kpis && (
           <>

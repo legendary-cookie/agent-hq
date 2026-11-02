@@ -7,8 +7,10 @@ let debounce: ReturnType<typeof setTimeout> | undefined;
 let delay = 1000;
 let reconnecting = false;
 let errors = 0;
+export let changeCounter = 0;
 
 function notify() {
+  changeCounter++;
   subscribers.forEach((subscriber) => subscriber());
 }
 
@@ -19,6 +21,7 @@ function connect() {
   source = connection;
   connection.addEventListener('changed', () => {
     if (source !== connection) return;
+    changeCounter++;
     clearTimeout(debounce);
     debounce = setTimeout(notify, 1000);
   });

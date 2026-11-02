@@ -162,3 +162,11 @@ export interface SeriesRow {
   tasks: number;
   errors: number;
 }
+export interface DelegationRow {
+  id: string;
+  ts: number;
+  provider: string;
+  model: string;
+  task_kind: string;
+  outcome: string;
+}

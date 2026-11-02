@@ -1,0 +1,115 @@
+main:has(.office-layout) {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 0;
+}
+
+.office-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.office-layout .inspector {
+  max-height: 100%;
+}
+.office-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 22px 28px;
+}
+.office-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.office-header h1 {
+  margin: 0;
+  font-size: 26px;
+}
+.office-filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.office-filters select {
+  margin-left: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+}
+.office-stage {
+  position: relative;
+  flex: 1;
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--panel);
+}
+.office-canvas {
+  position: absolute;
+  inset: 0;
+}
+.office-start-error {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--panel);
+  color: var(--muted);
+  text-align: center;
+}
+.office-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: var(--muted);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.office-ticker {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 12px;
+  animation: office-fade 6s forwards;
+}
+@keyframes office-fade {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.office-accessible {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.office-accessible:focus-within {
+  position: static;
+  width: auto;
+  height: auto;
+  clip-path: none;
+}

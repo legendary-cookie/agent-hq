@@ -41,7 +41,6 @@ it('shows token help on 403', async () => {
   render(createElement(App));
   await waitFor(() => expect(screen.getByText(/Open Agent HQ from the link/)).toBeInTheDocument());
 });
-
 it('useApi clears data when path changes', async () => {
   const { renderHook } = await import('@testing-library/react');
   const { useApi } = await import('./client');
@@ -63,7 +62,10 @@ it('useApi clears data when path changes', async () => {
       ),
   );
   const { result, rerender } = renderHook(
-    ({ path }: { path: string | null }) => useApi<{ name: string }>(path),
+    ({ path }: { path: string | null }) =>
+      useApi<{
+        name: string;
+      }>(path),
     { initialProps: { path: '/a' as string | null } },
   );
   await waitFor(() => expect(result.current.data?.name).toBe('a'));
@@ -72,4 +74,64 @@ it('useApi clears data when path changes', async () => {
   rerender({ path: null });
   expect(result.current.data).toBeNull();
   expect(result.current.loading).toBe(false);
+});
+it('concurrent identical requests share one fetch', async () => {
+  let resolve!: (value: unknown) => void;
+  const fetcher = vi.fn().mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  vi.stubGlobal('fetch', fetcher);
+  const first = api('/shared');
+  const second = api('/shared');
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  resolve({ ok: true, json: async () => ({ ok: true }) });
+  expect(await Promise.all([first, second])).toEqual([{ ok: true }, { ok: true }]);
+  await api('/shared');
+  expect(fetcher).toHaveBeenCalledTimes(2);
+});
+it('live false does not refetch on change', async () => {
+  const { renderHook, act } = await import('@testing-library/react');
+  const { useApi } = await import('./client');
+  let changed: (() => void) | undefined;
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener(name: string, callback: () => void) {
+        if (name === 'changed') changed = callback;
+      }
+      close() {}
+    },
+  );
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
+  vi.stubGlobal('fetch', fetcher);
+  renderHook(() => useApi('/settings-test', { live: false }));
+  renderHook(() => useApi('/live-test'));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  act(() => changed?.());
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+  expect(fetcher.mock.calls.filter(([path]) => path === '/settings-test')).toHaveLength(1);
+});
+it('refresh after change does not reuse in-flight request', async () => {
+  const { renderHook, act } = await import('@testing-library/react');
+  const { useApi } = await import('./client');
+  let changed!: () => void;
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener(_: string, cb: () => void) {
+        changed = cb;
+      }
+      close() {}
+    },
+  );
+  const fetcher = vi.fn().mockImplementation(() => new Promise(() => {}));
+  vi.stubGlobal('fetch', fetcher);
+  renderHook(() => useApi('/pending-change'));
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  act(() => changed());
+  await new Promise((resolve) => setTimeout(resolve, 1100));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
 });
