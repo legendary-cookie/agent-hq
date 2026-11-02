@@ -57,3 +57,41 @@ it('Settings shows 400 message', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
   expect(await screen.findByText('Invalid settings')).toBeInTheDocument();
 });
+
+it('Settings shows untested label and price source', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockImplementation(async (path: string) => ({
+        ok: true,
+        json: async () =>
+          path === '/api/settings'
+            ? { ...settings, price_sources: { priced: 'yours', 'unpriced-model': 'litellm' } }
+            : path === '/api/health'
+              ? { ...health, codex: { ...health.codex, tested: 'upstream' } }
+              : kpis,
+      })),
+  );
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener() {}
+      close() {}
+    },
+  );
+  render(<Settings />);
+  expect(await screen.findByText(/untested on this PC/)).toBeInTheDocument();
+  expect(screen.getByText(/LiteLLM/)).toBeInTheDocument();
+});
+
+it('Settings install importer posts', async () => {
+  const fetcher = setup();
+  fireEvent.click(await screen.findByRole('button', { name: 'Install long-tail importer' }));
+  await waitFor(() =>
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/importer/install',
+      expect.objectContaining({ method: 'POST' }),
+    ),
+  );
+});

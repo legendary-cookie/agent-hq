@@ -1,8 +1,9 @@
 import fnmatch
 import json
 import os
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path, PureWindowsPath
+from .pricebook import PriceBook
 
 @dataclass
 class SourceCfg:
@@ -35,6 +36,13 @@ class Config:
     alerts: dict
     default_skin: str
     recommend_task_kind: str
+    relabel: list[tuple[Path, str]] = field(default_factory=list)
+    zylos_previews: bool = False
+    deepseek_alert: float = 5.0
+    pricebook: PriceBook = field(init=False, compare=False)
+
+    def __post_init__(self):
+        self.pricebook = PriceBook(self.prices, {}, {})
 
 class ForbiddenPathError(ValueError):
     pass
@@ -59,15 +67,26 @@ def load_config(config_dir: Path) -> Config:
     sources = read('sources.json')
     accounts = read('accounts.json')
     prices = read('prices.json')
-    return Config({k: SourceCfg(v['enabled'], [_path(p) for p in v['paths']]) for k, v in sources['sources'].items()},
+    cfg = Config({k: SourceCfg(v['enabled'], [_path(p) for p in v['paths']]) for k, v in sources['sources'].items()},
                   [Account(**a) for a in accounts], {k: Price(**v) for k, v in prices.items()},
                   sources.get('alerts', {'thresholds': [80, 95], 'toast': False}),
-                  sources.get('default_skin', 'isometric'), sources.get('recommend_task_kind', 'coding'))
+                  sources.get('default_skin', 'isometric'), sources.get('recommend_task_kind', 'coding'),
+                  [(_path(rule['under']), rule['harness']) for rule in sources.get('relabel', [])],
+                  sources.get('zylos_previews', False), sources.get('deepseek_alert', 5.0))
+    snapshot_path = config_dir / 'prices.litellm.json'
+    if not snapshot_path.exists():
+        snapshot_path = Path(__file__).resolve().parent.parent / 'config' / 'prices.litellm.json'
+    if snapshot_path.exists():
+        snapshot = json.loads(snapshot_path.read_text(encoding='utf-8'))
+        cfg.pricebook = PriceBook(cfg.prices, {k: Price(**v) for k, v in snapshot['models'].items()}, snapshot['aliases'])
+    return cfg
 
 def save_config(config_dir: Path, cfg: Config) -> None:
     config_dir.mkdir(parents=True, exist_ok=True)
     sources = {'sources': {k: {'enabled': v.enabled, 'paths': [str(p) for p in v.paths]} for k, v in cfg.sources.items()},
-               'alerts': cfg.alerts, 'default_skin': cfg.default_skin, 'recommend_task_kind': cfg.recommend_task_kind}
+               'alerts': cfg.alerts, 'default_skin': cfg.default_skin, 'recommend_task_kind': cfg.recommend_task_kind,
+               'relabel': [{'under': str(path), 'harness': harness} for path, harness in cfg.relabel],
+               'zylos_previews': cfg.zylos_previews, 'deepseek_alert': cfg.deepseek_alert}
     for name, data in [('sources.json', sources), ('accounts.json', [asdict(a) for a in cfg.accounts]), ('prices.json', {k: asdict(v) for k, v in cfg.prices.items()})]:
         (config_dir / name).write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
 

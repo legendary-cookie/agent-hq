@@ -1,0 +1,1 @@
+# llm-usage-metrics v0.12.1 packages/core/tests/fixtures/kimi/{cli,code}/ (wire.jsonl files).

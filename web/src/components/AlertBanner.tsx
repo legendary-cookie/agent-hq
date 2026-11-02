@@ -3,9 +3,9 @@ import type { LimitCard, Overview } from '../api/types';
 import { fmtPercentValue } from '../lib/format';
 import './components.css';
 
-const severity: Record<string, number> = { blocked: 3, critical: 2, warn: 1 };
+const severity: Record<string, number> = { blocked: 3, critical: 2, warn: 1, low_balance: 1 };
 const alertKey = (alert: Overview['alerts'][number]) =>
-  JSON.stringify([alert.account_id, alert.window, alert.scope]);
+  JSON.stringify([alert.account_id, alert.window, alert.scope, alert.balance?.currency]);
 
 export function AlertBanner({
   alerts,
@@ -58,10 +58,12 @@ export function AlertBanner({
   return (
     <div className="alert-banner" role="alert">
       <span>
-        {label} · {subject}{' '}
-        {alert.level === 'blocked'
-          ? `blocked${reset}`
-          : `at ${fmtPercentValue(alert.used_percent)}`}
+        {label} · {alert.level === 'low_balance' ? '' : subject}{' '}
+        {alert.level === 'low_balance'
+          ? `low balance: ${alert.balance?.currency ?? ''} ${alert.balance?.total.toFixed(2) ?? ''}`
+          : alert.level === 'blocked'
+            ? `blocked${reset}`
+            : `at ${fmtPercentValue(alert.used_percent ?? null)}`}
       </span>
       {active.length > 1 && <a href="#/limits">+{active.length - 1} more</a>}
       <button

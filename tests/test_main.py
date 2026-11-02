@@ -6,7 +6,7 @@ class MainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             p=subprocess.run([sys.executable,'-m','hq','--once','--config','tests/fixtures/config','--db',str(Path(tmp)/'db')],capture_output=True,text=True)
             self.assertEqual(p.returncode,0,p.stderr)
-            for name in ('claude_code','codex','opencode','antigravity','gemini_cli','provider_usage'): self.assertIn(name,p.stdout)
+            for name in ('claude_code','codex','opencode','antigravity','gemini_cli','provider_usage','kimi','dsh','zylos','deepseek_balance','importer'): self.assertIn(name,p.stdout)
 
     def test_token_reused_across_launches(self):
         from hq.__main__ import load_token

@@ -1,5 +1,6 @@
 export interface SessionRow {
   id: string;
+  imported: 0 | 1;
   harness: string | null;
   provider: string | null;
   model: string | null;
@@ -43,10 +44,18 @@ export interface LimitWindow {
   forecast_s: number | null;
   burn_tokens_per_h: number;
 }
+export interface Balance {
+  currency: string;
+  total: number;
+  granted: number;
+  topped_up: number;
+  recorded_at: number;
+}
 export interface LimitCard {
   account_id: string;
   label: string;
   windows: LimitWindow[];
+  balance?: Balance;
 }
 export interface Recommendation {
   provider: string;
@@ -60,10 +69,11 @@ export interface Overview {
   tokens: Tokens;
   alerts: {
     account_id: string;
-    window: string | null;
-    scope: string | null;
+    window?: string | null;
+    scope?: string | null;
     level: string;
-    used_percent: number | null;
+    used_percent?: number | null;
+    balance?: Balance;
   }[];
 }
 export interface Value {
@@ -151,8 +161,22 @@ export interface Settings {
   alerts: { thresholds: number[]; toast: boolean };
   default_skin: string;
   recommend_task_kind: string;
+  zylos_previews: boolean;
+  deepseek_alert: number;
+  price_sources: Record<string, 'yours' | 'litellm' | 'unpriced'>;
 }
-export type Health = Record<string, unknown> & { recommend: string | null };
+export interface ReaderHealth {
+  state: string;
+  tested: 'real' | 'upstream';
+  last_pass: number | null;
+  warnings: number;
+  error: string | null;
+  last_error_at: number | null;
+}
+export type Health = Record<string, ReaderHealth | string | null> & {
+  recommend: string | null;
+  importer: ReaderHealth;
+};
 export interface SeriesRow {
   t: number;
   key: string;

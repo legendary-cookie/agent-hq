@@ -9,6 +9,7 @@ import './agents.css';
 const statuses = [
   ['all', 'All'],
   ['working', 'Working'],
+  ['active', 'Active (imported)'],
   ['waiting', 'Needs you'],
   ['idle', 'Idle'],
   ['done', 'Done'],
@@ -116,7 +117,9 @@ export function Agents() {
                   <td>
                     <span
                       className={`status-dot agents-status-dot status-${row.status ?? 'idle'}`}
-                      aria-label={row.status ?? 'unknown'}
+                      aria-label={
+                        row.status === 'active' ? 'Active (imported)' : (row.status ?? 'unknown')
+                      }
                     />
                   </td>
                   <td className={depth ? 'agents-child' : undefined}>

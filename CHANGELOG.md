@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.4.0 (2026-11-03): more sources, Milestone 4
+
+Added
+- **Our own readers:**
+  - **Kimi** (Kimi Code and Kimi CLI), including subagent folders.
+  - **DeepSeek Harness**, v4 and v3 logs, including subagents linked through the child's report to its parent.
+  - **Zylos**: its comm-bridge messages become events; Claude and Codex sessions under `~/zylos` are relabelled Zylos; message text is off by default.
+  - **Antigravity token counts and models**, via a stdlib port of llm-usage-metrics' protobuf decoder.
+- **DeepSeek as a provider**, plus a **DeepSeek API balance** card on Limits (opt-in key, 15 min refresh, low-balance alert). This is the app's first outbound request, and it is made only when a key exists.
+- **Long-tail importer:** llm-usage-metrics 0.12.1 is installed on request from Settings into a private folder. It imports Copilot CLI, Goose, Amp, Qwen, Cline, Roo, Kilo, Droid, pi and OpenClaw, never the tools read natively. Imported agents have an `active` status and a dotted ring in the office.
+- **Bundled LiteLLM prices.** Your `prices.json` wins; Settings shows each model's price source.
+- **Reader health** says "untested on this PC" until a reader has been checked against real logs.
+- `NOTICE` credits llm-usage-metrics and LiteLLM (MIT).
+
+Fixed during the real-log checks
+- **DeepSeek Harness is installed on this PC** (28 sessions), and its v4 format differs from the v3 one upstream parses. Changes to the reader:
+  - provider and model come from `request/header`;
+  - tool calls, turn ends and real prompts are now read;
+  - compaction usage is counted;
+  - subagent links come from the parent receiving the child's `agent-message`.
+
+  Before this fix only token events were stored.
+- **zstd frame splitter:** frames are walked by the decompressor, not by searching for the magic number, which can appear inside a payload. An incomplete last frame is a torn tail unless a complete frame follows it.
+- **Zylos previews:** the switch could never turn on, because readers only receive their own source config.
+- **Importer install on Windows:** it failed because `npm` is `npm.cmd`. It now resolves the full path, uses a 300 s install timeout, and reports an `installing` state.
+
+Verified on real logs (2026-11-03), with independent hand-count scripts
+- DeepSeek Harness: 28 sessions, 122,756,699 tokens, 972 tool calls, 92 prompts, 42 turn ends, 4 subagents linked. 0 mismatched sessions.
+- Antigravity: 40 conversations, 306,072,353 tokens. 0 mismatches, including the largest (77,296,252) and the oldest.
+- Kimi: the one real session (setup records only) reads with 0 warnings.
+- Importer: installed through `POST /api/importer/install` on Windows (health `installing` → `ok`). `doctor` finds no long-tail tools on this PC, so 0 sessions are imported. The tools read natively (claude, codex, antigravity, dsh) are excluded.
+- Full pass: every reader `ok`, 0 warnings.
+
+Independent review (risk gate)
+- Reviewer: a fresh Claude Opus agent. 4 medium and 3 low findings, 5 confirmed; all fixed test-first, and the re-check reports 6 fixed and 1 partial (low):
+  - The DeepSeek key followed redirects. It now refuses any 3xx, sends the header unredirected, and accepts https only.
+  - One bad Zylos row stalled the reader.
+  - A damaged mid-log zstd frame stopped every DeepSeek Harness session. The frame is now skipped, and errors are isolated per file (Kimi too).
+  - 30 of 31 price aliases didn't resolve. All 29 now resolve, with `provider/` prefixes handled.
+  - Provider normalisation overwrote routing providers. It now only fills a missing one.
+  - Importer install hardened: one install at a time, `--ignore-scripts`, npm must come from a PATH folder.
+  - The importer cursor now re-reads a 1-day overlap, with a stable dedupe key that covers all token fields.
+- **Found by the author:**
+  - Installing the importer rewrote `config/`. It's now detected from its executable in the data folder instead.
+  - Claude's `<synthetic>` placeholder is no longer listed for pricing.
+- After the fixes, the real-log hand counts were re-run on a fresh database: DeepSeek Harness and Antigravity still match exactly.
+
+Known limits
+- The importer's own npm dependencies are not pinned by a lockfile. Install scripts are disabled.
+- An imported event's own `costUsd` is not stored. Imported usage is valued with the price table like everything else.
+- Kimi token parsing, Zylos and the importer's mapping are tested only against upstream test logs, because no real data for them exists on this PC.
+
 ## 0.3.1 (2026-11-02): Codex history and subagents
 
 Fixed

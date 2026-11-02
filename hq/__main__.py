@@ -14,6 +14,28 @@ from .adapters.opencode import OpencodeAdapter
 from .adapters.antigravity import AntigravityAdapter
 from .adapters.gemini_cli import GeminiCliAdapter
 from .adapters.provider_usage import ProviderUsageAdapter
+from .adapters.kimi import KimiAdapter
+from .adapters.dsh import DshAdapter
+from .adapters.zylos import ZylosAdapter
+from .adapters.deepseek_balance import DeepseekBalanceAdapter
+from .adapters.importer import ImporterAdapter
+
+
+def build_adapters(cfg, db_dir):
+    """Every reader, in one list shared by --once and the server."""
+    return [
+        ClaudeCodeAdapter(),
+        CodexAdapter(),
+        OpencodeAdapter(),
+        AntigravityAdapter(),
+        GeminiCliAdapter(),
+        ProviderUsageAdapter(),
+        KimiAdapter(),
+        DshAdapter(),
+        ZylosAdapter(cfg),
+        DeepseekBalanceAdapter(),
+        ImporterAdapter(db_dir / 'tools'),
+    ]
 
 def load_token(token_path, rotate=False):
     try:
@@ -35,7 +57,7 @@ def main(argv=None):
     default_db=Path(os.environ['LOCALAPPDATA'])/'agent-hq'/'hq.db' if os.name=='nt' and os.environ.get('LOCALAPPDATA') else Path.home()/'.local'/'share'/'agent-hq'/'hq.db'
     p=argparse.ArgumentParser(); p.add_argument('--port',type=int,default=7420); p.add_argument('--config',type=Path,default=root/'config'); p.add_argument('--db',type=Path,default=default_db); p.add_argument('--no-browser',action='store_true'); p.add_argument('--rotate-token',action='store_true'); p.add_argument('--once',action='store_true'); args=p.parse_args(argv)
     cfg=load_config(args.config); args.db.parent.mkdir(parents=True,exist_ok=True); store=Store(args.db)
-    adapters=[ClaudeCodeAdapter(),CodexAdapter(),OpencodeAdapter(),AntigravityAdapter(),GeminiCliAdapter(),ProviderUsageAdapter()]; collector=Collector(store,cfg,adapters)
+    adapters=build_adapters(cfg,args.db.parent); collector=Collector(store,cfg,adapters)
     try:
         if args.once:
             collector.run_once(); health=collector.health()

@@ -6,6 +6,7 @@ const now = 100000;
 function session(id: string, overrides: Partial<SessionRow> = {}): SessionRow {
   return {
     id,
+    imported: 0,
     harness: 'codex',
     provider: null,
     model: null,
@@ -141,4 +142,15 @@ describe('scene', () => {
     const prev = buildScene(sessions, [delegation], m, now);
     expect(buildScene(sessions, [delegation], m, now + 4, prev).walks).toHaveLength(0);
   });
+});
+
+it('active imported npc sits at desk with dotted ring flag', () => {
+  const npc = buildScene(
+    [session('imported', { status: 'active', imported: 1 })],
+    [],
+    new Map(),
+    now,
+  ).npcs[0];
+  expect(npc).toMatchObject({ state: 'active', targetRoomId: 'codex', imported: true });
+  expect(npc.deskId).toBeTruthy();
 });

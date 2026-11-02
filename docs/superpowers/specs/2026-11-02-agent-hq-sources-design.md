@@ -29,7 +29,10 @@ Non-goals: remote machines over SSH, run mode (M5), and office extras (M6).
 
 ### 2.2 DeepSeek as a provider
 
-- **Provider recognition:** `deepseek-*` and `*/deepseek*` models from any harness (opencode, NineRouter, dsh) get `provider = 'deepseek'`, so the Dashboard groups by provider correctly.
+- **Provider recognition:** `deepseek-*` and `*/deepseek*` models get `provider = 'deepseek'` **only when the source gives no provider**.
+  - A DeepSeek model reached through another route (NineRouter, opencode) keeps that route's provider, so account rules such as `{"provider": "ninerouter"}` still match.
+  - Those sessions still show as DeepSeek when the Dashboard groups by model.
+  - This was changed after the M4 review, which found that overwriting providers broke account matching.
 - **Balance:**
   - Fetched from `GET https://api.deepseek.com/user/balance` with `Authorization: Bearer <key>`, every 15 min.
   - The key comes from env `DEEPSEEK_API_KEY`, else the file `<db folder>/secrets/deepseek_api_key`. The file is per-user, never in `config/`, git, logs or notes.

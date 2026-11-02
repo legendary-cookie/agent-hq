@@ -6,6 +6,7 @@ Status:
 - **Milestone 1:** backend. Done.
 - **Milestone 2:** web UI with Dashboard, Agents, Limits and Settings. Done.
 - **Milestone 3:** the office view, with isometric, top-down and tower skins. Done.
+- **Milestone 4:** more sources (Kimi, DeepSeek Harness, Zylos, Antigravity tokens, a long-tail importer), DeepSeek balance and LiteLLM prices. Done.
 
 Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
@@ -93,11 +94,26 @@ Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the
 | Harness | Source | Gives |
 |---|---|---|
 | Claude Code | `~/.claude/projects/**/*.jsonl` (+ `subagents/`) | sessions, subagents, tool calls, tokens incl. cache |
-| Codex | `~/.codex/sessions`, `\\wsl.localhost\Debian\root\.codex\sessions` | sessions, tool calls, tokens, **measured 5-hour and weekly limits** |
+| Codex | `~/.codex/sessions` (including compressed `.jsonl.zst`), `\\wsl.localhost\Debian\root\.codex\sessions` | sessions, subagents, tool calls, tokens, **measured 5-hour and weekly limits** |
 | opencode | `~/.local/share/opencode/opencode.db` (read-only; `session`, `message`, `part` only) | sessions, tool calls, tokens, provider/model |
-| Antigravity | `~/.gemini/antigravity-cli/history.jsonl`, `conversations/*.db` | prompts and activity; tokens and model are **unknown** (binary step data) |
+| Antigravity | `~/.gemini/antigravity-cli/history.jsonl`, `conversations/*.db` | prompts, activity, **tokens and model** (decoded from `gen_metadata`) |
 | Gemini CLI | `~/.gemini/tmp/*/chats` | chats; no token data in the logs |
 | provider-usage | `~/.claude/provider-usage/usage.db` (read-only) | delegated calls, rate-limit blocks, Hermes runs |
+| Kimi Code / Kimi CLI | `~/.kimi-code/sessions`, `~/.kimi/sessions` | sessions, subagents, tokens (provider `moonshot`) |
+| DeepSeek Harness | `$DSH_HOME/sessions` or `~/.dsh/sessions` (`session.v4.jsonl.zstd`, v3 too) | sessions, subagents, tool calls, prompts, turns, tokens, provider/model |
+| Zylos | `~/zylos/comm-bridge/c4.db`; Claude/Codex sessions under `~/zylos` | Telegram, Lark and Discord messages as events; message text only if you turn previews on |
+| Long tail (optional) | llm-usage-metrics 0.12.1, installed from Settings | Copilot CLI, Goose, Amp, Qwen, Cline, Roo, Kilo, Droid, pi, OpenClaw: sessions and tokens only (status `active` from recency) |
+
+Readers that have been checked against real logs on this PC show plain health. The others say "untested on this PC". Each reader turns on by itself when its folder exists. The importer turns on when it's installed in your data folder.
+
+**DeepSeek API balance (optional):**
+- Set `DEEPSEEK_API_KEY`, or put the key in `<data folder>/secrets/deepseek_api_key`.
+- A "DeepSeek API" card then appears on Limits, refreshed every 15 min, with an alert below the threshold you set in Settings.
+
+**Prices:**
+- `config/prices.litellm.json` is a bundled LiteLLM price snapshot (MIT; see `NOTICE`), refreshed only by running `python tools/update_prices.py` and committing the result.
+- Your `config/prices.json` always wins.
+- Settings shows where each model's price comes from.
 
 ## Config (`config/`)
 
@@ -116,8 +132,16 @@ Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the
 - Source paths are checked at load and before access against `secrets`, `auth.json`, `oauth_creds.json`, `credentials`, `google_accounts.json`, `.env` and `.credentials.json`, including resolved paths and normalized segments. Directory walks skip forbidden directories.
 - The browser stores the token in session storage. The launch URL contains a single-use code, not the token; a manually supplied `#token=` fragment is also supported.
 - Static files contain no injected token or collected data. Recommendations use a temporary snapshot of the read-only source database.
-- Previews are cut to 200 characters; full transcripts are not copied.
-- Nothing leaves the machine.
+- Previews are cut to 200 characters; full transcripts are not copied. Zylos chat text is not stored unless you turn on "Show Zylos message previews".
+- **Network:** the only outbound request is the optional DeepSeek balance check.
+  - It goes to `https://api.deepseek.com/user/balance`, with a 10 s timeout, and only when a key exists.
+  - Redirects are refused, so the key can't be forwarded elsewhere.
+  - The key is never logged, shown, or returned by the API.
+- **Importer:** installing it runs `npm install --ignore-scripts llm-usage-metrics@0.12.1` into your data folder (only when you click the button).
+  - Runs use a fixed argument list with no shell and a timeout.
+  - Their environment has variables matching KEY, TOKEN, SECRET or PASSWORD removed.
+  - npm must come from your PATH, not the current folder.
+- Otherwise nothing leaves the machine.
 
 ## Tests
 
