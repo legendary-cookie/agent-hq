@@ -105,3 +105,15 @@ class GroundworkTests(unittest.TestCase):
         data['zylos_previews'] = True
         self.assertEqual(request('PUT', data)[0], 200)
         self.assertTrue(request('GET')[1]['zylos_previews'])
+
+
+@unittest.skipUnless(zstd_frames.available, 'compression.zstd needs Python 3.14+')
+class FrameBoundaryTests(unittest.TestCase):
+    def test_magic_bytes_inside_payload_do_not_split_frames(self):
+        from compression import zstd
+        import os
+        # Incompressible data is stored raw, so the magic bytes stay literal inside the frame.
+        payload = os.urandom(4000) + b'\x28\xb5\x2f\xfd' + os.urandom(4000)
+        second = b'next frame\n'
+        data = zstd.compress(payload) + zstd.compress(second)
+        self.assertEqual(list(zstd_frames.iter_frames(data)), [payload, second])
