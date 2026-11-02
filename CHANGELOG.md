@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.1 (2026-11-02): Codex history and subagents
+
+Fixed
+- **Compressed Codex sessions were skipped.** Codex compresses finished sessions to `.jsonl.zst`, and 593 of 656 session files on this PC were in that form, so Agent HQ showed only about a tenth of Codex history.
+  - They are now read with Python 3.14's built-in `compression.zstd`. On older Python they're skipped and counted as warnings in reader health.
+  - Unchanged compressed files are not re-read: the cursor is size plus mtime.
+- **Codex subagents were merged into their parent.** A subagent file starts with its own `session_meta`, then copies its parent's. The reader treated the copy as a session switch, so every subagent's events went to the parent and no subagent appeared on its own.
+  - Now only a file's first `session_meta` defines its session.
+  - The subagent's parent comes from `source.subagent.thread_spawn.parent_thread_id`, and its nickname becomes the title.
+
+Verified (2026-11-02, real logs)
+- Codex sessions went from 87 to 696, of which 291 are subagents linked to their parent. History now starts on 2026-08-27, not 2026-10-19.
+- The largest compressed session spans 2 files (no replayed records between them). A hand count from the raw files matches Agent HQ exactly: 7,882 tool calls, 18,610,957 input, 2,810,623 output and 1,152,305,024 cache-read tokens. Its 133 subagents are now separate children.
+- Codex total: 12.07 B tokens, the same as before the subagent fix, now credited to the right sessions.
+- First full pass: 35 s, because every compressed file is decompressed once. The next pass took 2.8 s.
+- Tests: Python 127 (two skip on Windows); web 100.
+
 ## 0.3.0 (2026-11-02): office view, Milestone 3
 
 Added
