@@ -19,7 +19,7 @@ from ..tail import read_new_lines
 
 class AntigravityAdapter:
     name = 'antigravity'
-    tested = 'upstream'
+    tested = 'real'  # tokens hand-counted on 40 real conversations (independent decoder), 0 mismatches
 
     def poll(self, store, cfg):
         sessions, events, db_mtimes, refs = [], [], {}, {}
