@@ -1,0 +1,4 @@
+{"type":"metadata","created_at":"2026-01-01T00:00:00Z","protocol_version":"1"}
+{"type":"config.update","config":{"model":"fixture-model"}}
+{"type":"config.update","config":{"session_id":"fixture-session"}}
+{"type":"tools.set_active_tools","tools":[]}
