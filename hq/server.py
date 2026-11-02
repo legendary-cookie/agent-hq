@@ -48,6 +48,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         with lock:
             for q in listeners: q.put(time.time())
     collector.on_change(changed)
+    from .adapters.importer import ImporterAdapter, install
+    if not any(a.name == 'importer' for a in collector.adapters):
+        collector.adapters.append(ImporterAdapter(store.path.parent / 'tools'))
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
         def send_json(self,status,data):
@@ -109,7 +112,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         return self.send_json(200,compute_kpis(conn,cfg,rng,param('group_by'),now))
                     if path in ('/api/sessions','/api/overview'):
                         sessions=_rows(conn,'select * from sessions order by last_event_at desc'); last=last_kinds(conn)
-                        for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now)
+                        for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now,imported=bool(s['imported']))
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
                                 if param(key): sessions=[s for s in sessions if s[col]==param(key)]
@@ -124,14 +127,14 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                             for s in sessions:
                                 e=extra.get(s['id'], {}); s.update(last_kind=e.get('last_kind'),last_tool=e.get('last_tool'),last_preview=e.get('last_preview'),tokens=e.get('tokens',0))
                             return self.send_json(200,sessions)
-                        counts={k:sum(s['status']==k for s in sessions) for k in ('working','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
+                        counts={k:sum(s['status']==k for s in sessions) for k in ('working','active','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
                         return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path.startswith('/api/sessions/'):
                         sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select * from sessions where id=?',(sid,))
                         if not rows: return self.send_json(404,{'error':'session not found'})
                         order=param('order','asc')
                         if order not in ('asc','desc'): raise ValueError('invalid order')
-                        s=rows[0]; s['status']=session_status(s['last_event_at'],last_kinds(conn).get(sid),s['ended_at'],now); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
+                        s=rows[0]; s['status']=session_status(s['last_event_at'],last_kinds(conn).get(sid),s['ended_at'],now,imported=bool(s['imported'])); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})
@@ -156,6 +159,17 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
                         if valid: self.server.bootstrap_code=None
                     return self.send_json(200,{'token':token}) if valid else self.send_json(403,{'error':'forbidden'})
+                if method=='POST' and path=='/api/importer/install':
+                    def run_install():
+                        try:
+                            install(store.path.parent / 'tools')
+                            cfg.sources['importer'].enabled = True
+                            save_config(Path(config_dir), cfg)
+                        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+                            with collector._lock:
+                                collector._health['importer'].update(state='partial', error=str(exc), last_error_at=time.time())
+                    threading.Thread(target=run_install, daemon=True).start()
+                    return self.send_json(200, {'started': True})
                 if method=='POST' and path=='/api/limits/manual':
                     if data['account_id'] not in {a.id for a in cfg.accounts}: raise ValueError('unknown account')
                     add_manual(store,data['account_id'],data['window'],data['used_percent'],data.get('resets_at'),time.time()); changed(); return self.send_json(200,{'ok':True})
