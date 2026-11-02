@@ -1,3 +1,4 @@
+import { makeSyntheticSessions, syntheticCount } from '../office/synthetic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../api/client';
 import type { DelegationRow, Overview, SessionRow, Settings } from '../api/types';
@@ -40,12 +41,14 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
     }
     setSkin(parseSkin(settings.default_skin, 'isometric'));
   }, [settings]);
+  // Dev-only performance check: `?synthetic=60` replaces live sessions with fakes.
+  const synthetic = import.meta.env.DEV ? syntheticCount(location.search) : 0;
   const filtered = useMemo(
     () =>
-      (sessions ?? []).filter(
+      (synthetic ? makeSyntheticSessions(synthetic, Date.now() / 1000) : (sessions ?? [])).filter(
         (s) => (!harness || s.harness === harness) && (!account || s.account_id === account),
       ),
-    [sessions, harness, account],
+    [sessions, harness, account, synthetic],
   );
   const scene = useMemo(() => {
     const next = buildScene(
