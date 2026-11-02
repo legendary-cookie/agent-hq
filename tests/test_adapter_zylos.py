@@ -48,3 +48,24 @@ class ZylosTests(unittest.TestCase):
         finally:
             conn.close()
         self.assertEqual([e.ext_id for e in self.poll().events], ['c4:3'])
+
+
+class ZylosAppSettingTests(unittest.TestCase):
+    """The collector hands each reader only its SourceCfg; the previews switch is an
+    app setting, so the reader must read it from the app Config it was built with."""
+
+    def test_previews_follow_app_setting(self):
+        import tempfile
+        from types import SimpleNamespace
+        from hq.config import SourceCfg
+        from hq.store import Store
+        from tests.fixtures.zylos.make_fixture import build as make_c4_db
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        db = Path(tmp.name) / 'c4.db'
+        make_c4_db(db)
+        store = Store(Path(tmp.name) / 'hq.db')
+        self.addCleanup(store.close)
+        settings = SimpleNamespace(zylos_previews=True)
+        batch = ZylosAdapter(settings).poll(store, SourceCfg(True, [db]))
+        self.assertTrue(any(e.preview for e in batch.events))

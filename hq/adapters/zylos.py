@@ -11,6 +11,17 @@ class ZylosAdapter:
     name = 'zylos'
     tested = 'upstream'
 
+    def __init__(self, settings=None):
+        # The app Config (or any object with `zylos_previews`). The collector passes
+        # poll() only this source's SourceCfg, so the app-wide previews switch must
+        # come from here.
+        self.settings = settings
+
+    def _previews(self, cfg) -> bool:
+        if self.settings is not None:
+            return bool(getattr(self.settings, 'zylos_previews', False))
+        return bool(getattr(cfg, 'zylos_previews', False))
+
     def poll(self, store, cfg):
         sessions, events, cursors = [], [], []
         for source in cfg.paths:
@@ -29,7 +40,7 @@ class ZylosAdapter:
             for row_id, direction, channel, content, status, timestamp in rows:
                 ts = datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
                 timestamps.append(ts)
-                text = content[:200] if getattr(cfg, 'zylos_previews', False) and content is not None else None
+                text = content[:200] if self._previews(cfg) and content is not None else None
                 events.append(EventRec('zylos:comm', f'c4:{row_id}', ts, 'user' if direction == 'in' else 'assistant', channel, text, None, None, None, None, False, None))
                 if status == 'failed':
                     events.append(EventRec('zylos:comm', f'c4:{row_id}:error', ts, 'error', channel, None, None, None, None, None, False, None))
