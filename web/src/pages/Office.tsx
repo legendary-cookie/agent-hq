@@ -17,7 +17,7 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
   const { data: sessions } = useApi<SessionRow[]>('/api/sessions');
   const { data: delegations } = useApi<DelegationRow[]>('/api/delegations?limit=20');
   const { data: overview } = useApi<Overview>('/api/overview');
-  const { data: settings } = useApi<Settings>('/api/settings');
+  const { data: settings } = useApi<Settings>('/api/settings', { live: false });
   const [skin, setSkin] = useState<SkinId>(() => {
     try {
       return parseSkin(localStorage.getItem('hq-skin'), 'isometric');
