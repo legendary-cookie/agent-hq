@@ -179,3 +179,38 @@ it('AlertBanner reads all models for star scope', () => {
     ])[0].window,
   ).toBe('all models');
 });
+
+it('Inspector shows imported note', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          session: { id: 'i', imported: 1, status: 'active' },
+          events: [],
+          children: [],
+          value: {
+            tokens: 0,
+            value_usd: 0,
+            unpriced_tokens: 0,
+            effective_cost_usd: null,
+            estimated: false,
+          },
+          account_limit: null,
+        }),
+      }),
+  );
+  vi.stubGlobal(
+    'EventSource',
+    class {
+      addEventListener() {}
+      close() {}
+    },
+  );
+  render(<Inspector sessionId="i" onClose={() => {}} />);
+  expect(
+    await screen.findByText('Imported from llm-usage-metrics; no live timeline.'),
+  ).toBeInTheDocument();
+});

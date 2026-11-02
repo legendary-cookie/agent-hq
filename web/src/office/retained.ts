@@ -247,10 +247,24 @@ export class RetainedSkin implements Skin {
     this.people.set(id, { container, body, bubble, puff, signature: '' });
   }
   private updatePerson(person: Person, npc: Npc) {
-    const signature = JSON.stringify([npc.color, npc.state, this.selected === npc.id]);
+    const signature = JSON.stringify([
+      npc.color,
+      npc.state,
+      npc.imported,
+      this.selected === npc.id,
+    ]);
     if (signature !== person.signature) {
       person.body.clear();
-      person.body.ellipse(0, 0, 11, 4).stroke({ color: STATUS_COLORS[npc.state], width: 2 });
+      if (npc.imported) {
+        for (let i = 0; i < 16; i++) {
+          const angle = (i * Math.PI * 2) / 16;
+          person.body
+            .circle(11 * Math.cos(angle), 4 * Math.sin(angle), 1)
+            .fill(STATUS_COLORS[npc.state]);
+        }
+      } else {
+        person.body.ellipse(0, 0, 11, 4).stroke({ color: STATUS_COLORS[npc.state], width: 2 });
+      }
       person.body.roundRect(-7, -22, 14, 20, 4).fill(npc.color);
       person.body.circle(0, -28, 7).fill(npc.color);
       if (this.selected === npc.id)

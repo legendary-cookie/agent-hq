@@ -88,7 +88,9 @@ export function Inspector({
           <div className="inspector-heading">Now</div>
           <div>
             <span className={`status-dot status-${session.status ?? 'idle'}`} />
-            {latest?.tool ?? latest?.preview ?? '—'}
+            {session.status === 'active'
+              ? 'Active (imported)'
+              : (latest?.tool ?? latest?.preview ?? '—')}
           </div>
           <div className="inspector-heading">Session</div>
           <DetailRow label="Project" value={session.project ?? '—'} />
@@ -114,7 +116,11 @@ export function Inspector({
             </div>
           )) ?? <div className="inspector-subtitle">No limit data</div>}
           <div className="inspector-heading">Timeline</div>
-          <Timeline events={detail.events} />
+          {session.imported ? (
+            <p className="inspector-subtitle">Imported from llm-usage-metrics; no live timeline.</p>
+          ) : (
+            <Timeline events={detail.events} />
+          )}
           <div className="inspector-heading">Subagents</div>
           {detail.children.length ? (
             <ul className="inspector-list">

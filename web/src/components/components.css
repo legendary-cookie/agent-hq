@@ -39,6 +39,9 @@
   background: var(--idle);
   vertical-align: 1px;
 }
+.status-active {
+  background: var(--active);
+}
 .status-working {
   background: var(--working);
 }

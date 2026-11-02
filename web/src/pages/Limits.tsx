@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, useApi } from '../api/client';
-import type { LimitCard, LimitWindow } from '../api/types';
+import type { LimitCard, LimitWindow, Overview } from '../api/types';
 import { EmptyState } from '../components/EmptyState';
 import { LimitBar } from '../components/LimitBar';
 import { fmtDuration, fmtPercentValue, fmtRelative, fmtTokens } from '../lib/format';
@@ -97,6 +97,7 @@ function ManualLimit({ accountId, reload }: { accountId: string; reload: () => v
 
 export function Limits() {
   const { data, error, loading, reload } = useApi<LimitCard[]>('/api/limits');
+  const { data: overview } = useApi<Overview>('/api/overview');
   const now = Date.now() / 1000;
   return (
     <div className="limits-page">
@@ -111,9 +112,31 @@ export function Limits() {
       )}
       <div className="limits-cards">
         {data?.map((card) => (
-          <section className="limits-card" key={card.account_id}>
+          <section
+            className="limits-card"
+            key={`${card.account_id}-${card.balance?.currency ?? ''}`}
+          >
             <h2>{card.label}</h2>
-            {card.windows.length === 0 && (
+            {card.balance && (
+              <div>
+                <strong>
+                  {card.balance.currency} {card.balance.total.toFixed(2)}
+                </strong>
+                <div className="limits-meta">
+                  <span className="limits-badge">Measured</span>
+                  <span>{fmtRelative(card.balance.recorded_at, now)}</span>
+                </div>
+                <p>Granted: {card.balance.granted.toFixed(2)}</p>
+                <p>Topped up: {card.balance.topped_up.toFixed(2)}</p>
+                {overview?.alerts?.some(
+                  (alert) =>
+                    alert.account_id === card.account_id &&
+                    alert.level === 'low_balance' &&
+                    alert.balance?.currency === card.balance?.currency,
+                ) && <p className="limits-warning">Low balance</p>}
+              </div>
+            )}
+            {!card.balance && card.windows.length === 0 && (
               <div>
                 <strong>No limit data yet</strong> <span className="limits-badge">Unknown</span>
               </div>
@@ -156,7 +179,7 @@ export function Limits() {
                 </div>
               </div>
             ))}
-            <ManualLimit accountId={card.account_id} reload={reload} />
+            {!card.balance && <ManualLimit accountId={card.account_id} reload={reload} />}
           </section>
         ))}
       </div>

@@ -14,9 +14,13 @@ const priceFields: { key: keyof Price; label: string }[] = [
 ];
 
 export function Settings() {
-  const { data, error: settingsError } = useApi<SettingsData>('/api/settings');
+  const {
+    data,
+    error: settingsError,
+    reload: reloadSettings,
+  } = useApi<SettingsData>('/api/settings');
   const { data: kpis, error: kpisError } = useApi<Kpis>('/api/kpis?range=month');
-  const { data: health, error: healthError } = useApi<Health>('/api/health');
+  const { data: health, error: healthError, reload: reloadHealth } = useApi<Health>('/api/health');
   const [draft, setDraft] = useState<SettingsData | null>(null);
   const [pendingPrices, setPendingPrices] = useState<
     Record<string, Partial<Record<keyof Price, string>>>
@@ -24,8 +28,33 @@ export function Settings() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [installError, setInstallError] = useState('');
   useEffect(() => {
-    if (data) setDraft((current) => current ?? data);
+    if (!installing) return;
+    const timer = setInterval(reloadHealth, 2000);
+    return () => clearInterval(timer);
+  }, [installing, reloadHealth]);
+
+  useEffect(() => {
+    if (installing && health?.importer?.state === 'ok') {
+      setInstalling(false);
+      reloadSettings();
+    }
+  }, [installing, health, reloadSettings]);
+
+  async function installImporter() {
+    setInstallError('');
+    try {
+      await api('/api/importer/install', { method: 'POST', body: '{}' });
+      setInstalling(true);
+      reloadHealth();
+    } catch (err) {
+      setInstallError(err instanceof Error ? err.message : 'Could not start installation.');
+    }
+  }
+  useEffect(() => {
+    if (data) setDraft((current) => (current ? { ...current, sources: data.sources } : data));
   }, [data]);
   useEffect(() => {
     if (!saved) return;
@@ -72,7 +101,11 @@ export function Settings() {
     (item) => draft && !(item.model in draft.prices),
   );
   const models = [
-    ...new Set([...unpriced.map((item) => item.model), ...Object.keys(draft?.prices ?? {})]),
+    ...new Set([
+      ...unpriced.map((item) => item.model),
+      ...Object.keys(draft?.price_sources ?? {}),
+      ...Object.keys(draft?.prices ?? {}),
+    ]),
   ];
   return (
     <div className="settings-page">
@@ -164,7 +197,14 @@ export function Settings() {
                   <div className="settings-model" key={model}>
                     <div>
                       <strong>{model}</strong>
-                      {!draft.prices[model] && <span className="settings-hint"> · Unpriced</span>}
+                      <span className="settings-hint">
+                        {' · '}
+                        {draft.prices[model]
+                          ? 'yours'
+                          : draft.price_sources?.[model] === 'litellm'
+                            ? 'LiteLLM'
+                            : 'unpriced'}
+                      </span>
                     </div>
                     <div className="settings-price-fields">
                       {priceFields.map(({ key, label }) => (
@@ -236,6 +276,18 @@ export function Settings() {
                   />
                 </label>
               ))}
+              <label>
+                DeepSeek low-balance alert
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={draft.deepseek_alert ?? 5}
+                  onChange={(event) =>
+                    setDraft({ ...draft, deepseek_alert: Number(event.target.value) })
+                  }
+                />
+              </label>
               <label className="settings-toggle">
                 <input
                   type="checkbox"
@@ -265,6 +317,28 @@ export function Settings() {
           <section className="settings-card">
             <h2>Sources</h2>
             <p className="settings-hint">Edit config/sources.json and restart to change sources.</p>
+            <label className="settings-toggle">
+              <input
+                type="checkbox"
+                checked={draft.zylos_previews ?? false}
+                onChange={(event) => setDraft({ ...draft, zylos_previews: event.target.checked })}
+              />
+              Show Zylos message previews
+            </label>
+            <button
+              type="button"
+              onClick={installImporter}
+              disabled={installing && health?.importer?.state !== 'partial'}
+            >
+              Install long-tail importer
+            </button>
+            {installing && (
+              <p role="status">
+                Importer: {health?.importer?.state ?? 'starting'}
+                {health?.importer?.error ? ` · ${health.importer.error}` : ''}
+              </p>
+            )}
+            {installError && <p role="alert">{installError}</p>}
             {Object.entries(draft.sources).length === 0 ? (
               <EmptyState title="No sources" />
             ) : (
@@ -280,7 +354,13 @@ export function Settings() {
                 return (
                   <div className="settings-source" key={name}>
                     <div>
-                      <strong>{name}</strong> <span className="settings-hint">· {state}</span>
+                      <strong>{name}</strong>{' '}
+                      <span className="settings-hint">
+                        · {state}
+                        {entry && typeof entry === 'object' && entry.tested === 'upstream'
+                          ? ' · untested on this PC'
+                          : ''}
+                      </span>
                     </div>
                     {source.paths.length ? (
                       source.paths.map((path) => (

@@ -82,3 +82,7 @@
   margin: 0;
   color: var(--error);
 }
+
+.limits-warning {
+  color: var(--error);
+}

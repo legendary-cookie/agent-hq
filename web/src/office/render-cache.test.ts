@@ -7,6 +7,7 @@ const scene: Scene = {
   desks: [{ id: 'desk', roomId: 'codex', index: 0 }],
   npcs: [
     {
+      imported: false,
       id: 'a',
       sessionId: 'a',
       harness: 'codex',

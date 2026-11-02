@@ -91,6 +91,7 @@ it('break room size follows idle count', () => {
     npcs: Array.from({ length: 13 }, (_, i) => ({
       id: String(i),
       sessionId: String(i),
+      imported: false,
       harness: 'codex',
       title: String(i),
       model: null,

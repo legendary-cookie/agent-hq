@@ -36,3 +36,37 @@ it('harness colours differ from status colours', () => {
   }
   expect(HARNESS_COLORS.unknown).toBe('#8e8e93');
 });
+
+it('harnessLabel maps new harnesses', () => {
+  expect(
+    [
+      'kimi',
+      'dsh',
+      'zylos',
+      'copilot',
+      'goose',
+      'amp',
+      'qwen',
+      'cline',
+      'roo',
+      'kilo',
+      'droid',
+      'pi',
+      'openclaw',
+    ].map(harnessLabel),
+  ).toEqual([
+    'Kimi',
+    'DeepSeek Harness',
+    'Zylos',
+    'Copilot CLI',
+    'Goose',
+    'Amp',
+    'Qwen',
+    'Cline',
+    'Roo Code',
+    'Kilo Code',
+    'Droid',
+    'pi',
+    'OpenClaw',
+  ]);
+});

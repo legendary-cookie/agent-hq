@@ -1,7 +1,7 @@
 import type { DelegationRow, SessionRow } from '../api/types';
 import { HARNESS_COLORS } from './colors';
 
-export type NpcState = 'working' | 'waiting' | 'idle' | 'error';
+export type NpcState = 'working' | 'active' | 'waiting' | 'idle' | 'error';
 export type Room = { id: string; harness: string | null; label: string; capacity: number };
 export type Desk = { id: string; roomId: string; index: number };
 export type Npc = {
@@ -11,6 +11,7 @@ export type Npc = {
   title: string;
   model: string | null;
   state: NpcState;
+  imported: boolean;
   color: string;
   deskId: string | null;
   targetRoomId: string;
@@ -52,7 +53,12 @@ export function buildScene(
       used.add(desk);
     }
     const state: NpcState =
-      s.status === 'working' || s.status === 'waiting' || s.status === 'error' ? s.status : 'idle';
+      s.status === 'active' ||
+      s.status === 'working' ||
+      s.status === 'waiting' ||
+      s.status === 'error'
+        ? s.status
+        : 'idle';
     return {
       id: s.id,
       sessionId: s.id,
@@ -60,6 +66,7 @@ export function buildScene(
       title: s.title || s.id,
       model: s.model,
       state,
+      imported: Boolean(s.imported),
       color: HARNESS_COLORS[harness] ?? HARNESS_COLORS.unknown,
       deskId: desk,
       targetRoomId: state === 'idle' ? 'break' : harness,

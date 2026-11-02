@@ -12,6 +12,7 @@ export function syntheticCount(search: string): number {
 
 export function makeSyntheticSessions(n: number, now: number): SessionRow[] {
   return Array.from({ length: n }, (_, i) => ({
+    imported: 0,
     id: `synthetic:${i}`,
     harness: HARNESSES[i % HARNESSES.length],
     provider: null,

@@ -7,6 +7,7 @@ export function StatusPills({ overview }: { overview: Overview }) {
   return (
     <div className="dashboard-pills">
       <Pill color="var(--working)">{overview.status_counts.working ?? 0} working</Pill>
+      <Pill color="var(--active)">{overview.status_counts.active ?? 0} Active (imported)</Pill>
       <Pill color="var(--waiting)">{overview.status_counts.waiting ?? 0} needs you</Pill>
       <Pill color="var(--idle)">{overview.status_counts.idle ?? 0} idle</Pill>
       {overview.best_now?.[0] && (

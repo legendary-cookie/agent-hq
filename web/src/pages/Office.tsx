@@ -159,7 +159,8 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
           {scene.npcs.map((npc) => (
             <li key={npc.id}>
               <button type="button" onClick={() => setSelected(npc.sessionId)}>
-                {harnessLabel(npc.harness)} · {npc.state} · {npc.title}
+                {harnessLabel(npc.harness)} ·{' '}
+                {npc.state === 'active' ? 'Active (imported)' : npc.state} · {npc.title}
               </button>
             </li>
           ))}
