@@ -73,14 +73,9 @@
   background: var(--surface);
   box-shadow: 0 8px 24px var(--shadow);
 }
-@media (prefers-reduced-motion: reduce) {
-  .run-sheet {
-    animation: run-fade 0.15s ease-out;
-  }
-}
-@keyframes run-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+.run-hint {
+  color: var(--muted);
+  font-size: 13px;
 }
 @media (prefers-reduced-transparency: reduce) {
   .run-sheet {
