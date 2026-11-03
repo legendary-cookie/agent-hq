@@ -146,6 +146,8 @@ class WorkspaceTests(unittest.TestCase):
         marker = self.root / 'marker'
         (evil / 'hook.py').write_text(f"open({str(marker)!r}, 'w').write('executed')")
         (evil / 'config').write_text('[core]\n fsmonitor = python evil/hook.py\n')
+        # Delete and recreate, as an agent would (git on Windows marks the file hidden).
+        (workdir / '.git').unlink()
         (workdir / '.git').write_text('gitdir: evil\n')
         for operation in (lambda: workspace.diff(self.project, branch, base, workdir=workdir),
                           lambda: workspace.merge(self.project, branch, workdir=workdir)):

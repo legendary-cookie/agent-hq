@@ -56,10 +56,14 @@ def create(project, run_id, root):
 def _validate(workdir, admin, project):
     try:
         dotgit = workdir / '.git'
-        expected = f'gitdir: {admin}\n'
         common = (admin / 'commondir').read_text().strip()
-        if (dotgit.is_symlink() or not dotgit.is_file() or dotgit.read_text() != expected
-            or (admin / 'config.worktree').exists() or (admin / common).resolve() != (project / '.git').resolve()):
+        if dotgit.is_symlink() or not dotgit.is_file():
+            raise ValueError
+        # Exactly the one line git wrote. Git on Windows writes forward slashes, so compare paths.
+        lines = dotgit.read_text().splitlines()
+        if (len(lines) != 1 or not lines[0].startswith('gitdir: ')
+                or Path(lines[0][len('gitdir: '):]).resolve() != admin.resolve()
+                or (admin / 'config.worktree').exists() or (admin / common).resolve() != (project / '.git').resolve()):
             raise ValueError
     except (OSError, UnicodeError, ValueError):
         raise ValueError('worktree .git was changed by the run') from None
