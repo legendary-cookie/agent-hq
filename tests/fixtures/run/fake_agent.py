@@ -15,6 +15,9 @@ elif mode == 'grandchild':
     child = subprocess.Popen([sys.executable, __file__, 'sleep', '60'])
     print(json.dumps({'type': 'pid', 'pid': child.pid}), flush=True)
     time.sleep(60)
+elif mode == 'stderr_grandchild':
+    child = subprocess.Popen([sys.executable, __file__, 'sleep', '12'], stdout=subprocess.DEVNULL)
+    print(json.dumps({'type': 'pid', 'pid': child.pid}), flush=True)
 elif mode == 'longline':
     print('x' * 5_000_000, flush=True)
 elif mode == 'ratelimit':

@@ -50,6 +50,17 @@ class RunnerSecurityTests(unittest.TestCase):
     wait_for = steer_runner.SteerRunnerTests.wait_for
     status = steer_runner.SteerRunnerTests.status
     finished_row = steer_runner.SteerRunnerTests.finished_row
+    def test_malformed_permission_request_denied_not_fatal(self):
+        for payload in ({'input': {}}, {'tool_name': 42, 'input': {}}, {'tool_name': 'Bash', 'input': []}, {'tool_name': 'Bash', 'input': 'bad'}):
+            with self.subTest(payload=payload):
+                request = {'type': 'control_request', 'request_id': 'r', 'request': {'subtype': 'can_use_tool', **payload}}
+                script = f"import json,sys; sys.stdin.readline(); print({json.dumps(json.dumps(request))}, flush=True); reply=json.loads(sys.stdin.readline()); print(json.dumps({{'type':'tool_done', 'behavior':reply['response']['response']['behavior']}}), flush=True)"
+                self.runner.launchers['claude'] = ScriptLauncher(script)
+                self.runner.launchers['claude'].steer_mode = 'live'
+                rid = self.start('x'); self.status(rid, 'done')
+                self.assertTrue(any('deny' in s for s in self.runner.output(rid)))
+                self.assertEqual(self.runner.warnings(rid), 1)
+
     def test_first_session_id_wins(self):
         self.runner.launchers['claude'] = ScriptLauncher("print('{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"first\"}'); print('{\"type\":\"system\",\"subtype\":\"init\",\"session_id\":\"second\"}')")
         rid = self.start('x'); self.status(rid, 'done')
@@ -83,6 +94,14 @@ class RunnerSecurityTests(unittest.TestCase):
 
 
 class ApprovalSecurityTests(unittest.TestCase):
+    def test_never_auto_rereview_shapes(self):
+        commands = ['git config alias.x "!rm -rf ~"', 'git config core.sshCommand x', 'git config --global x y', 'git --global config x y', 'wsl', 'wsl x', 'start x', 'saps x', 'ii x', 'Invoke-Item x', 'Start-Job x', r'. .\x.ps1', '& x', "'rm' -rf x", "'curl'"]
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertTrue(never_auto('Bash', {'command': command}))
+                self.assertIsNone(rule_key('Bash', {'command': command}, Path('/tmp')))
+        self.assertIsNone(rule_key('Bash', {'command': 'git status'}, Path('/tmp')))
+
     def test_never_auto_review_shapes(self):
         commands = ['curl.exe x', 'rm.exe x', r'C:\Windows\System32\curl.exe x', 'bash -c "rm -rf x"', 'sh -c x', 'env rm -rf x', 'xargs rm', 'cmd /c del /s x', 'git -c alias.x="!rm -rf ~" x', 'git --config-env=x=y status', 'git -c x=y status', 'git "-c" x=y status', 'Remove-Item x', 'ri x', 'iwr x', 'irm x', 'Invoke-WebRequest x', 'Invoke-Expression x', 'iex x']
         for command in commands:
@@ -96,6 +115,12 @@ class ApprovalSecurityTests(unittest.TestCase):
 class MirrorSecurityTests(unittest.TestCase):
     setUp = mirror_tests.MirrorTests.setUp
     entry = mirror_tests.MirrorTests.entry
+    def test_windows_alias_paths_rereview(self):
+        names = ['CONIN$', 'conout$.txt'] + [f'{prefix}{digit}{extension}' for prefix in ('COM', 'lpt') for digit in '¹²³' for extension in ('', '.log')]
+        result = apply(self, [self.entry('.codex/sessions/' + name) for name in names])
+        self.assertEqual(len(result.errors), len(names))
+        self.assertEqual(result.written, 0)
+
     def test_too_many_entries_refused(self):
         result = apply(self, [self.entry()] * 2001)
         self.assertTrue(result.errors); self.assertFalse(self.root.exists())

@@ -62,9 +62,9 @@ class Child:
         code = self.process.wait(timeout=timeout)
         return code
 
-    def close(self):
+    def close(self, close_stderr=True):
         if self.stdout: self.stdout.close()
-        if self.stderr: self.stderr.close()
+        if self.stderr and close_stderr: self.stderr.close()
         if self.stdin and not self.stdin.closed: self.stdin.close()
         with self._kill_lock:
             if os.name == 'nt' and self.job:

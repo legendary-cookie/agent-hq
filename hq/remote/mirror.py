@@ -31,7 +31,7 @@ def _target(root, host, name):
     if path.is_absolute() or windows.drive or windows.root or '..' in path.parts:
         raise ValueError('invalid path')
     if any(':' in part or part.endswith(('.', ' ')) or
-           re.fullmatch(r'(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?', part, re.IGNORECASE)
+           re.fullmatch(r'(?:con|conin\$|conout\$|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\..*)?', part, re.IGNORECASE)
            for part in path.parts):
         raise ValueError('invalid Windows path component')
     allowed = [PurePosixPath(p) for source in host.sources for p in SOURCES.get(source, ())]

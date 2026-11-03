@@ -169,6 +169,13 @@ class RunService:
     def message(self, rid, data):
         key = self._message_key(rid, data)
         if not self.nonces.redeem(data.get('nonce'), key): raise RunError(403, 'confirm again')
+        run = self.get(rid)
+        req = request.RunRequest(run['tool'], run['model'], run['project'], run['prompt_preview'],
+                                 run['level'], run['guard_mode'], run['account'], 1)
+        # Auto was resolved at start; recheck that actual selection rather than selecting again.
+        if req.guard_mode == 'auto': req = replace(req, guard_mode='block')
+        verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time(), offered=set(self._tools()))
+        if not verdict.allowed: raise RunError(409, '; '.join(verdict.reasons))
         try: self.runner.send(rid, data['text'])
         except (NotIdle, Busy, KeyError) as exc: raise RunError(409, str(exc)) from exc
         except ValueError as exc: raise RunError(409, str(exc)) from exc

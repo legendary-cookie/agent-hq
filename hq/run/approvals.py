@@ -30,7 +30,8 @@ _FILES = {'write', 'edit'}
 _DANGEROUS = {'rm', 'rmdir', 'del', 'curl', 'wget', 'ssh', 'scp', 'nc',
               'powershell', 'pwsh', 'sudo', 'cmd', 'bash', 'sh', 'zsh', 'env', 'xargs',
               'remove-item', 'ri', 'iwr', 'irm', 'invoke-webrequest', 'invoke-restmethod',
-              'invoke-expression', 'iex', 'start-process'}
+              'invoke-expression', 'iex', 'start-process', 'wsl', 'start', 'saps', 'ii',
+              'invoke-item', 'start-job', '.'}
 _INTERPRETERS = {'python', 'python3', 'node', 'npx', 'deno', 'ruby', 'perl'}
 
 
@@ -42,7 +43,7 @@ def _words(command):
 
 
 def _basename(word):
-    name = word.strip('\""').replace('\\', '/').rsplit('/', 1)[-1].lower()
+    name = word.strip("'\"").replace('\\', '/').rsplit('/', 1)[-1].lower()
     for suffix in ('.exe', '.cmd', '.bat', '.com', '.ps1'):
         if name.endswith(suffix): return name[:-len(suffix)]
     return name
@@ -71,7 +72,7 @@ def never_auto(tool_name, tool_input):
         return True
     first = _basename(words[0])
     # git push/reset anywhere in the arguments (git -C repo push, git -c x=y reset).
-    return first in _DANGEROUS or (first == 'git' and any((arg := w.strip('\""')) in {'-c', '--config-env'} or arg.startswith(('-c', '--config-env=')) or arg.lower() in {'push', 'reset'} for w in words[1:]))
+    return first in _DANGEROUS or (first == 'git' and any((arg := w.strip("'\"")) in {'-c', '--config-env'} or arg.startswith(('-c', '--config-env=')) or arg.lower() in {'push', 'reset', 'config'} for w in words[1:]))
 
 
 def rule_key(tool_name, tool_input, worktree: Path):
@@ -81,7 +82,9 @@ def rule_key(tool_name, tool_input, worktree: Path):
     if name in _COMMANDS:
         words = _words(tool_input.get('command', ''))
         first = _basename(words[0]) if words else ''
-        return f'{tool_name}:{first}' if first and first not in _INTERPRETERS else None
+        # Git aliases and configuration can make any subcommand execute arbitrary code.
+        # Never create a run-wide Git rule; each invocation requires approval.
+        return f'{tool_name}:{first}' if first and first not in _INTERPRETERS | {'git'} else None
     if name in _FILES:
         value = tool_input.get('file_path')
         if not isinstance(value, str) or not value:

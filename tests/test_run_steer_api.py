@@ -12,6 +12,49 @@ from tests.test_run_api import FakeLauncher, FakeRunner
 
 
 class SteerApiTests(unittest.TestCase):
+    def test_followup_blocked_profile_409(self):
+        from hq.run.guard import Verdict
+        self.store.update_run('run_1', guard_mode='block', model='model', account='profile')
+        nonce = self.service.message_prepare('run_1', {'text': 'hello'})['nonce']
+        with patch('hq.run.service.guard.check', return_value=Verdict(False, ['All matching profiles are blocked'], [], None, None, None)) as check, patch.object(self.service.runner, 'send', create=True) as send:
+            with self.assertRaises(RunError) as exc:
+                self.service.message('run_1', {'text': 'hello', 'nonce': nonce})
+            self.assertEqual(exc.exception.status, 409)
+            self.assertIn('All matching profiles are blocked', str(exc.exception))
+            req = check.call_args.args[0]
+            self.assertEqual((req.tool, req.model, req.profile, req.guard_mode), ('fake', 'model', 'profile', 'block'))
+            send.assert_not_called()
+        self.store.update_run('run_1', guard_mode='warn')
+        nonce = self.service.message_prepare('run_1', {'text': 'hello'})['nonce']
+        with patch('hq.run.service.guard.check', return_value=Verdict(True, [], ['All matching profiles are blocked'], None, None, None)) as check, patch.object(self.service.runner, 'send', create=True) as send:
+            self.service.message('run_1', {'text': 'hello', 'nonce': nonce})
+            self.assertEqual(check.call_args.args[0].guard_mode, 'warn')
+            send.assert_called_once_with('run_1', 'hello')
+
+        from hq.config import Profile
+        import time
+        now = time.time()
+        profile = Profile('profile', 'fake', 'unused', 'account-a')
+        with self.store._lock, self.store._writer:
+            self.store._writer.execute("INSERT INTO limit_snapshots(account_id,window,used_percent,resets_at,source,recorded_at) VALUES (?,?,?,?,?,?)", ('account-a', '5h', 100, now + 1000, 'blocked', now - 1))
+        with patch.object(self.service, '_profiles', return_value=[profile]), patch.object(self.service.runner, 'send', create=True) as send:
+            self.store.update_run('run_1', guard_mode='block')
+            nonce = self.service.message_prepare('run_1', {'text': 'hello'})['nonce']
+            with self.assertRaisesRegex(RunError, 'All matching profiles are blocked'):
+                self.service.message('run_1', {'text': 'hello', 'nonce': nonce})
+            send.assert_not_called()
+            self.store.update_run('run_1', guard_mode='warn')
+            nonce = self.service.message_prepare('run_1', {'text': 'hello'})['nonce']
+            self.service.message('run_1', {'text': 'hello', 'nonce': nonce})
+            send.assert_called_once_with('run_1', 'hello')
+
+        self.store.update_run('run_1', tool='codex', account=None, guard_mode='block')
+        with self.store._lock, self.store._writer:
+            self.store._writer.execute("INSERT INTO limit_snapshots(harness,provider,scope,window,used_percent,resets_at,source,recorded_at) VALUES (?,?,?,'block',100,?,'blocked',?)", ('codex', 'codex', 'model', now + 1000, now - 1))
+        nonce = self.service.message_prepare('run_1', {'text': 'hello'})['nonce']
+        with self.assertRaisesRegex(RunError, 'Requested model is blocked'):
+            self.service.message('run_1', {'text': 'hello', 'nonce': nonce})
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
         self.root = Path(tmp.name).resolve()

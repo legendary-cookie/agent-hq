@@ -43,6 +43,13 @@ class FakeResume(FakeLive):
 
 
 class SteerRunnerTests(unittest.TestCase):
+    def test_grandchild_holding_stderr_does_not_stick_run(self):
+        rid = self.start('stderr_grandchild')
+        end = time.monotonic() + 10
+        while time.monotonic() < end and self.store.get_run(rid)['status'] != 'done':
+            time.sleep(.02)
+        self.assertEqual(self.store.get_run(rid)['status'], 'done')
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()

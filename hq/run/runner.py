@@ -130,16 +130,21 @@ class Runner:
             if stopped: return
             child = proc.spawn(launch, lambda: self._stopped(rid))
             def read_stderr():
-                while True:
-                    line = child.stderr.readline(65536)
-                    if not line: break
-                    if len(line) == 65536 and not line.endswith('\n'):
-                        while True:
-                            remainder = child.stderr.readline(65536)
-                            if not remainder or remainder.endswith('\n'): break
-                        line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
-                    with self._lock:
-                        self._runs[rid]['output'].append('[stderr] ' + line.rstrip('\r\n'))
+                try:
+                    while True:
+                        line = child.stderr.readline(65536)
+                        if not line: break
+                        if len(line) == 65536 and not line.endswith('\n'):
+                            while True:
+                                remainder = child.stderr.readline(65536)
+                                if not remainder or remainder.endswith('\n'): break
+                            line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
+                        with self._lock:
+                            state = self._runs.get(rid)
+                            if state is not None:
+                                state['output'].append('[stderr] ' + line.rstrip('\r\n'))
+                finally:
+                    child.stderr.close()
             stderr_thread = threading.Thread(target=read_stderr, daemon=True)
             stderr_thread.start()
             with self._lock:
@@ -204,7 +209,7 @@ class Runner:
                 if event.rate_limited:
                     self._rate_limit(rid, req, profile, launcher)
             exit_code = child.wait()
-            if stderr_thread: stderr_thread.join()
+            if stderr_thread: stderr_thread.join(timeout=5)
         except Exception as exc:
             # Make a failure before or during launch visible in the run's output.
             with self._lock: self._runs[rid]['output'].append(f'[agent-hq] run failed: {type(exc).__name__}: {exc}')
@@ -218,7 +223,7 @@ class Runner:
                 idle_timer = self._runs[rid].get('idle_timer')
                 if idle_timer: idle_timer.cancel()
             if child:
-                try: child.close()
+                try: child.close(close_stderr=not (stderr_thread and stderr_thread.is_alive()))
                 except (BrokenPipeError, OSError): pass
             with self._lock:
                 state = self._runs[rid]
@@ -249,7 +254,7 @@ class Runner:
 
     def _reply(self, rid, launcher, request, decision, note):
         self._write(rid, launcher.control_reply(request.get('request_id'), decision, note,
-                                                 request.get('input') or {}))
+                                                 request.get('input') if isinstance(request.get('input'), dict) else {}))
         if self.approvals and not self.approvals.has_waiting(rid):
             self._status(rid, 'running')
 
@@ -257,13 +262,16 @@ class Runner:
         def reply(decision, note):
             self._reply(rid, launcher, request, decision, note)
         try:
-            if not request.get('request_id'):
-                raise KeyError('missing request id')
+            if (not isinstance(request.get('request_id'), str) or not request['request_id']
+                    or not isinstance(request.get('tool_name'), str) or not request['tool_name']
+                    or not isinstance(request.get('input'), dict)):
+                raise ValueError('invalid permission request')
             approval = self.approvals.open(rid, request.get('request_id'), request.get('tool_name'),
-                                           request.get('input') or {}, reply)
-        except (AnsweredError, KeyError):
+                                           request['input'], reply)
+        except (AnsweredError, KeyError, ValueError):
             with self._lock: self._runs[rid]['warnings'] += 1
-            if request.get('request_id'): reply('deny', 'Invalid or duplicate request id')
+            if isinstance(request.get('request_id'), str) and request['request_id']:
+                reply('deny', 'Invalid or duplicate permission request')
             return
         with self.approvals._lock:
             if approval and self.approvals.has_waiting(rid):
