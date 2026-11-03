@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { Inbox } from './Inbox';
 import { RunSheet } from '../components/RunSheet';
 
-const approval = { id: 'run_1:req', run_id: 'run_1', tool_name: 'Bash', summary: 'secret command', requested_at: 1, expires_at: Date.now() / 1000 + 120, state: 'waiting' };
+const approval = { id: 'run_1:req', run_id: 'run_1', tool_name: 'Bash', summary: 'secret command', requested_at: 1, expires_at: Date.now() / 1000 + 889, state: 'waiting' };
 let fetcher: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetcher = vi.fn(async (_path: string, _init?: RequestInit) => ({ ok: true, json: async () => [approval] }));
@@ -14,7 +14,17 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('inbox lists waiting with countdown', async () => {
   render(<Inbox />);
   expect(await screen.findByText('secret command')).toBeInTheDocument();
-  expect(screen.getByText(/remaining/)).toBeInTheDocument();
+  expect(screen.getByText(/left/)).toBeInTheDocument();
+});
+it('countdown shows minutes', async () => {
+  render(<Inbox />);
+  expect(await screen.findByText('14 min left')).toBeInTheDocument();
+});
+it('note field has accessible name', async () => {
+  render(<Inbox />);
+  const note = await screen.findByRole('textbox', { name: 'Note' });
+  expect(note.id).toBeTruthy();
+  expect(document.querySelector(`label[for="${note.id}"]`)).toBeInTheDocument();
 });
 it('allow once posts decision', async () => {
   render(<Inbox />); fireEvent.click(await screen.findByRole('button', { name: 'Allow once' }));
