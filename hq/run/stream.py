@@ -33,7 +33,14 @@ def parse_json(line, tool):
         session = data.get('sessionID')
     if session:
         return StreamEvent('session', session_id=str(session))
-    mapped = {'error': 'error', 'result': 'done', 'turn.completed': 'done',
+    if kind == 'rate_limit_event':
+        # Claude Code / Antigravity print this on every run; only 'rejected' means blocked.
+        info = data.get('rate_limit_info') or {}
+        return StreamEvent('working', rate_limited=info.get('status') == 'rejected')
+    failed = kind in ('error', 'turn.failed') or (kind == 'result' and data.get('is_error') is True)
+    if failed:
+        return StreamEvent('error', text=json.dumps(data)[:2000])
+    mapped = {'result': 'done', 'turn.completed': 'done',
               'started': 'started', 'waiting': 'waiting'}.get(kind, 'working')
     return StreamEvent(mapped)
 
@@ -43,6 +50,13 @@ def parse_line(tool, line, launcher=None):
         from hq.run.launchers import REGISTRY
         launcher = REGISTRY[tool]
     event = launcher.parse(line)
-    if event is not None and _LIMIT.search(line):
+    if event is None:
+        return None
+    if event.session_id:
+        # Store ids the way the readers do ('<harness>:<id>') so the run joins its session.
+        event = replace(event, session_id=f'{launcher.harness}:{event.session_id}')
+    # Only an error event can mean a rate limit: an agent that merely mentions "429" or "quota"
+    # in its work must not block an account.
+    if event.kind == 'error' and _LIMIT.search(event.text or line):
         event = replace(event, rate_limited=True)
     return event

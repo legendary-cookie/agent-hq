@@ -29,7 +29,8 @@ class FakeLauncher:
             data = json.loads(line)
         except ValueError:
             return None
-        return StreamEvent('session' if data.get('type') == 'session' else 'working', data.get('session_id'))
+        kind = {'session': 'session', 'error': 'error'}.get(data.get('type'), 'working')
+        return StreamEvent(kind, data.get('session_id'), data.get('message'))
 
 
 class RunnerTests(unittest.TestCase):
@@ -57,7 +58,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_ok_run_done_with_session_and_output(self):
         row = self.wait(self.start()['id']); self.assertEqual(row['status'], 'done')
-        self.assertEqual(row['session_id'], 's-1'); self.assertEqual(len(self.runner.output(row['id'])), 4)
+        self.assertEqual(row['session_id'], 'fake:s-1'); self.assertEqual(len(self.runner.output(row['id'])), 4)
 
     def test_fail_run_failed_exit_code(self):
         row = self.wait(self.start('fail')['id']); self.assertEqual((row['status'], row['exit_code']), ('failed', 3))
