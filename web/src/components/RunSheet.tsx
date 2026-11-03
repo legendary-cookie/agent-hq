@@ -4,7 +4,7 @@ import type { RunOptions, RunRequest, RunVerdict } from '../api/types';
 import { spring } from '../lib/spring';
 import './run-sheet.css';
 
-const levels: Record<string, string> = { read_only: 'Read-only', edit: 'Edit project folder', full_auto: 'Full auto' };
+const levels: Record<string, string> = { read_only: 'Read-only', ask: 'Ask me', edit: 'Edit project folder', full_auto: 'Full auto' };
 const guards: Record<string, string> = { warn: 'Warn', block: 'Block and suggest', auto: 'Auto-route' };
 export function RunSheet({ options, onClose, onStarted }: { options: RunOptions; onClose: () => void; onStarted?: () => void }) {
   const [form, setForm] = useState<RunRequest>(() => ({ tool: Object.keys(options.tools)[0] ?? '', model: null, project: options.projects[0] ?? '', prompt: '', level: options.tools[Object.keys(options.tools)[0]]?.levels.includes(options.defaults.level) ? options.defaults.level : (options.tools[Object.keys(options.tools)[0]]?.levels[0] ?? ''), guard_mode: options.defaults.guard_mode, profile: null, time_limit_min: options.defaults.time_limit_min }));
@@ -84,7 +84,7 @@ export function RunSheet({ options, onClose, onStarted }: { options: RunOptions;
     <label htmlFor={`${id}-model`}>Model (optional)<input id={`${id}-model`} value={form.model ?? ''} onChange={(e) => update({ model: e.target.value || null })} /></label>
     <label htmlFor={`${id}-project`}>Project<select id={`${id}-project`} value={form.project} onChange={(e) => update({ project: e.target.value })}>{options.projects.map((project) => <option key={project}>{project}</option>)}</select></label>
     <label htmlFor={`${id}-task`}>Task<textarea id={`${id}-task`} maxLength={100000} value={form.prompt} onChange={(e) => update({ prompt: e.target.value })} /></label>
-    <label htmlFor={`${id}-level`}>Level<select id={`${id}-level`} value={form.level} onChange={(e) => update({ level: e.target.value })}>{(options.tools[form.tool]?.levels ?? []).map((level) => <option key={level} value={level}>{levels[level] ?? level}</option>)}</select></label>
+    <label htmlFor={`${id}-level`}>Level<select id={`${id}-level`} value={form.level} onChange={(e) => update({ level: e.target.value })}>{(options.tools[form.tool]?.levels ?? []).filter((level) => level !== 'ask' || options.tools[form.tool]?.can_ask).sort((a, b) => ['read_only', 'ask', 'edit', 'full_auto'].indexOf(a) - ['read_only', 'ask', 'edit', 'full_auto'].indexOf(b)).map((level) => <option key={level} value={level}>{levels[level] ?? level}</option>)}</select></label>
     <label htmlFor={`${id}-guard`}>Guard mode<select id={`${id}-guard`} value={form.guard_mode} onChange={(e) => update({ guard_mode: e.target.value })}>{Object.entries(guards).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
     <label htmlFor={`${id}-account`}>Account<select id={`${id}-account`} value={form.profile ?? ''} onChange={(e) => update({ profile: e.target.value || null })}><option value="">Pool: best</option>{options.profiles.filter((p) => p.tool === form.tool).map((p) => <option value={p.id} key={p.id}>{p.id} · {p.account_id}</option>)}</select></label>
     <label htmlFor={`${id}-time`}>Time limit (minutes)<input id={`${id}-time`} type="number" min="1" max="240" value={form.time_limit_min} onChange={(e) => update({ time_limit_min: Number(e.target.value) })} /></label>
