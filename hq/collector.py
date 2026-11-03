@@ -2,9 +2,11 @@ import os
 import threading
 import time
 from .config import match_account
+from .run.link import add_profile_paths
 
 class Collector:
     def __init__(self, store, cfg, adapters, interval=5.0):
+        add_profile_paths(cfg)
         self.store, self.cfg, self.adapters, self.interval = store, cfg, adapters, interval
         for name in ('kimi', 'dsh', 'zylos'):
             source = cfg.sources.get(name)
