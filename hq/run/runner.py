@@ -83,10 +83,10 @@ class Runner:
             with self._lock:
                 stopped = self._runs[rid]['stop']
             if stopped: return
-            workdir, branch = project, None
+            workdir, branch, base_commit = project, None, None
             if req.level != 'read_only':
-                workdir, branch, _ = workspace.create(project, rid, self.worktrees_root)
-            self.store.update_run(rid, workdir=str(workdir), branch=branch)
+                workdir, branch, base_commit = workspace.create(project, rid, self.worktrees_root)
+            self.store.update_run(rid, workdir=str(workdir), branch=branch, base_commit=base_commit)
             launch = launcher.build(req, profile, workdir, rid, os.environ,
                                     self.run_cfg.pass_env.get(req.tool, []))
             executable = self.executables.get(req.tool)

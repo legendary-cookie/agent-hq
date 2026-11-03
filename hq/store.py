@@ -36,6 +36,10 @@ class Store:
         self._writer = sqlite3.connect(path, check_same_thread=False)
         self._writer.execute('PRAGMA journal_mode=WAL')
         self._writer.executescript(_SCHEMA)
+        run_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(runs)')}
+        if 'base_commit' not in run_columns:
+            self._writer.execute('ALTER TABLE runs ADD COLUMN base_commit TEXT')
+            self._writer.commit()
         columns = {row[1] for row in self._writer.execute('PRAGMA table_info(sessions)')}
         if 'imported' not in columns:
             self._writer.execute('ALTER TABLE sessions ADD COLUMN imported INTEGER DEFAULT 0')

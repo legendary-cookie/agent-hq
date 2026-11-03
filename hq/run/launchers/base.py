@@ -31,6 +31,7 @@ class Launcher(Protocol):
 
 
 class BaseLauncher:
+    tested = False
     profile_var: str | None = None
     links_by_stream = True
     offered: frozenset[str] = frozenset({'edit'})
