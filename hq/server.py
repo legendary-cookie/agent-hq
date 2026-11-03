@@ -39,7 +39,7 @@ def validate_settings(data, sources, relabel=None):
         raise ValueError('invalid source settings')
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
-def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None):
+def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None):
     run_key = secrets.token_urlsafe(32)
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
@@ -111,7 +111,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if len(parts) == 3: return self.send_json(200, run_service.get(unquote(parts[2])))
                     if len(parts) == 4 and parts[3] in ('output', 'diff'): return self.send_json(200, getattr(run_service, parts[3])(unquote(parts[2])))
                     run_service._enabled()
-                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error, 'pu_failures': run_service.pu_failures if run_service else 0})
+                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error, 'pu_failures': run_service.pu_failures if run_service else 0, 'hosts': remote_collector.health() if remote_collector else {}})
                 if path=='/api/settings':
                     with closing(store.conn()) as conn:
                         models = compute_kpis(conn,cfg,resolve_range('month',datetime.now().astimezone()),None,now)['top_models']
@@ -134,6 +134,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
                                 if param(key): sessions=[s for s in sessions if s[col]==param(key)]
+                            if param('host'):
+                                sessions=[s for s in sessions if s['host']==(None if param('host') == 'local' else param('host'))]
                             if param('from'): sessions=[s for s in sessions if s['started_at']>=float(param('from'))]
                             if param('to'): sessions=[s for s in sessions if s['started_at']<float(param('to'))]
                             sessions=sessions[:min(2000,max(1,int(param('limit','500'))))]
@@ -229,6 +231,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
             except RunError as exc: return self.send_json(exc.status, {'error':str(exc)})
             except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc:
                 return self.send_json(403,{'error':'forbidden'}) if exchange else self.send_json(400,{'error':str(exc)})
+    if remote_collector: remote_collector.on_change(changed)
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler); server.daemon_threads=True
     server.bootstrap_code=secrets.token_urlsafe(24); server.bootstrap_expires=time.monotonic()+120
     return server,token

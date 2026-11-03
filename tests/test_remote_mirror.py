@@ -50,3 +50,25 @@ class MirrorTests(unittest.TestCase):
         prune_hosts(self.root.parent, {'keep'})
         self.assertFalse(self.root.exists())
         self.assertTrue(other.exists())
+
+
+class MirrorBudgetTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve() / 'box'
+        self.host = Host('box', 'box', 'linux', ('opencode',) and None, 60, ('opencode', 'codex'))
+
+    def test_database_has_its_own_40mb_budget(self):
+        db = b'x' * 30_000_000
+        log = b'y' * 19_000_000
+        files = [{'path': '.codex/sessions/a', 'kind': 'append', 'offset': 0, 'data_b64': base64.b64encode(log).decode(), 'size': len(log), 'mtime': 1.0},
+                 {'path': '.local/share/opencode/opencode.db', 'kind': 'replace', 'offset': 0, 'data_b64': base64.b64encode(db).decode(), 'size': len(db), 'mtime': 1.0}]
+        result = apply_answer({'files': files}, self.host, self.root)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(result.written, 2)
+
+    def test_scanner_notes_are_not_errors(self):
+        result = apply_answer({'files': [], 'errors': ['.x.db: database larger than 40 MB, not mirrored']}, self.host, self.root)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(len(result.notes), 1)

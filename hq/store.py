@@ -51,6 +51,9 @@ class Store:
             self._writer.execute('ALTER TABLE runs ADD COLUMN git_dir TEXT')
             self._writer.commit()
         columns = {row[1] for row in self._writer.execute('PRAGMA table_info(sessions)')}
+        if 'host' not in columns:
+            self._writer.execute('ALTER TABLE sessions ADD COLUMN host TEXT')
+            self._writer.commit()
         if 'imported' not in columns:
             self._writer.execute('ALTER TABLE sessions ADD COLUMN imported INTEGER DEFAULT 0')
             self._writer.commit()
@@ -62,12 +65,13 @@ class Store:
     def conn(self):
         return sqlite3.connect(self.path)
 
-    def apply(self, batch: Batch, account_of: Callable[[str,str,str | None],str], relabel: list[tuple[Path, str]] = ()) -> bool:
+    def apply(self, batch: Batch, account_of: Callable[[str,str,str | None],str], relabel: list[tuple[Path, str]] = (), host=None) -> bool:
         c = self._writer
         with self._lock, c:
             before = c.total_changes
             for session in batch.sessions:
                 d = asdict(session)
+                d['host'] = host
                 d['provider'] = normalize_provider(session.provider, session.model)
                 if session.project:
                     project = Path(session.project).expanduser().resolve()
@@ -76,21 +80,24 @@ class Store:
                             d['harness'] = harness
                             break
                 d['account_id'] = account_of(d['harness'], d['provider'], session.model)
-                c.execute('''INSERT INTO sessions (id,harness,provider,model,account_id,project,title,started_at,last_event_at,ended_at,parent_id,source_ref,imported)
-                  VALUES (:id,:harness,:provider,:model,:account_id,:project,:title,:started_at,:last_event_at,:ended_at,:parent_id,:source_ref,:imported)
+                c.execute('''INSERT INTO sessions (id,harness,provider,model,account_id,project,title,started_at,last_event_at,ended_at,parent_id,source_ref,imported,host)
+                  VALUES (:id,:harness,:provider,:model,:account_id,:project,:title,:started_at,:last_event_at,:ended_at,:parent_id,:source_ref,:imported,:host)
                   ON CONFLICT(id) DO UPDATE SET harness=excluded.harness, provider=excluded.provider,
                   model=coalesce(excluded.model,sessions.model), account_id=excluded.account_id,
                   project=coalesce(excluded.project,sessions.project), title=coalesce(excluded.title,sessions.title),
                   started_at=min(sessions.started_at,excluded.started_at), last_event_at=max(sessions.last_event_at,excluded.last_event_at),
                   ended_at=coalesce(excluded.ended_at,sessions.ended_at), parent_id=coalesce(excluded.parent_id,sessions.parent_id), source_ref=excluded.source_ref, imported=excluded.imported
-                  WHERE sessions.harness IS NOT excluded.harness OR sessions.provider IS NOT excluded.provider OR
+                  WHERE sessions.host IS excluded.host AND (sessions.harness IS NOT excluded.harness OR sessions.provider IS NOT excluded.provider OR
                   (excluded.model IS NOT NULL AND sessions.model IS NOT excluded.model) OR sessions.account_id IS NOT excluded.account_id OR
                   (excluded.project IS NOT NULL AND sessions.project IS NOT excluded.project) OR (excluded.title IS NOT NULL AND sessions.title IS NOT excluded.title) OR
                   excluded.started_at < sessions.started_at OR excluded.last_event_at > sessions.last_event_at OR
                   (excluded.ended_at IS NOT NULL AND sessions.ended_at IS NOT excluded.ended_at) OR
-                  (excluded.parent_id IS NOT NULL AND sessions.parent_id IS NOT excluded.parent_id) OR sessions.source_ref IS NOT excluded.source_ref OR sessions.imported IS NOT excluded.imported''', d)
+                  (excluded.parent_id IS NOT NULL AND sessions.parent_id IS NOT excluded.parent_id) OR sessions.source_ref IS NOT excluded.source_ref OR sessions.imported IS NOT excluded.imported)''', d)
             for event in batch.events:
                 d = asdict(event)
+                owner = c.execute('SELECT host FROM sessions WHERE id=?', (event.session_id,)).fetchone()
+                if owner is not None and owner[0] != host:
+                    continue
                 if d['preview'] is not None: d['preview'] = d['preview'][:200]
                 c.execute('''INSERT INTO events (session_id,ext_id,ts,kind,tool,preview,tokens_in,tokens_out,tokens_cache_read,tokens_cache_write,tokens_estimated,model)
                 VALUES (:session_id,:ext_id,:ts,:kind,:tool,:preview,:tokens_in,:tokens_out,:tokens_cache_read,:tokens_cache_write,:tokens_estimated,:model) ON CONFLICT(session_id,ext_id) DO UPDATE SET

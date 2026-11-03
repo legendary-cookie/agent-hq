@@ -6,6 +6,8 @@ from pathlib import Path
 import webbrowser
 from .config import load_config
 from .collector import Collector
+from .remote.collector import RemoteCollector
+from .remote.config import load_hosts
 from .store import Store
 from .server import make_server
 from .run.service import RunService
@@ -60,11 +62,15 @@ def main(argv=None):
     p=argparse.ArgumentParser(); p.add_argument('--port',type=int,default=7420); p.add_argument('--config',type=Path,default=root/'config'); p.add_argument('--db',type=Path,default=default_db); p.add_argument('--no-browser',action='store_true'); p.add_argument('--rotate-token',action='store_true'); p.add_argument('--once',action='store_true'); args=p.parse_args(argv)
     cfg=load_config(args.config); args.db.parent.mkdir(parents=True,exist_ok=True); store=Store(args.db)
     adapters=build_adapters(cfg,args.db.parent); collector=Collector(store,cfg,adapters)
+    hosts, warnings = load_hosts(args.config)
+    for warning in warnings: print(f'hosts: {warning}')
+    remote = RemoteCollector(store, cfg, hosts, args.db.parent, build_adapters)
     try:
         if args.once:
-            collector.run_once(); health=collector.health()
+            collector.run_once(); remote.run_once(); health=collector.health()
             for name,state in health.items(): print(f"{name:16} {state['state']:8} warnings={state['warnings']} {state['error'] or ''}")
-            return int(any(s['state']=='partial' for s in health.values()))
+            for name,state in remote.health().items(): print(f"{name:16} {state['state']:8} {state['error'] or ''}")
+            return int(any(s['state']=='partial' for s in list(health.values()) + list(remote.health().values())))
         token = load_token(args.db.parent / 'token', rotate=args.rotate_token)
         source=cfg.sources.get('provider_usage')
         pu_dir=Path(source.paths[0]) if source and source.enabled and source.paths else None
@@ -72,7 +78,7 @@ def main(argv=None):
         service=RunService(store,cfg,args.config,args.db.parent,lambda kind: recommend_bridge(pu_dir,kind) if pu_dir else None,pu=pu_dir)
         service.runner.recover()
         try:
-            server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist',token=token,run_service=service); collector.start()
+            server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist',token=token,run_service=service,remote_collector=remote); collector.start(); remote.start()
         except BaseException:
             service.runner.shutdown()
             raise
@@ -82,7 +88,7 @@ def main(argv=None):
             else: webbrowser.open(url)
             server.serve_forever()
         except KeyboardInterrupt: pass
-        finally: server.server_close(); collector.stop(); service.runner.shutdown()
+        finally: server.server_close(); collector.stop(); remote.stop(); service.runner.shutdown()
         return 0
     finally: store.close()
 
