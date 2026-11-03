@@ -1,14 +1,16 @@
 # Agent HQ
 
-A local dashboard for watching AI coding agents across harnesses: Claude Code, Codex, opencode, Antigravity, Gemini CLI and Hermes (through the provider-usage tracker). It reads the logs those tools already write, stores them in one SQLite file, and shows sessions, KPIs, value and usage limits in a web UI on `127.0.0.1`.
+A local dashboard for watching AI coding agents across harnesses: Claude Code, Codex, opencode, Antigravity, Gemini CLI and Hermes (through the provider-usage tracker). It reads the logs those tools already write, stores them in one SQLite file, and shows sessions, KPIs, value and usage limits in a web UI on `127.0.0.1`. With run mode turned on, it can also start, watch and stop agents itself.
 
 Status:
 - **Milestone 1:** backend. Done.
 - **Milestone 2:** web UI with Dashboard, Agents, Limits and Settings. Done.
 - **Milestone 3:** the office view, with isometric, top-down and tower skins. Done.
 - **Milestone 4:** more sources (Kimi, DeepSeek Harness, Zylos, Antigravity tokens, a long-tail importer), DeepSeek balance and LiteLLM prices. Done.
+- **Milestone 5a:** run mode, Dispatch. Start one-shot agent runs, watch them live, stop them, and review the diff, then merge or discard it. Done.
+- **Next:** Steer (M5b), Orchestrate (M5c), and remote hosts.
 
-Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
+Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
 ## Requirements
 
@@ -89,6 +91,57 @@ For UI development, run `python -m hq --no-browser`, then `npm --prefix web run 
 
 Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the WSL Codex logs: `\\wsl.localhost\Debian\...` is only visible to normal Windows processes.
 
+## Run mode
+
+Run mode is **off** until you turn it on. Agent HQ never writes these files; edit them and restart.
+
+1. `config/run.json` (copy `config/run.json.example`):
+   ```json
+   {"run_mode": true, "max_concurrent": 3, "default_time_limit_min": 30, "max_time_limit_min": 240, "pass_env": {}}
+   ```
+   `pass_env` lets one tool receive an API key, named by its variable name only, for example `{"dsh": ["DEEPSEEK_API_KEY"]}`. No other variable that looks like a key, token, secret or password reaches a launched agent.
+2. `config/projects.json` (copy `config/projects.json.example`) lists the folders runs may work in. No other folder can be used.
+3. **Account pool (optional):**
+   - In `config/accounts.json`, an account can list `profiles`, each with its own config folder for that tool. Example for three ChatGPT logins: `{"id": "chatgpt-2", "tool": "codex", "config_dir": "/root/.codex-chatgpt-2"}`.
+   - Log in once per profile in a terminal. Agent HQ only points the tool at the folder (`CODEX_HOME`, `CLAUDE_CONFIG_DIR`) and never reads login files.
+   - Check that each provider's terms allow several accounts.
+
+Then open Agent HQ **from its launch link** and press **Run**. Run mode needs a key the page receives only at launch.
+
+| Field | Choices |
+|---|---|
+| Level | **Read-only**; **Edit project folder** (default); **Full auto**, which asks twice and is offered only where the tool can be contained |
+| Guard | **Warn**; **Block and suggest** (default); **Auto-route** |
+| Account | **Pool: best** (the profile with the most measured room left) or a specific profile |
+| Time limit | 1 to 240 minutes (default 30) |
+
+The guard modes:
+- **Warn:** shows warnings but never stops a run.
+- **Block and suggest:** a blocked model can't start, a window at 80% or more shows a warning, and provider-usage's suggestion is shown.
+- **Auto-route:** provider-usage's suggestion picks the tool, model and account.
+
+How a run works:
+- **Its own branch:** an editing run works in its own git worktree and branch (`hq/run-<id>`) under the data folder. Your checkout is never touched.
+- **The Runs page shows:**
+  - live output;
+  - the linked session, whose tokens and value come from the normal readers, so nothing is counted twice;
+  - the run's **diff**, once it ends.
+- **Merge or discard:** **Merge into project** merges exactly the commit you saw. **Discard branch** removes the worktree. Nothing is pushed.
+- **Stopping:** Stop, the time limit and quitting Agent HQ all end the agent and everything it started.
+- **Logging:** every run is logged to provider-usage. A run that hits a real rate limit marks its account blocked for an hour.
+
+**Tools on this PC**, checked with real runs on 2026-11-03:
+
+| Tool | Status |
+|---|---|
+| Claude Code, Codex (WSL Debian), opencode, Antigravity | Tested: each run, its session link and its token totals were checked |
+| Kimi | Hidden until checked: not logged in on this PC |
+| DeepSeek Harness | Hidden until checked: no API key for its default route |
+| Gemini CLI | Hidden until checked: its free tier no longer accepts this client |
+| Hermes | Disabled: its shell commands run in its configured folder even with `--in` |
+
+To see untested tools anyway, set `"show_untested": true` in `run.json`.
+
 ## What it reads
 
 | Harness | Source | Gives |
@@ -123,6 +176,14 @@ Readers that have been checked against real logs on this PC show plain health. T
 
 ## API
 
+Run mode routes:
+- `GET /api/runs/options`
+- `POST /api/runs/prepare` and `POST /api/runs`
+- `GET /api/runs` and `GET /api/runs/{id}`, plus `/output` and `/diff`
+- `POST /api/runs/{id}/stop`, `/merge` and `/discard`
+
+They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` header from `/api/exchange`. Starting a run also needs a single-use confirm code from `prepare`, bound to that exact request.
+
 `GET /api/overview`, `/api/sessions`, `/api/sessions/{id}`, `/api/kpis?range=today|week|month|custom&group_by=harness|provider|model|account`, `/api/limits`, `/api/recommend`, `/api/settings`, `/api/health`, `/api/stream` (Server-Sent Events). `POST /api/exchange` exchanges a valid bootstrap code for the token and requires a same-origin `Origin`. Other `/api/*` requests require the token in `X-HQ-Token`. `GET /api/stream` also accepts `?token=` for EventSource. POST and PUT require a same-origin `Origin`. `PUT /api/settings` validates settings and cannot change sources; edit `config/sources.json` and restart to change them.
 
 ## Privacy and safety
@@ -141,6 +202,14 @@ Readers that have been checked against real logs on this PC show plain health. T
   - Runs use a fixed argument list with no shell and a timeout.
   - Their environment has variables matching KEY, TOKEN, SECRET or PASSWORD removed.
   - npm must come from your PATH, not the current folder.
+- **Run mode** (off by default) launches programs, so it has its own rules:
+  - Tools are resolved once from PATH, never from the current folder, a project or a worktree.
+  - Argument lists are fixed and no shell is used. npm `.cmd` shims are resolved to the real program, so no prompt passes through `cmd.exe`.
+  - Only allowlisted projects can be used, checked by real path (symlinks, junctions, short names).
+  - A launched agent gets a minimal environment: only the variables tools need to start, plus `pass_env` names.
+  - Starting a run needs the in-memory run key and a single-use confirm code. The run key is never written to disk, so an agent that reads Agent HQ's token file still can't start runs.
+  - Git never finds a repository from inside a worktree. Agent HQ passes the repository explicitly, turns off hooks and fsmonitor, and refuses to continue if a run changed the worktree's `.git`.
+  - Output is kept in memory only (last 500 lines, 64 KB per line). The database keeps the status and a 200-character prompt preview.
 - Otherwise nothing leaves the machine.
 
 ## Tests
