@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useApi } from '../api/client';
-import type { SessionRow } from '../api/types';
+import type { Health, SessionRow } from '../api/types';
 import { EmptyState } from '../components/EmptyState';
 import { Inspector } from '../components/Inspector';
 import { fmtRelative, fmtTokens } from '../lib/format';
@@ -18,6 +18,8 @@ const statuses = [
 
 export function Agents() {
   const { data, loading, error } = useApi<SessionRow[]>('/api/sessions');
+  const { data: health } = useApi<Health>('/api/health');
+  const [host, setHost] = useState('all');
   const [status, setStatus] = useState<string>('all');
   const [harness, setHarness] = useState('all');
   const [sort, setSort] = useState<'activity' | 'tokens'>('activity');
@@ -26,8 +28,10 @@ export function Agents() {
   const harnesses = [
     ...new Set(sessions.map((row) => row.harness).filter((item): item is string => !!item)),
   ].sort();
+  const hosts = [...new Set([...Object.keys(health?.hosts ?? {}), ...sessions.flatMap((row) => row.host ? [row.host] : [])])].sort();
   const filtered = sessions.filter(
     (row) =>
+      (host === 'all' || (host === 'local' ? !row.host : row.host === host.slice(5))) &&
       (status === 'all' || row.status === status) && (harness === 'all' || row.harness === harness),
   );
   const sorted = [...filtered].sort((a, b) =>
@@ -65,6 +69,14 @@ export function Agents() {
               </button>
             ))}
           </div>
+          <label>
+            Host{' '}
+            <select value={host} onChange={(event) => setHost(event.target.value)}>
+              <option value="all">All hosts</option>
+              <option value="local">This PC</option>
+              {hosts.map((name) => <option key={name} value={`host:${name}`}>{name}</option>)}
+            </select>
+          </label>
           <label>
             Harness{' '}
             <select value={harness} onChange={(event) => setHarness(event.target.value)}>

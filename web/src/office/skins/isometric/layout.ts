@@ -70,10 +70,10 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
   });
   const rooms = zones.map(({ room, x, y, rows }) => ({
     id: room.id,
-    label: `${harnessLabel(room.harness ?? 'break')} · ${
+    label: `${room.id.startsWith('host:') ? room.label : harnessLabel(room.harness ?? 'break')} · ${
       room.id === 'break'
         ? idleCount
-        : scene.npcs.filter((npc) => npc.harness === room.harness).length
+        : scene.desks.filter((desk) => desk.roomId === room.id).length
     }`,
     harness: room.harness,
     labelAt: point(x + 3, y),
