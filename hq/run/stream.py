@@ -1,5 +1,14 @@
+import re
 import json
 from dataclasses import dataclass, replace
+
+
+def valid_session_id(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', value) is not None
+
+
+def _session(value):
+    return StreamEvent('session', session_id=value) if valid_session_id(value) else StreamEvent('warning')
 
 
 @dataclass(frozen=True)
@@ -55,8 +64,8 @@ def parse_json(line, tool):
         session = data.get('session_id')
     elif tool == 'opencode':
         session = data.get('sessionID')
-    if session:
-        return StreamEvent('session', session_id=str(session))
+    if session is not None:
+        return _session(session)
     if kind == 'rate_limit_event':
         # Claude Code / Antigravity print this on every run; only 'rejected' means blocked.
         info = data.get('rate_limit_info') or {}
@@ -74,8 +83,8 @@ def parse_json(line, tool):
 def _agy(data):
     """Antigravity 1.4.9 stream: {"event": "init"|"step_update"|"result", ...} (seen on real runs)."""
     event = data.get('event')
-    if event == 'init' and data.get('conversation_id'):
-        return StreamEvent('session', session_id=str(data['conversation_id']))
+    if event == 'init' and 'conversation_id' in data:
+        return _session(data['conversation_id'])
     if event == 'result':
         result = data.get('result') or {}
         if result.get('status') == 'SUCCESS':

@@ -83,7 +83,7 @@ class SteerRunnerTests(unittest.TestCase):
                 req = RunRequest('claude', 'model', 'p', 'initial', level, 'warn', None, 1)
                 original = launcher.build(req, None, workdir, 'run', {}, [])
                 resumed = launcher.build_resume(req, None, workdir, 'run', 'raw-id', 'followup', {}, [])
-                self.assertEqual(resumed.argv, original.argv[:2] + ['--resume', 'raw-id'] + original.argv[2:])
+                self.assertEqual(resumed.argv, original.argv[:2] + ['--resume=raw-id'] + original.argv[2:])
                 self.assertEqual(resumed.stdin_text, launcher.first_input('followup'))
 
     def test_live_run_followup_after_idle_close_resumes(self):
@@ -92,7 +92,7 @@ class SteerRunnerTests(unittest.TestCase):
         self.runner._runs[rid]['raw_session_id'] = 'raw-id'
         self.status(rid, 'done'); self.runner.send(rid, 'followup')
         self.output_has(rid, 'followup'); self.status(rid, 'idle')
-        self.assertIn('raw-id', self.runner.launchers['claude'].resumed.argv)
+        self.assertIn('--resume=raw-id', self.runner.launchers['claude'].resumed.argv)
         self.assertEqual(self.store.get_run(rid)['turns'], 2)
 
     def finished_row(self, project='p', rid='old'):
@@ -110,7 +110,7 @@ class SteerRunnerTests(unittest.TestCase):
         self.runner.send('old', 'followup'); self.output_has('old', 'followup')
         launch = self.runner.launchers['claude'].resumed
         self.assertEqual(launch.argv[launch.argv.index('--permission-mode') + 1], 'plan')
-        self.assertEqual(launch.argv[launch.argv.index('--resume') + 1], 'raw-id')
+        self.assertIn('--resume=raw-id', launch.argv)
         self.assertEqual(self.store.get_run('old')['turns'], 2)
 
     def restarted(self, launcher, minute_s=60.0):

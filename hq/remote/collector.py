@@ -43,9 +43,10 @@ class RemoteCollector:
     def _pass(self, host):
         root = self.remote_root / host.name
         try:
-            request = dict(sources=list(host.sources), cursors=cursors_for(root, host), cap_bytes=20000000, db_cap_bytes=40000000)
+            request = dict(sources=list(host.sources), cursors=cursors_for(root, host), cap_bytes=20000000, db_cap_bytes=30000000)
             answer = self.run_scan(host, request, self.scanner_text)
-            files = [e for e in answer.get('files', []) if isinstance(e, dict)] if isinstance(answer, dict) else []
+            entries = answer.get('files', []) if isinstance(answer, dict) else []
+            files = [e for e in entries if isinstance(e, dict)] if isinstance(entries, list) and len(entries) <= 2000 else []
             # Invalid paths are skipped here; apply_answer reports them as errors.
             pending = {e['path'] for e in files
                        if e.get('kind') == 'append' and e.get('offset') == 0 and e.get('path') not in request['cursors']

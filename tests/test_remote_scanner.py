@@ -83,7 +83,7 @@ class ScannerTests(unittest.TestCase):
         self.put('.local/share/opencode/opencode.db', b'd' * 50000000)
         answer = self.scan(('opencode',))
         self.assertEqual(answer['files'], [])
-        self.assertIn('.local/share/opencode/opencode.db: database larger than 40 MB, not mirrored', answer['errors'])
+        self.assertIn('.local/share/opencode/opencode.db: database larger than 30 MB, not mirrored', answer['errors'])
 
     def test_unrequested_source_not_read(self):
         self.put('.claude/projects/a', b'x')

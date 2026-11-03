@@ -4,6 +4,7 @@ from pathlib import Path
 from hq.config import Profile
 from hq.run.request import RunRequest
 from .base import BaseLauncher, Launch
+from hq.run.stream import valid_session_id
 
 
 class OpencodeLauncher(BaseLauncher):
@@ -19,7 +20,8 @@ class OpencodeLauncher(BaseLauncher):
         return Launch(argv + ['--', req.prompt], env, workdir)
 
     def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names):
+        if not valid_session_id(session_id): raise ValueError('Invalid session id')
         env = self.prepare(req, profile, workdir, env_base, pass_names)
-        argv = ['opencode', 'run', '--format', 'json', '-s', session_id]
+        argv = ['opencode', 'run', '--format', 'json', '--session=' + session_id]
         if req.model: argv += ['-m', req.model]
         return Launch(argv + ['--', text], env, workdir)

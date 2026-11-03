@@ -7,6 +7,7 @@ import re
 
 from hq.run.wsl import to_wsl_path
 from .base import BaseLauncher, Launch
+from hq.run.stream import valid_session_id
 
 
 class CodexLauncher(BaseLauncher):
@@ -32,6 +33,7 @@ class CodexLauncher(BaseLauncher):
         return Launch(argv + ['-'], env, workdir, req.prompt, pidfile)
 
     def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names):
+        if not valid_session_id(session_id): raise ValueError('Invalid session id')
         launch = self.build(req, profile, workdir, run_id, env_base, pass_names)
         index = launch.argv.index('codex')
         # Real codex 0.164: `exec resume` has no -s flag; set the run's sandbox explicitly with

@@ -5,6 +5,7 @@ from pathlib import Path
 from hq.config import Profile
 from hq.run.request import RunRequest
 from .base import BaseLauncher, Launch
+from hq.run.stream import valid_session_id
 
 
 class ClaudeLauncher(BaseLauncher):
@@ -42,7 +43,8 @@ class ClaudeLauncher(BaseLauncher):
         return Launch(argv, env, workdir, self.first_input(req.prompt))
 
     def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names) -> Launch:
+        if not valid_session_id(session_id): raise ValueError('Invalid session id')
         launch = self.build(req, profile, workdir, run_id, env_base, pass_names)
-        launch.argv[2:2] = ['--resume', session_id]
+        launch.argv[2:2] = ['--resume=' + session_id]
         launch.stdin_text = self.first_input(text)
         return launch

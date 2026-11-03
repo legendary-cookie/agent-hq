@@ -28,18 +28,24 @@ class ExpiredError(Exception):
 _COMMANDS = {'bash', 'powershell'}
 _FILES = {'write', 'edit'}
 _DANGEROUS = {'rm', 'rmdir', 'del', 'curl', 'wget', 'ssh', 'scp', 'nc',
-              'powershell', 'pwsh', 'sudo'}
+              'powershell', 'pwsh', 'sudo', 'cmd', 'bash', 'sh', 'zsh', 'env', 'xargs',
+              'remove-item', 'ri', 'iwr', 'irm', 'invoke-webrequest', 'invoke-restmethod',
+              'invoke-expression', 'iex', 'start-process'}
+_INTERPRETERS = {'python', 'python3', 'node', 'npx', 'deno', 'ruby', 'perl'}
 
 
 def _words(command):
     try:
-        return shlex.split(command, posix=True)
+        return shlex.split(command, posix=False)
     except ValueError:
         return []
 
 
 def _basename(word):
-    return word.replace('\\', '/').rsplit('/', 1)[-1].lower()
+    name = word.strip('\""').replace('\\', '/').rsplit('/', 1)[-1].lower()
+    for suffix in ('.exe', '.cmd', '.bat', '.com', '.ps1'):
+        if name.endswith(suffix): return name[:-len(suffix)]
+    return name
 
 
 def summarize(tool_name, tool_input):
@@ -65,7 +71,7 @@ def never_auto(tool_name, tool_input):
         return True
     first = _basename(words[0])
     # git push/reset anywhere in the arguments (git -C repo push, git -c x=y reset).
-    return first in _DANGEROUS or (first == 'git' and any(w.lower() in {'push', 'reset'} for w in words[1:]))
+    return first in _DANGEROUS or (first == 'git' and any((arg := w.strip('\""')) in {'-c', '--config-env'} or arg.startswith(('-c', '--config-env=')) or arg.lower() in {'push', 'reset'} for w in words[1:]))
 
 
 def rule_key(tool_name, tool_input, worktree: Path):
@@ -74,7 +80,8 @@ def rule_key(tool_name, tool_input, worktree: Path):
         return None
     if name in _COMMANDS:
         words = _words(tool_input.get('command', ''))
-        return f'{tool_name}:{_basename(words[0])}' if words else None
+        first = _basename(words[0]) if words else ''
+        return f'{tool_name}:{first}' if first and first not in _INTERPRETERS else None
     if name in _FILES:
         value = tool_input.get('file_path')
         if not isinstance(value, str) or not value:

@@ -8,7 +8,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from hq.run import env, followup, proc, workspace, winexe
-from hq.run.stream import parse_line
+from hq.run.stream import parse_line, valid_session_id
+from hq.run.approvals import AnsweredError
 from hq.run.link import find_session
 from hq.run.request import RunRequest
 
@@ -98,6 +99,7 @@ class Runner:
         child = None
         timer = None
         exit_code = None
+        stderr_thread = None
         started = self.clock()
         try:
             with self._lock:
@@ -127,6 +129,19 @@ class Runner:
                 stopped = self._runs[rid]['stop']
             if stopped: return
             child = proc.spawn(launch, lambda: self._stopped(rid))
+            def read_stderr():
+                while True:
+                    line = child.stderr.readline(65536)
+                    if not line: break
+                    if len(line) == 65536 and not line.endswith('\n'):
+                        while True:
+                            remainder = child.stderr.readline(65536)
+                            if not remainder or remainder.endswith('\n'): break
+                        line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
+                    with self._lock:
+                        self._runs[rid]['output'].append('[stderr] ' + line.rstrip('\r\n'))
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+            stderr_thread.start()
             with self._lock:
                 self._runs[rid]['child'] = child
                 stopped = self._runs[rid]['stop']
@@ -161,20 +176,25 @@ class Runner:
                     line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
                 line = line.rstrip('\r\n')
                 with self._lock: self._runs[rid]['output'].append(line)
-                raw_event = launcher.parse(line)
                 event = parse_line(req.tool, line, launcher)
-                if event is None:
+                if event is None or event.kind == 'warning':
                     with self._lock: self._runs[rid]['warnings'] += 1
                     continue
                 if event.session_id:
                     with self._lock:
-                        if raw_event and raw_event.session_id:
-                            self._runs[rid]['raw_session_id'] = raw_event.session_id
+                        raw_id = event.session_id[len(launcher.harness) + 1:]
+                        previous = self._runs[rid]['raw_session_id']
+                        if previous and previous != raw_id:
+                            self._runs[rid]['warnings'] += 1
+                        elif not previous:
+                            self._runs[rid]['raw_session_id'] = raw_id
                         if not self._runs[rid].get('session_id'):
                             self._runs[rid]['session_id'] = event.session_id
                             self._runs[rid]['link_stop'].set()
                             self.store.update_run(rid, session_id=event.session_id)
-                if event.kind == 'permission' and self.approvals:
+                if event.kind in ('permission', 'control_unknown') and not launcher.can_ask:
+                    with self._lock: self._runs[rid]['warnings'] += 1
+                elif event.kind == 'permission' and self.approvals:
                     self._permission(rid, launcher, event.request)
                 elif event.kind == 'control_unknown':
                     with self._lock: self._runs[rid]['warnings'] += 1
@@ -184,6 +204,7 @@ class Runner:
                 if event.rate_limited:
                     self._rate_limit(rid, req, profile, launcher)
             exit_code = child.wait()
+            if stderr_thread: stderr_thread.join()
         except Exception as exc:
             # Make a failure before or during launch visible in the run's output.
             with self._lock: self._runs[rid]['output'].append(f'[agent-hq] run failed: {type(exc).__name__}: {exc}')
@@ -235,8 +256,15 @@ class Runner:
     def _permission(self, rid, launcher, request):
         def reply(decision, note):
             self._reply(rid, launcher, request, decision, note)
-        approval = self.approvals.open(rid, request.get('request_id'), request.get('tool_name'),
-                                       request.get('input') or {}, reply)
+        try:
+            if not request.get('request_id'):
+                raise KeyError('missing request id')
+            approval = self.approvals.open(rid, request.get('request_id'), request.get('tool_name'),
+                                           request.get('input') or {}, reply)
+        except (AnsweredError, KeyError):
+            with self._lock: self._runs[rid]['warnings'] += 1
+            if request.get('request_id'): reply('deny', 'Invalid or duplicate request id')
+            return
         with self.approvals._lock:
             if approval and self.approvals.has_waiting(rid):
                 self._status(rid, 'needs_you')
@@ -301,6 +329,8 @@ class Runner:
                 state['raw_session_id'] = session_id.removeprefix(prefix) if session_id else None
             if not state['raw_session_id']:
                 raise NotIdle('No session is available to resume')
+            if not valid_session_id(state['raw_session_id']):
+                raise ValueError('Invalid session id')
             if self._shutting_down or sum(not r['finished'] for r in self._runs.values()) >= self.run_cfg.max_concurrent:
                 raise Busy('Maximum concurrent runs reached')
             state['finished'] = False
@@ -336,6 +366,8 @@ class Runner:
                          row['level'], row['guard_mode'], row['account'], int(row['time_limit_s'] // 60) or 1)
         session_id = row['session_id']
         raw_id = session_id.removeprefix(f'{launcher.harness}:') if session_id else None
+        if raw_id is not None and not valid_session_id(raw_id):
+            raise ValueError('Invalid session id')
         state = dict(status=row['status'], stop=None, child=None, finished=True,
                      output=deque(maxlen=500), warnings=0, thread=None,
                      link_stop=threading.Event(), link_started=time.monotonic(),

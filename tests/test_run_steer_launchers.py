@@ -78,7 +78,7 @@ class SteerLauncherTests(unittest.TestCase):
         req = replace(self.req, tool='opencode', level='edit')
         launch = launcher.build_resume(req, None, self.root, 'run_123', 'session', 'follow up', {}, [])
         self.assertEqual(launcher.steer_mode, 'resume')
-        self.assertEqual(launch.argv, ['opencode', 'run', '--format', 'json', '-s', 'session', '-m', 'model', '--', 'follow up'])
+        self.assertEqual(launch.argv, ['opencode', 'run', '--format', 'json', '--session=session', '-m', 'model', '--', 'follow up'])
 
     def test_turn_end_events(self):
         for tool, line in [('claude', '{"type":"result"}'), ('agy', '{"event":"result","result":{"status":"SUCCESS"}}'), ('agy', '{"type":"result"}'), ('codex', '{"type":"turn.completed"}')]:

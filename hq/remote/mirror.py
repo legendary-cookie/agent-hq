@@ -3,6 +3,7 @@ import binascii
 import json
 import math
 import os
+import re
 import shutil
 import tempfile
 from dataclasses import dataclass, field
@@ -29,6 +30,10 @@ def _target(root, host, name):
     windows = PureWindowsPath(name)
     if path.is_absolute() or windows.drive or windows.root or '..' in path.parts:
         raise ValueError('invalid path')
+    if any(':' in part or part.endswith(('.', ' ')) or
+           re.fullmatch(r'(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?', part, re.IGNORECASE)
+           for part in path.parts):
+        raise ValueError('invalid Windows path component')
     allowed = [PurePosixPath(p) for source in host.sources for p in SOURCES.get(source, ())]
     if not any(path == base or base in path.parents for base in allowed):
         raise ValueError('path outside requested sources')
@@ -64,11 +69,44 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
     if not isinstance(answer, dict) or not isinstance(answer.get('files', []), list):
         result.errors.append('invalid answer')
         return result
+    if len(answer.get('files', [])) > 2000:
+        result.errors.append('too many file entries')
+        return result
     result.more = bool(answer.get('more', False))
     errors = answer.get('errors', [])
     if isinstance(errors, list):
         result.notes.extend(str(error)[:300] for error in errors[:50])
-    metadata = _metadata(root)
+    raw_metadata = _metadata(root)
+    metadata = {}
+    aliases = {}
+    def remember(name):
+        parts = PurePosixPath(name).parts
+        for i in range(1, len(parts) + 1):
+            component = '/'.join(parts[:i])
+            key = component.casefold()
+            if key in aliases and aliases[key] != component:
+                raise ValueError('case-insensitive path collision')
+            aliases[key] = component
+    for key, value in raw_metadata.items():
+        name = value.get('path', key) if isinstance(value, dict) else key
+        mtime = value.get('mtime') if isinstance(value, dict) else value
+        try:
+            _target(root, host, name)
+            remember(name)
+            metadata[name.casefold()] = {'path': name, 'mtime': mtime}
+        except (ValueError, TypeError):
+            result.errors.append('invalid or colliding metadata path')
+    existing = set(metadata)
+    if root.exists():
+        for folder, dirs, files in os.walk(root, followlinks=False):
+            for filename in files:
+                path = Path(folder) / filename
+                if path == root / '.hqmeta.json': continue
+                name = path.relative_to(root).as_posix()
+                existing.add(name.casefold())
+                try: remember(name)
+                except ValueError: result.errors.append('case-insensitive path collision')
+    dirty = False
     db_bytes = 0
     for entry in answer.get('files', []):
         try:
@@ -85,16 +123,24 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
             if type(size) is not int or size < 0 or not isinstance(mtime, (int, float)) or isinstance(mtime, bool) or not math.isfinite(mtime):
                 raise ValueError('invalid size or mtime')
             data = base64.b64decode(entry.get('data_b64', ''), validate=True)
+            if not data and not (kind in ('reset', 'replace') and size == 0):
+                continue
+            key = name.casefold()
+            remember(name)
+            if key not in existing and len(existing) >= 20000:
+                raise ValueError('mirror file count limit exceeded')
             is_db = kind == 'replace' and name.lower().endswith('.db')
             budget_used = db_bytes if is_db else result.bytes - db_bytes
-            if budget_used + len(data) > (40000000 if is_db else 20000000) or offset + len(data) > size or (kind != 'append' and offset != 0):
+            if budget_used + len(data) > (30000000 if is_db else 20000000) or offset + len(data) > size or (kind != 'append' and offset != 0):
                 raise ValueError('invalid data size')
             if kind == 'replace' and len(data) != size:
                 raise ValueError('incomplete replacement')
             current = target.stat().st_size if target.exists() else 0
-            pending = metadata.get(name) is None and name in metadata
+            pending = key in metadata and metadata[key]['mtime'] is None
             if kind == 'append' and offset != current and not (pending and offset == 0):
-                metadata[name] = None
+                metadata[key] = {'path': name, 'mtime': None}
+                existing.add(key)
+                dirty = True
                 result.resets += 1
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -103,14 +149,16 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
             else:
                 with target.open('ab') as stream:
                     stream.write(data)
-            metadata[name] = mtime
+            metadata[key] = {'path': name, 'mtime': mtime}
+            existing.add(key)
+            dirty = True
             result.written += 1
             result.bytes += len(data)
             if is_db:
                 db_bytes += len(data)
         except (ValueError, TypeError, OSError, binascii.Error) as exc:
             result.errors.append(str(exc))
-    if metadata:
+    if dirty:
         try:
             _atomic(root / '.hqmeta.json', json.dumps(metadata).encode('utf-8'))
         except OSError as exc:
@@ -120,7 +168,9 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
 
 def cursors_for(root: Path, host) -> dict:
     cursors = {}
-    for name, mtime in _metadata(root).items():
+    for key, value in _metadata(root).items():
+        name = value.get('path', key) if isinstance(value, dict) else key
+        mtime = value.get('mtime') if isinstance(value, dict) else value
         if mtime is None:
             continue
         try:

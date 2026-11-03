@@ -44,7 +44,7 @@ def scan(request):
     home = Path.home()
     result = {'files': [], 'more': False, 'errors': []}
     remaining = min(max(0, int(request.get('cap_bytes', 20000000))), 20000000)
-    db_cap = min(max(0, int(request.get('db_cap_bytes', 40000000))), 40000000)
+    db_cap = min(max(0, int(request.get('db_cap_bytes', 30000000))), 30000000)
     db_sent = False
     cursors = request.get('cursors', {})
     for source in request.get('sources', []):
@@ -60,8 +60,8 @@ def scan(request):
                     is_db = path.suffix.lower() == '.db'
                     if is_db:
                         if stat.st_size > db_cap:
-                            if stat.st_size > 40000000:
-                                result['errors'].append(rel + ': database larger than 40 MB, not mirrored')
+                            if stat.st_size > 30000000:
+                                result['errors'].append(rel + ': database larger than 30 MB, not mirrored')
                             continue
                         if stat.st_size == old_size and stat.st_mtime == old_mtime:
                             continue

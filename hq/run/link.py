@@ -19,7 +19,7 @@ def find_session(store, harness, workdir, started_at, window_s=60):
     with closing(store.conn()) as conn:
         rows = conn.execute(
             'SELECT id, project FROM sessions WHERE harness=? AND started_at>=? '
-            'AND started_at<=? ORDER BY started_at DESC',
+            'AND started_at<=? AND host IS NULL ORDER BY started_at DESC',
             (harness, started_at, started_at + window_s),
         )
         rows = rows.fetchall()

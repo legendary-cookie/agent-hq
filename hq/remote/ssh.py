@@ -15,7 +15,7 @@ def scan_argv(host):
             '-o', 'ConnectTimeout=10', '--', host.ssh, *command]
 
 
-ANSWER_LIMIT = 128 * 1024 * 1024
+ANSWER_LIMIT = 64 * 1024 * 1024
 STDERR_LIMIT = 64 * 1024
 
 

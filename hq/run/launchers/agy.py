@@ -4,6 +4,7 @@ from pathlib import Path
 from hq.config import Profile
 from hq.run.request import RunRequest
 from .base import BaseLauncher, Launch
+from hq.run.stream import valid_session_id
 
 
 class AgyLauncher(BaseLauncher):
@@ -28,5 +29,6 @@ class AgyLauncher(BaseLauncher):
         return argv
 
     def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names):
+        if not valid_session_id(session_id): raise ValueError('Invalid session id')
         env = self.prepare(req, profile, workdir, env_base, pass_names)
-        return Launch(self._argv(req) + ['--conversation', session_id, '-p=' + text], env, workdir)
+        return Launch(self._argv(req) + ['--conversation=' + session_id, '-p=' + text], env, workdir)
