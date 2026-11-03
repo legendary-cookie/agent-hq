@@ -9,6 +9,7 @@ from pathlib import Path
 
 from hq.run import env, proc, workspace, winexe
 from hq.run.stream import parse_line
+from hq.run.link import find_session
 
 
 class Busy(Exception):
@@ -17,7 +18,8 @@ class Busy(Exception):
 
 class Runner:
     def __init__(self, store, run_cfg, launchers, worktrees_root, pu_log, on_event,
-                 clock=time.time, pu_limit=None, minute_s=60.0, projects=()):
+                 clock=time.time, pu_limit=None, minute_s=60.0, projects=(),
+                 link_interval_s=5.0, link_window_s=120.0, link_grace_s=20.0):
         self.store, self.run_cfg = store, run_cfg
         self.worktrees_root = Path(worktrees_root)
         self.launchers = {name: copy.copy(launcher) for name, launcher in launchers.items()}
@@ -27,6 +29,7 @@ class Runner:
         self.pu_log, self.on_event, self.clock = pu_log, on_event, clock
         self.pu_limit = pu_limit or (lambda *args: None)
         self.minute_s = minute_s
+        self.link_interval_s, self.link_window_s, self.link_grace_s = link_interval_s, link_window_s, link_grace_s
         self.projects = {project.name: Path(project.path) for project in projects}
         refused = list(self.projects.values()) + [self.worktrees_root]
         self.executables = {name: env.resolve_exe('wsl' if name == 'codex' else launcher.exe, refused)
@@ -65,7 +68,8 @@ class Runner:
                 raise Busy('Maximum concurrent runs reached')
             self.store.insert_run(rec)
             state = dict(status='starting', stop=None, child=None, finished=False,
-                         output=deque(maxlen=500), warnings=0, thread=None)
+                         output=deque(maxlen=500), warnings=0, thread=None,
+                         link_stop=threading.Event(), link_started=time.monotonic())
             self._runs[rid] = state
             thread = threading.Thread(target=self._run, args=(rid, req, profile, launcher, project), daemon=True)
             state['thread'] = thread
@@ -87,6 +91,7 @@ class Runner:
             if req.level != 'read_only':
                 workdir, branch, _ = workspace.create(project, rid, self.worktrees_root)
             self.store.update_run(rid, workdir=str(workdir), branch=branch)
+            self._start_linker(rid, launcher, workdir, self.store.get_run(rid)['started_at'])
             launch = launcher.build(req, profile, workdir, rid, os.environ,
                                     self.run_cfg.pass_env.get(req.tool, []))
             executable = self.executables.get(req.tool)
@@ -132,6 +137,7 @@ class Runner:
                     with self._lock:
                         if not self._runs[rid].get('session_id'):
                             self._runs[rid]['session_id'] = event.session_id
+                            self._runs[rid]['link_stop'].set()
                             self.store.update_run(rid, session_id=event.session_id)
                 if event.rate_limited:
                     self._rate_limit(rid, req, profile, launcher)
@@ -156,6 +162,37 @@ class Runner:
             finally:
                 self._status(rid, status, ended_at=self.clock(), exit_code=exit_code)
 
+    def _start_linker(self, rid, launcher, workdir, started_at):
+        with self._lock:
+            state = self._runs[rid]
+            state.setdefault('link_stop', threading.Event())
+            state.setdefault('link_started', time.monotonic())
+            thread = threading.Thread(target=self._link_session,
+                                      args=(rid, launcher, workdir, started_at), daemon=True)
+            state['link_thread'] = thread
+            thread.start()
+
+    def _link_session(self, rid, launcher, workdir, started_at):
+        with self._lock:
+            state = self._runs[rid]
+            stop = state.setdefault('link_stop', threading.Event())
+            start = state.setdefault('link_started', time.monotonic())
+        grace = self.link_grace_s if getattr(launcher, 'links_by_stream', True) else 0
+        remaining = start + grace - time.monotonic()
+        if remaining > 0 and stop.wait(remaining): return
+        while time.monotonic() <= start + self.link_window_s:
+            with self._lock:
+                if stop.is_set() or state['stop'] or state.get('session_id'): return
+            session_id = find_session(self.store, launcher.harness, workdir, started_at)
+            if session_id:
+                with self._lock:
+                    if not stop.is_set() and not state['stop'] and not state.get('session_id'):
+                        state['session_id'] = session_id
+                        self.store.update_run(rid, session_id=session_id)
+                return
+            remaining = start + self.link_window_s - time.monotonic()
+            if remaining <= 0 or stop.wait(min(self.link_interval_s, remaining)): return
+
     def _rate_limit(self, rid, req, profile, launcher):
         with self._lock:
             state = self._runs[rid]
@@ -178,6 +215,7 @@ class Runner:
             state = self._runs.get(rid)
             if not state or state['finished'] or state['stop']: return
             state['stop'] = status
+            state['link_stop'].set()
             child = state['child']
         if child: child.kill_tree()
 
@@ -197,9 +235,14 @@ class Runner:
     def shutdown(self):
         with self._lock:
             self._shutting_down = True
+            for state in self._runs.values():
+                state.get('link_stop', threading.Event()).set()
+            link_threads = [state['link_thread'] for state in self._runs.values() if state.get('link_thread')]
             ids = [rid for rid, state in self._runs.items() if not state['finished']]
             threads = [self._runs[rid]['thread'] for rid in ids]
         for rid in ids: self._request_stop(rid, 'interrupted')
+        for thread in link_threads:
+            if thread is not threading.current_thread(): thread.join(timeout=10)
         for thread in threads:
             if thread is not threading.current_thread() and thread.ident is not None: thread.join(timeout=10)
 
