@@ -219,7 +219,7 @@ The new screens (Run sheet, Runs page, run inspector, diff view) follow the Appl
 3. **Executables.** Resolved once at startup with `shutil.which`; a result inside the current folder, any allowlisted project, or `<data>/worktrees` is refused.
 4. **Arguments.** Fixed lists per tool; the prompt is one argument or stdin; model names must match `^[A-Za-z0-9._:/-]{1,80}$`; prompts are capped at 100,000 characters.
 5. **Paths.** The project's real path (symlinks and junctions resolved) must equal an allowlisted real path; the existing forbidden-path checks apply to projects, worktrees and profile folders.
-6. **Environment.** Children get a minimal environment: `PATH`, `HOME`/`USERPROFILE`, `SYSTEMROOT`, `TEMP`/`TMP`, `LANG`, the profile's config-folder variable, and `pass_env` entries for that tool. Anything else matching `KEY|TOKEN|SECRET|PASSWORD` is never passed.
+6. **Environment.** Children get a minimal environment: `PATH`, `HOME`/`USERPROFILE`, `SYSTEMROOT`, `TEMP`/`TMP`, `LANG`, plus the non-secret startup names Windows and POSIX tools need (`APPDATA`, `LOCALAPPDATA`, `PATHEXT`, `COMSPEC`, `SYSTEMDRIVE`, `WINDIR`, `PROGRAMDATA`, `PROGRAMFILES`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LC_ALL`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`; full list in `hq/run/env.py`), the profile's config-folder variable, and `pass_env` entries for that tool. Anything else matching `KEY|TOKEN|SECRET|PASSWORD` is never passed.
 7. **Full auto** needs a second confirm in the UI, is offered only per the table in section 2, and every use is logged.
 8. **Merge** is never automatic and never pushes.
 9. **Output** stays in memory; the database keeps status and the 200-character preview only.

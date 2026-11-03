@@ -31,7 +31,7 @@
   - Prompts are at most 100,000 characters.
   - Time limit is 1–240 min (default 30).
   - `max_concurrent` defaults to 3.
-- **Child environment:** only `PATH`, `HOME`, `USERPROFILE`, `SYSTEMROOT`, `TEMP`, `TMP`, `LANG`, the profile's config-folder variable, and that tool's `pass_env` names. Never pass anything else matching `KEY|TOKEN|SECRET|PASSWORD` (case-insensitive).
+- **Child environment:** only `PATH`, `HOME`, `USERPROFILE`, `SYSTEMROOT`, `TEMP`, `TMP`, `LANG`, plus the non-secret startup names Windows and POSIX tools need (`APPDATA`, `LOCALAPPDATA`, `PATHEXT`, `COMSPEC`, `SYSTEMDRIVE`, `WINDIR`, `PROGRAMDATA`, `PROGRAMFILES`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LC_ALL`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`; full list in `hq/run/env.py`), the profile's config-folder variable, and that tool's `pass_env` names. Never pass anything else matching `KEY|TOKEN|SECRET|PASSWORD` (case-insensitive).
 - **Never read, copy or log** files inside a profile `config_dir`, or any path `hq.config.is_forbidden` rejects.
 - **Storage:**
   - The DB stores at most 200 characters of the prompt (`prompt_preview`).
