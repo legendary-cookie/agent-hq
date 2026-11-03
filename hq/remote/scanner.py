@@ -44,7 +44,8 @@ def scan(request):
     home = Path.home()
     result = {'files': [], 'more': False, 'errors': []}
     remaining = min(max(0, int(request.get('cap_bytes', 20000000))), 20000000)
-    db_cap = min(max(0, int(request.get('db_cap_bytes', 200000000))), 200000000)
+    db_cap = min(max(0, int(request.get('db_cap_bytes', 40000000))), 40000000)
+    db_sent = False
     cursors = request.get('cursors', {})
     for source in request.get('sources', []):
         for relroot in SOURCES.get(source, ()):
@@ -58,9 +59,13 @@ def scan(request):
                     old_size, old_mtime = cursors.get(rel, (0, 0))
                     is_db = path.suffix.lower() == '.db'
                     if is_db:
-                        if stat.st_size > db_cap or (stat.st_size == old_size and stat.st_mtime == old_mtime):
+                        if stat.st_size > db_cap:
+                            if stat.st_size > 40000000:
+                                result['errors'].append(rel + ': database larger than 40 MB, not mirrored')
                             continue
-                        if stat.st_size > remaining:
+                        if stat.st_size == old_size and stat.st_mtime == old_mtime:
+                            continue
+                        if db_sent:
                             result['more'] = True
                             continue
                         kind, offset = 'replace', 0
@@ -69,26 +74,30 @@ def scan(request):
                         kind, offset = ('reset', 0) if reset else ('append', old_size)
                         if stat.st_size == offset and not reset:
                             continue
-                    if remaining == 0 and stat.st_size > offset:
+                    if not is_db and remaining == 0 and stat.st_size > offset:
                         result['more'] = True
-                        return result
+                        continue
                     with path.open('rb') as stream:
                         stream.seek(offset)
-                        data = stream.read(remaining)
+                        data = stream.read(stat.st_size if is_db else remaining)
                     result['files'].append({'path': rel, 'kind': kind, 'offset': offset,
                                             'data_b64': base64.b64encode(data).decode('ascii'),
                                             'size': stat.st_size, 'mtime': stat.st_mtime})
-                    remaining -= len(data)
+                    if is_db:
+                        db_sent = True
+                    else:
+                        remaining -= len(data)
                     if offset + len(data) < stat.st_size:
                         result['more'] = True
-                        return result
+                        continue
                 except (OSError, ValueError, TypeError) as exc:
                     result['errors'].append(str(exc))
     return result
 
 
-if __name__ == '__main__':
-    request_text = sys.stdin.read()
-    if '__HQ_REQUEST__\n' in request_text:
-        request_text = request_text.split('__HQ_REQUEST__\n', 1)[1]
+def main(request_text: str) -> None:
     print(json.dumps(scan(json.loads(request_text))))
+
+
+if __name__ == '__main__' and '_HQ_REQUEST' not in globals() and sys.argv[0] != '-':
+    main(sys.stdin.read())

@@ -1,9 +1,13 @@
 import json
+import io
+import os
+import sys
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from hq.remote.config import Host, load_hosts
 from hq.remote.ssh import RemoteError, run_scan, scan_argv
@@ -41,10 +45,68 @@ class RemoteConfigTests(unittest.TestCase):
         self.assertEqual(scan_argv(Host('box', 'box', 'windows', 'web', 60, ()))[-6:], ['docker', 'exec', '-i', 'web', 'python3', '-'])
 
     def test_run_scan_errors(self):
-        def result(stdout=b'{}', stderr=b'', returncode=0):
-            return lambda *a, **k: SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
-        def timeout(*a, **k):
-            raise subprocess.TimeoutExpired('ssh', 120)
-        for runner in (result(stderr=b'bad', returncode=255), timeout, result(stdout=b'x' * (64 * 1024 * 1024 + 1)), result(stdout=b'{')):
-            with self.subTest(runner=runner), self.assertRaises(RemoteError):
-                run_scan(self.host, {}, 'scanner', runner)
+        def process(stdout=b'{}', stderr=b'', returncode=0):
+            class Input(io.BytesIO):
+                def close(self):
+                    pass
+            return lambda *a, **k: SimpleNamespace(stdin=Input(), stdout=io.BytesIO(stdout), stderr=io.BytesIO(stderr), returncode=returncode, wait=lambda: returncode, kill=lambda: None)
+        for popen in (process(stderr=b'bad', returncode=255), process(stdout=b'{')):
+            with self.subTest(popen=popen), self.assertRaises(RemoteError):
+                run_scan(self.host, {}, 'scanner', popen)
+
+    def test_real_payload_through_python_dash(self):
+        path = self.path / '.codex/sessions/a'
+        path.parent.mkdir(parents=True)
+        path.write_text('fixture')
+        env = dict(os.environ, HOME=str(self.path), USERPROFILE=str(self.path))
+        def local(argv, **kwargs):
+            return subprocess.Popen([sys.executable, '-'], env=env, **kwargs)
+        scanner = (Path(__file__).resolve().parents[1] / 'hq/remote/scanner.py').read_text()
+        answer = run_scan(self.host, {'sources': ['codex']}, scanner, local)
+        self.assertEqual(answer['files'][0]['path'], '.codex/sessions/a')
+
+    def test_request_cannot_inject_code(self):
+        env = dict(os.environ, HOME=str(self.path), USERPROFILE=str(self.path))
+        def local(argv, **kwargs):
+            return subprocess.Popen([sys.executable, '-'], env=env, **kwargs)
+        scanner = (Path(__file__).resolve().parents[1] / 'hq/remote/scanner.py').read_text()
+        answer = run_scan(self.host, {'sources': ["'); import os; os._exit(9) #\n"]}, scanner, local)
+        self.assertEqual(answer['files'], [])
+
+    def test_streaming_output_is_bounded(self):
+        class Stream:
+            count = 0
+            def read(self, size):
+                size = min(size, 200 * 1024 * 1024 - self.count)
+                self.count += size
+                return b'x' * size
+            def close(self):
+                pass
+        stream = Stream()
+        class Input(io.BytesIO):
+            def close(self):
+                pass
+        proc = SimpleNamespace(stdin=Input(), stdout=stream, stderr=io.BytesIO(), returncode=0, wait=lambda: 0, kill=lambda: None)
+        with self.assertRaisesRegex(RemoteError, 'scanner answer too large'):
+            run_scan(self.host, {}, '', lambda *a, **k: proc)
+        self.assertLessEqual(stream.count, 128 * 1024 * 1024 + 1)
+
+    def test_watchdog_kills_timed_out_process(self):
+        class Input(io.BytesIO):
+            def close(self):
+                pass
+        killed = []
+        proc = SimpleNamespace(stdin=Input(), stdout=io.BytesIO(), stderr=io.BytesIO(),
+                               returncode=-9, wait=lambda: -9, kill=lambda: killed.append(True))
+        class Timer:
+            def __init__(self, seconds, callback):
+                self.callback = callback
+                self.seconds = seconds
+            def start(self):
+                self.callback()
+            def cancel(self):
+                pass
+        with patch('hq.remote.ssh.threading.Timer', Timer):
+            with self.assertRaisesRegex(RemoteError, 'timed out'):
+                run_scan(self.host, {}, '', lambda *a, **k: proc)
+        self.assertTrue(killed)

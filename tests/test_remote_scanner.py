@@ -23,7 +23,7 @@ class ScannerTests(unittest.TestCase):
         path.write_bytes(data)
         return path
 
-    def scan(self, sources=('codex',), cursors=None, cap=20000000, db_cap=200000000):
+    def scan(self, sources=('codex',), cursors=None, cap=20000000, db_cap=40000000):
         request = {'sources': list(sources), 'cursors': cursors or {}, 'cap_bytes': cap, 'db_cap_bytes': db_cap}
         env = dict(os.environ, HOME=str(self.home), USERPROFILE=str(self.home))
         result = subprocess.run([sys.executable, str(SCANNER)], input=json.dumps(request), text=True, capture_output=True, env=env, check=True)
@@ -71,6 +71,19 @@ class ScannerTests(unittest.TestCase):
     def test_db_over_cap_skipped(self):
         self.put('.local/share/opencode/opencode.db', b'db')
         self.assertEqual(self.scan(('opencode',), db_cap=1)['files'], [])
+
+    def test_database_has_separate_budget(self):
+        self.put('.codex/sessions/a', b'x' * 20000000)
+        self.put('.local/share/opencode/opencode.db', b'd' * 30000000)
+        answer = self.scan(('codex', 'opencode'))
+        self.assertEqual([f['kind'] for f in answer['files']], ['append', 'replace'])
+        self.assertEqual(len(base64.b64decode(answer['files'][1]['data_b64'])), 30000000)
+
+    def test_database_over_40_mb_reports_error(self):
+        self.put('.local/share/opencode/opencode.db', b'd' * 50000000)
+        answer = self.scan(('opencode',))
+        self.assertEqual(answer['files'], [])
+        self.assertIn('.local/share/opencode/opencode.db: database larger than 40 MB, not mirrored', answer['errors'])
 
     def test_unrequested_source_not_read(self):
         self.put('.claude/projects/a', b'x')
