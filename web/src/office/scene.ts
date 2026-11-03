@@ -12,6 +12,7 @@ export type Npc = {
   model: string | null;
   state: NpcState;
   imported: boolean;
+  launchedRunId?: string | null;
   color: string;
   deskId: string | null;
   targetRoomId: string;
@@ -67,6 +68,7 @@ export function buildScene(
       model: s.model,
       state,
       imported: Boolean(s.imported),
+      launchedRunId: s.launched_run_id,
       color: HARNESS_COLORS[harness] ?? HARNESS_COLORS.unknown,
       deskId: desk,
       targetRoomId: state === 'idle' ? 'break' : harness,

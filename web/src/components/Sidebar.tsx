@@ -41,14 +41,15 @@ export function selectSidebarLimits(cards: LimitCard[], n = 4) {
     .slice(0, n);
 }
 
-export function Sidebar({ route, navigate }: { route: Route; navigate: (r: Route) => void }) {
+export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r: Route) => void; onRun?: () => void }) {
   const { data } = useApi<LimitCard[]>('/api/limits');
   const limits = selectSidebarLimits(data ?? []);
   return (
     <aside className="sidebar">
       <div className="brand">Agent HQ</div>
+      <button onClick={onRun}>Run</button>
       <nav>
-        {(['office', 'dashboard', 'agents', 'limits'] as Route[]).map((r) => (
+        {(['office', 'dashboard', 'agents', 'limits', 'runs'] as Route[]).map((r) => (
           <button key={r} className={route === r ? 'selected' : ''} onClick={() => navigate(r)}>
             {r[0].toUpperCase() + r.slice(1)}
           </button>

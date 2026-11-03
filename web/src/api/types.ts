@@ -1,6 +1,7 @@
 export interface SessionRow {
   id: string;
   imported: 0 | 1;
+  launched_run_id?: string | null;
   harness: string | null;
   provider: string | null;
   model: string | null;
@@ -193,4 +194,28 @@ export interface DelegationRow {
   model: string;
   task_kind: string;
   outcome: string;
+}
+
+export interface RunOptions {
+  run_mode: boolean;
+  tools: Record<string, { levels: string[]; harness: string; tested: boolean | string }>;
+  projects: string[];
+  profiles: { id: string; tool: string; account_id: string; max_used_percent: number | null; blocked_until: number | null }[];
+  defaults: { level: string; guard_mode: string; time_limit_min: number };
+  max_concurrent: number;
+}
+export interface RunRequest {
+  tool: string; model: string | null; project: string; prompt: string; level: string;
+  guard_mode: string; profile: string | null; time_limit_min: number;
+}
+export interface RunVerdict {
+  allowed: boolean; reasons: string[]; warnings: string[]; suggestion: Record<string, unknown> | null;
+  profile: string | null; earliest_reset: number | null;
+}
+export interface Run {
+  id: string; tool: string; model: string | null; account: string | null; project: string;
+  workdir: string; branch: string | null; base_commit: string | null; level: string; guard_mode: string;
+  mode: string; status: string; session_id: string | null; prompt_preview: string;
+  started_at: number | null; ended_at: number | null; exit_code: number | null;
+  time_limit_s: number; merge_state: string | null;
 }

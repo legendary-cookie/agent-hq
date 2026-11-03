@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useApi } from '../api/client';
-import type { SessionDetail } from '../api/types';
+import { stopRun, useApi } from '../api/client';
+import type { Run, SessionDetail } from '../api/types';
 import { fmtDuration, fmtTokens, fmtUsd } from '../lib/format';
 import { harnessLabel } from '../office/colors';
 import { LimitBar } from './LimitBar';
@@ -53,6 +53,8 @@ export function Inspector({
   const parentId = detail?.session.parent_id;
   const parentPath = parentId ? `/api/sessions/${encodeURIComponent(parentId)}?limit=1` : null;
   const { data: parent } = useApi<SessionDetail>(parentPath);
+  const runId = detail?.session.launched_run_id;
+  const { data: run, reload: reloadRun } = useApi<Run>(runId ? `/api/runs/${encodeURIComponent(runId)}` : null);
   if (!selected) return null;
   const session = detail?.session;
   const latest = detail?.events[0];
@@ -85,6 +87,8 @@ export function Inspector({
           <div className="inspector-subtitle">
             {session.model ?? '—'} · {session.account_id ?? '—'}
           </div>
+          <button onClick={() => window.dispatchEvent(new Event('hq-open-run'))}>Run</button>
+          {run && ['queued', 'starting', 'running'].includes(run.status) && <button onClick={() => void stopRun(run.id).then(reloadRun)}>Stop run</button>}
           <div className="inspector-heading">Now</div>
           <div>
             <span className={`status-dot status-${session.status ?? 'idle'}`} />

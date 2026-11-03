@@ -1,3 +1,4 @@
+const themeBadgeColor = () => '#0071e3';
 import { Application, Container, Graphics, Text } from 'pixi.js';
 import { HARNESS_COLORS, STATUS_COLORS, harnessLabel } from './colors';
 import { drawDesk, drawLabel } from './draw';
@@ -251,10 +252,19 @@ export class RetainedSkin implements Skin {
       npc.color,
       npc.state,
       npc.imported,
+      npc.launchedRunId,
       this.selected === npc.id,
     ]);
     if (signature !== person.signature) {
       person.body.clear();
+      const oldBadge = person.container.getChildByLabel('hq-badge');
+      if (oldBadge) { person.container.removeChild(oldBadge); oldBadge.destroy(); }
+      if (npc.launchedRunId) {
+        const badge = new Text({ text: 'launched by HQ', style: { fontSize: 8, fill: themeBadgeColor() } });
+        badge.label = 'hq-badge';
+        badge.position.set(-badge.width / 2, -50);
+        person.container.addChild(badge);
+      }
       if (npc.imported) {
         for (let i = 0; i < 16; i++) {
           const angle = (i * Math.PI * 2) / 16;

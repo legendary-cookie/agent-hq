@@ -21,7 +21,7 @@ export function Agents() {
   const [status, setStatus] = useState<string>('all');
   const [harness, setHarness] = useState('all');
   const [sort, setSort] = useState<'activity' | 'tokens'>('activity');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.hash.split('?')[1] ?? '').get('session'));
   const sessions = data ?? [];
   const harnesses = [
     ...new Set(sessions.map((row) => row.harness).filter((item): item is string => !!item)),

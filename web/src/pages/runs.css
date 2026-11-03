@@ -1,0 +1,64 @@
+.runs-layout {
+  display: flex;
+  gap: 20px;
+}
+.runs-page {
+  flex: 1;
+  min-width: 0;
+}
+.runs-page table {
+  width: 100%;
+  margin-top: 18px;
+  border-collapse: collapse;
+  text-align: left;
+}
+.runs-page td, .runs-page th {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.runs-page tr {
+  cursor: pointer;
+}
+.run-status {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--idle);
+  color: var(--text);
+}
+.status-run-queued, .status-run-starting, .status-run-running {
+  background: var(--working);
+}
+.status-run-failed, .status-run-timed_out, .status-run-interrupted {
+  background: var(--error);
+}
+.status-run-rate_limited {
+  background: var(--waiting);
+}
+.run-detail {
+  width: min(500px, 45vw);
+  padding: 20px;
+  border-radius: 16px;
+  background: var(--panel);
+}
+.run-output, .diff-view pre {
+  max-height: 300px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--surface);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-add {
+  color: var(--working);
+}
+.diff-remove {
+  color: var(--error);
+}
+.run-actions {
+  display: flex;
+  gap: 8px;
+}
+.runs-layout button:active {
+  transform: scale(0.97);
+}
