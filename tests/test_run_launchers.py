@@ -14,7 +14,8 @@ class LauncherTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        # resolve(): Windows TEMP may be an 8.3 short path (JANEDO~1); the resolver returns long paths.
+        self.root = Path(self.tmp.name).resolve()
         self.worktrees = self.root / 'worktrees'
         self.workdir = self.worktrees / 'run_123'
         self.req = RunRequest('claude', 'model', 'project', 'hello', 'edit', 'block', None, 30)
@@ -130,6 +131,30 @@ class LauncherTests(unittest.TestCase):
         node.unlink()
         with patch('hq.run.winexe.shutil.which', return_value=str(self.root / 'external-node')):
             self.assertEqual(resolve_command(shim), [str(self.root / 'external-node'), str(target)])
+
+    def test_real_npm_shim_last_line(self):
+        # Shape of the last line of a real npm 10 shim (gemini.CMD / dsh.CMD on Windows).
+        from hq.run.winexe import resolve_command
+        shim = self.root / 'dsh.CMD'
+        target = self.root / 'node_modules' / '@deepseek-ai' / 'dsh' / 'lib' / 'bin.js'
+        target.parent.mkdir(parents=True)
+        target.touch()
+        node = self.root / 'node.exe'
+        node.touch()
+        shim.write_text('@ECHO off\nGOTO start\n:start\nSETLOCAL\n)\n\n'
+                        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & '
+                        '"%_prog%"  "%dp0%\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js" %*\n')
+        self.assertEqual(resolve_command(shim), [str(node), str(target)])
+
+    def test_shim_with_trailing_command_refused(self):
+        from hq.run.winexe import resolve_command
+        shim = self.root / 'x.cmd'
+        target = self.root / 'node_modules' / 'x' / 'x.exe'
+        target.parent.mkdir(parents=True)
+        target.touch()
+        shim.write_text('"%dp0%\\node_modules\\x\\x.exe" %* & calc.exe\n')
+        with self.assertRaises(ValueError):
+            resolve_command(shim)
 
     def test_shim_rejects_escape(self):
         from hq.run.winexe import resolve_command

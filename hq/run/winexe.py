@@ -6,8 +6,10 @@ from pathlib import Path
 
 _BATCH = {'.cmd', '.bat'}
 _SAFE_ARG = re.compile(r'[A-Za-z0-9._:/=\\@+\-]*', re.ASCII)
-_EXE = re.compile(r'"%dp0%[\\/](.+?\.exe)"\s+%\*', re.IGNORECASE)
-_JS = re.compile(r'"%_prog%"\s+"%dp0%[\\/](.+?\.js)"\s+%\*', re.IGNORECASE)
+# The target is the last command on the shim's last line. Real npm shims prefix it with
+# `endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & `, so match at the line end.
+_EXE = re.compile(r'(?:^|&\s*)"%dp0%[\\/]([^"%]+?\.exe)"\s+%\*\s*$', re.IGNORECASE)
+_JS = re.compile(r'(?:^|&\s*)"%_prog%"\s+"%dp0%[\\/]([^"%]+?\.js)"\s+%\*\s*$', re.IGNORECASE)
 
 
 def resolve_command(exe_path: Path) -> list[str]:
@@ -18,8 +20,8 @@ def resolve_command(exe_path: Path) -> list[str]:
     except (OSError, UnicodeError) as exc:
         raise ValueError('Cannot read batch shim') from exc
     line = next((line.strip() for line in reversed(lines) if line.strip()), '')
-    exe_match = _EXE.fullmatch(line)
-    js_match = _JS.fullmatch(line)
+    exe_match = _EXE.search(line)
+    js_match = _JS.search(line)
     match = exe_match or js_match
     if not match:
         raise ValueError('Unsupported batch shim')
