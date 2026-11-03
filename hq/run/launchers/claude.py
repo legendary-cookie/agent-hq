@@ -40,3 +40,9 @@ class ClaudeLauncher(BaseLauncher):
             argv += ['--permission-mode', 'plan' if req.level == 'read_only' else 'acceptEdits']
         if req.model: argv += ['--model', req.model]
         return Launch(argv, env, workdir, self.first_input(req.prompt))
+
+    def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names) -> Launch:
+        launch = self.build(req, profile, workdir, run_id, env_base, pass_names)
+        launch.argv[2:2] = ['--resume', session_id]
+        launch.stdin_text = self.first_input(text)
+        return launch

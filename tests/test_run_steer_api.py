@@ -28,6 +28,14 @@ class SteerApiTests(unittest.TestCase):
         self.addCleanup(self.service.approvals.close_run, 'run_1')
         return self.service.approvals.open('run_1', 'req', 'Bash', {'command': 'echo hi'}, lambda *a: None)
 
+    def test_options_include_can_ask_and_steer_mode(self):
+        from hq.run.launchers.claude import ClaudeLauncher
+        self.service.launchers = {'claude': ClaudeLauncher()}
+        with patch.object(self.service, '_tools', return_value=self.service.launchers):
+            tool = self.service.options()['tools']['claude']
+        self.assertIs(tool['can_ask'], True)
+        self.assertEqual(tool['steer_mode'], 'live')
+
     def test_answer_other_runs_request_404(self):
         self.approval()
         with self.assertRaises(RunError) as exc: self.service.answer('run_2:req', {'decision': 'allow_once'})

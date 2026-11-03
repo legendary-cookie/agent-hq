@@ -42,7 +42,7 @@ class RunService:
         self.approvals = ApprovalBook(store, self.run_cfg.approval_timeout_min * 60,
                                       lambda event: self.on_event(event))
         self.runner = (runner_factory or Runner)(store, self.run_cfg, self.launchers, Path(data_dir)/'worktrees',
-            self.pu_log, on_event=lambda event: self.on_event(event), pu_limit=self.pu_limit, projects=self.projects, approvals=self.approvals)
+            self.pu_log, on_event=lambda event: self.on_event(event), pu_limit=self.pu_limit, projects=self.projects, approvals=self.approvals, profiles=self._profiles())
 
     def _pu(self, command, provider, model, *args):
         if self.pu_dir is None: return
@@ -93,7 +93,7 @@ class RunService:
     def options(self):
         states = pool.profile_states(self.store, self._profiles(), time.time())
         return {'run_mode': self.run_cfg.run_mode,
-                'tools': {n: {'levels': sorted(l.levels()), 'harness': l.harness, 'tested': getattr(l, 'tested', False)} for n,l in self._tools().items()},
+                'tools': {n: {'levels': sorted(l.levels()), 'harness': l.harness, 'tested': getattr(l, 'tested', False), 'can_ask': getattr(l, 'can_ask', False), 'steer_mode': getattr(l, 'steer_mode', None)} for n,l in self._tools().items()},
                 'projects': [p.name for p in self.projects],
                 'profiles': [{'id': s.profile.id, 'tool': s.profile.tool, 'account_id': s.profile.account_id,
                               'max_used_percent': s.max_used_percent, 'blocked_until': s.blocked_until} for s in states],
@@ -171,7 +171,7 @@ class RunService:
         if not self.nonces.redeem(data.get('nonce'), key): raise RunError(403, 'confirm again')
         try: self.runner.send(rid, data['text'])
         except (NotIdle, Busy, KeyError) as exc: raise RunError(409, str(exc)) from exc
-        except ValueError as exc: raise RunError(400, str(exc)) from exc
+        except ValueError as exc: raise RunError(409, str(exc)) from exc
         return {'ok': True}
 
     def _project(self, run):

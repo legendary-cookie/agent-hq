@@ -25,6 +25,13 @@ class FakeLive(ClaudeLauncher):
         return Launch([sys.executable, str(SCRIPT), *req.prompt.split()], dict(env_base), workdir, self.first_input(req.prompt))
 
 
+class FakeLiveResume(FakeLive):
+    def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names):
+        self.resumed = ClaudeLauncher(self.worktrees_root).build_resume(
+            req, profile, workdir, run_id, session_id, text, env_base, pass_names)
+        return Launch([sys.executable, str(SCRIPT), 'live'], dict(env_base), workdir, self.first_input(text))
+
+
 class FakeResume(FakeLive):
     steer_mode = 'resume'
     def build(self, req, profile, workdir, run_id, env_base, pass_names):
@@ -67,6 +74,49 @@ class SteerRunnerTests(unittest.TestCase):
         rid = self.start('ask Bash echo')
         self.wait_for(lambda: bool(self.book.waiting(rid)))
         return rid, self.book.waiting(rid)[0].id
+
+    def test_claude_build_resume_argv(self):
+        launcher = ClaudeLauncher(self.root / 'worktrees')
+        workdir = self.root / 'worktrees' / 'run'
+        for level in ('read_only', 'ask', 'edit', 'full_auto'):
+            with self.subTest(level=level):
+                req = RunRequest('claude', 'model', 'p', 'initial', level, 'warn', None, 1)
+                original = launcher.build(req, None, workdir, 'run', {}, [])
+                resumed = launcher.build_resume(req, None, workdir, 'run', 'raw-id', 'followup', {}, [])
+                self.assertEqual(resumed.argv, original.argv[:2] + ['--resume', 'raw-id'] + original.argv[2:])
+                self.assertEqual(resumed.stdin_text, launcher.first_input('followup'))
+
+    def test_live_run_followup_after_idle_close_resumes(self):
+        self.runner.launchers['claude'] = FakeLiveResume()
+        rid = self.start('live'); self.status(rid, 'idle')
+        self.runner._runs[rid]['raw_session_id'] = 'raw-id'
+        self.status(rid, 'done'); self.runner.send(rid, 'followup')
+        self.output_has(rid, 'followup'); self.status(rid, 'idle')
+        self.assertIn('raw-id', self.runner.launchers['claude'].resumed.argv)
+        self.assertEqual(self.store.get_run(rid)['turns'], 2)
+
+    def finished_row(self, project='p'):
+        self.store.insert_run(dict(id='old', tool='claude', project=project, workdir=str(self.root),
+            level='read_only', guard_mode='warn', status='done', prompt_preview='original', started_at=1,
+            time_limit_s=60, session_id='claude:raw-id'))
+
+    def test_followup_after_restart_rebuilds_from_row_and_keeps_level(self):
+        self.finished_row()
+        self.runner.shutdown()
+        self.runner = Runner(self.store, RunConfig(max_concurrent=2), {'claude': FakeLiveResume()},
+                             self.root / 'worktrees', lambda *args: None, lambda event: None,
+                             approvals=self.book, idle_close_s=.4, projects=[Project('p', self.root)])
+        self.addCleanup(self.runner.shutdown)
+        self.runner.send('old', 'followup'); self.output_has('old', 'followup')
+        launch = self.runner.launchers['claude'].resumed
+        self.assertEqual(launch.argv[launch.argv.index('--permission-mode') + 1], 'plan')
+        self.assertEqual(launch.argv[launch.argv.index('--resume') + 1], 'raw-id')
+        self.assertEqual(self.store.get_run('old')['turns'], 2)
+
+    def test_followup_after_restart_refused_when_project_gone(self):
+        self.finished_row('gone')
+        with self.assertRaisesRegex(ValueError, 'Project'):
+            self.runner.send('old', 'followup')
 
     def test_ask_allow_reaches_agent(self):
         rid, aid = self.ask(); self.book.answer(aid, 'allow_once', None)

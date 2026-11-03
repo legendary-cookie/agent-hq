@@ -10,6 +10,7 @@ from pathlib import Path
 from hq.run import env, followup, proc, workspace, winexe
 from hq.run.stream import parse_line
 from hq.run.link import find_session
+from hq.run.request import RunRequest
 
 
 class Busy(Exception):
@@ -24,7 +25,7 @@ class Runner:
     def __init__(self, store, run_cfg, launchers, worktrees_root, pu_log, on_event,
                  clock=time.time, pu_limit=None, minute_s=60.0, projects=(),
                  link_interval_s=5.0, link_window_s=120.0, link_grace_s=20.0,
-                 approvals=None, idle_close_s=1800.0):
+                 approvals=None, idle_close_s=1800.0, profiles=()):
         self.store, self.run_cfg = store, run_cfg
         self.approvals, self.idle_close_s = approvals, idle_close_s
         self.worktrees_root = Path(worktrees_root)
@@ -38,6 +39,7 @@ class Runner:
         self.minute_s = minute_s
         self.link_interval_s, self.link_window_s, self.link_grace_s = link_interval_s, link_window_s, link_grace_s
         self.projects = {project.name: Path(project.path) for project in projects}
+        self.profiles = list(profiles)
         refused = list(self.projects.values()) + [self.worktrees_root]
         self.executables = {name: env.resolve_exe('wsl' if name == 'codex' else launcher.exe, refused)
                             for name, launcher in launchers.items()}
@@ -111,7 +113,7 @@ class Runner:
                 launch = followup.resume_launch(launcher, req, profile, state['workdir'], rid,
                                                 state['raw_session_id'], resume_text,
                                                 state['env_base'], state['pass_names'])
-            if getattr(launcher, 'steer_mode', None) == 'live':
+            if getattr(launcher, 'steer_mode', None) == 'live' and resume_text is None:
                 launch = replace(launch, stdin_text=launcher.first_input(req.prompt))
             executable = self.executables.get(req.tool)
             if executable is None: raise FileNotFoundError('Executable unavailable')
@@ -263,7 +265,9 @@ class Runner:
         if not isinstance(text, str) or not text or len(text) > 100000:
             raise ValueError('Invalid message')
         with self._lock:
-            state = self._runs[rid]
+            state = self._runs.get(rid)
+            if state is None:
+                state = self._restore(rid)
             launcher = state['launcher']
             mode = getattr(launcher, 'steer_mode', None)
             if mode == 'live' and state['status'] == 'idle' and not state['finished']:
@@ -275,8 +279,14 @@ class Runner:
                 self._write(rid, launcher.user_message(text))
                 self.on_event({'type': 'run', 'id': rid, 'status': 'running'})
                 return
-            if mode != 'resume' or not state['finished'] or state['status'] != 'done' or not state['raw_session_id']:
+            if mode not in ('live', 'resume') or not state['finished'] or state['status'] not in ('done', 'interrupted', 'stopped'):
                 raise NotIdle('The agent is still working')
+            if not state['raw_session_id']:
+                session_id = state.get('session_id') or self.store.get_run(rid).get('session_id')
+                prefix = f'{launcher.harness}:'
+                state['raw_session_id'] = session_id.removeprefix(prefix) if session_id else None
+            if not state['raw_session_id']:
+                raise NotIdle('No session is available to resume')
             if self._shutting_down or sum(not r['finished'] for r in self._runs.values()) >= self.run_cfg.max_concurrent:
                 raise Busy('Maximum concurrent runs reached')
             state['finished'] = False
@@ -291,6 +301,36 @@ class Runner:
             state['thread'] = thread
             thread.start()
         self.on_event({'type': 'run', 'id': rid, 'status': 'starting'})
+
+    def _restore(self, rid):
+        row = self.store.get_run(rid)
+        if row is None:
+            raise KeyError(rid)
+        launcher = self.launchers.get(row['tool'])
+        if not launcher or getattr(launcher, 'steer_mode', None) != 'live' or row['status'] not in ('done', 'interrupted', 'stopped'):
+            raise NotIdle('The run cannot be resumed')
+        project = self.projects.get(row['project'])
+        if project is None or project != project.resolve() or not project.is_dir():
+            raise ValueError('Project is no longer allowlisted or available')
+        workdir = Path(row['workdir'])
+        if not workdir.is_dir():
+            raise ValueError('Run workdir no longer exists')
+        profile = next((p for p in self.profiles if p.id == row['account'] and p.tool == row['tool']), None)
+        if row['account'] and profile is None:
+            raise ValueError('Run profile is no longer available')
+        req = RunRequest(row['tool'], row['model'], row['project'], row['prompt_preview'] or '',
+                         row['level'], row['guard_mode'], row['account'], int(row['time_limit_s'] // 60) or 1)
+        session_id = row['session_id']
+        raw_id = session_id.removeprefix(f'{launcher.harness}:') if session_id else None
+        state = dict(status=row['status'], stop=None, child=None, finished=True,
+                     output=deque(maxlen=500), warnings=0, thread=None,
+                     link_stop=threading.Event(), link_started=time.monotonic(),
+                     write_lock=threading.Lock(), idle_timer=None, raw_session_id=raw_id,
+                     session_id=session_id, req=req, profile=copy.deepcopy(profile), launcher=launcher,
+                     pass_names=list(self.run_cfg.pass_env.get(req.tool, [])), env_base=dict(os.environ),
+                     workdir=workdir, turns=row['turns'] or 1)
+        self._runs[rid] = state
+        return state
 
     def _start_linker(self, rid, launcher, workdir, started_at):
         with self._lock:
