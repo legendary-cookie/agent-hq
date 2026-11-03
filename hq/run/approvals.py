@@ -33,6 +33,12 @@ _DANGEROUS = {'rm', 'rmdir', 'del', 'curl', 'wget', 'ssh', 'scp', 'nc',
               'invoke-expression', 'iex', 'start-process', 'wsl', 'start', 'saps', 'ii',
               'invoke-item', 'start-job', '.'}
 _INTERPRETERS = {'python', 'python3', 'node', 'npx', 'deno', 'ruby', 'perl'}
+# Read-only commands that can be allowed for the rest of a run. The never-auto check still runs
+# first, so any chaining, redirect or substitution in the command always asks.
+_RULE_OK = {'ls', 'dir', 'pwd', 'cat', 'type', 'head', 'tail', 'wc', 'grep', 'rg', 'diff', 'tree',
+            'which', 'where', 'echo', 'stat', 'file',
+            'get-childitem', 'gci', 'get-content', 'gc', 'select-string', 'sls', 'get-location', 'gl',
+            'test-path', 'resolve-path', 'get-item', 'gi', 'measure-object'}
 
 
 def _words(command):
@@ -82,9 +88,10 @@ def rule_key(tool_name, tool_input, worktree: Path):
     if name in _COMMANDS:
         words = _words(tool_input.get('command', ''))
         first = _basename(words[0]) if words else ''
-        # Git aliases and configuration can make any subcommand execute arbitrary code.
-        # Never create a run-wide Git rule; each invocation requires approval.
-        return f'{tool_name}:{first}' if first and first not in _INTERPRETERS | {'git'} else None
+        # Only read-only commands may get a run-wide rule. A denylist of dangerous names kept
+        # missing wrappers (command, nohup, timeout, busybox, gh aliases, Invoke-Command...), and
+        # tools like npm, make or git run code the agent can edit. Everything else always asks.
+        return f'{tool_name}:{first}' if first in _RULE_OK else None
     if name in _FILES:
         value = tool_input.get('file_path')
         if not isinstance(value, str) or not value:

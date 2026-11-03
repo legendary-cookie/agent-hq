@@ -55,6 +55,7 @@ Security review (independent, Claude Opus; re-checked after fixes)
   - Windows device names, alternate data streams and trailing dots in mirrored paths;
   - the session linker could pick a remote session;
   - a stray control request could end a run.
+- **Third pass:** wrappers like `command`, `nohup`, `timeout`, `busybox`, `gh` aliases and `Invoke-Command` still slipped past the always-ask denylist. Run-wide command rules are now limited to an allowlist of read-only commands.
 - The 0.5.0 review fixes from earlier the same day were also re-checked.
 
 Known limits

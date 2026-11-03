@@ -53,8 +53,8 @@ class ApprovalTests(unittest.TestCase):
         self.assertEqual(self.replies, [('deny', 'No')])
 
     def test_allow_run_rule_auto_allows_next_matching(self):
-        a = self.open(); self.book.answer(a.id, 'allow_run', None)
-        self.assertIsNone(self.open(req='2', data={'command': 'npm install'}))
+        a = self.open(data={'command': 'grep -n foo a.txt'}); self.book.answer(a.id, 'allow_run', None)
+        self.assertIsNone(self.open(req='2', data={'command': 'grep -rn bar src'}))
         self.assertEqual(self.replies, [('allow', None), ('allow', None)])
 
     def test_rule_does_not_cross_runs(self):
@@ -138,3 +138,26 @@ class NeverAutoWindowsShapesTests(unittest.TestCase):
         from hq.run.approvals import never_auto
         self.assertFalse(never_auto('Bash', {'command': 'npm test'}))
         self.assertFalse(never_auto('Bash', {'command': 'git status'}))
+
+
+class RuleAllowlistTests(unittest.TestCase):
+    """Only read-only commands can get an allow-for-this-run rule (re-review: wrappers bypassed a denylist)."""
+    root = Path('.').resolve()
+
+    def test_wrappers_and_tools_get_no_rule(self):
+        from hq.run.approvals import rule_key
+        for command in ('command rm -rf x', 'nohup rm -rf x', 'timeout 5 rm -rf x', 'exec rm -rf x',
+                        'busybox rm -rf x', 'gh alias set x --shell "rm -rf ~"', 'gh x', 'nice rm x',
+                        'time rm x', 'npm test', 'npm install', 'make', 'cargo test', 'pytest'):
+            with self.subTest(command=command):
+                self.assertIsNone(rule_key('Bash', {'command': command}, self.root))
+        for command in ('Invoke-Command -ScriptBlock { rm x }', 'icm { rm x }', 'sajb { rm x }'):
+            with self.subTest(command=command):
+                self.assertIsNone(rule_key('PowerShell', {'command': command}, self.root))
+
+    def test_read_only_commands_can_get_a_rule(self):
+        from hq.run.approvals import rule_key
+        for command in ('ls -la', 'cat a.txt', 'grep -n x a', 'rg foo', 'head -5 a', 'wc -l a'):
+            with self.subTest(command=command):
+                self.assertIsNotNone(rule_key('Bash', {'command': command}, self.root))
+        self.assertIsNotNone(rule_key('PowerShell', {'command': 'Get-Content a.txt'}, self.root))

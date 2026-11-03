@@ -140,7 +140,7 @@ How a run works:
   A follow-up keeps the run's level, worktree and account, and starts a new turn. It also works after Agent HQ restarts, and after a run timed out or failed.
 - **Ask me.** At this level the agent works in its own worktree, and every edit or command waits for you in the **Inbox**: a sidebar counter, with a "Needs you" figure in the office.
   - **Allow once.**
-  - **Allow for this run:** the same tool, and the same command or file folder, for the rest of the run.
+  - **Allow for this run:** for file edits, the same folder inside the run's worktree. For commands, only read-only ones (`ls`, `cat`, `grep`, `rg`, `head`, `tail`, `wc`, `diff`, PowerShell `Get-Content`, `Get-ChildItem` and the like); everything else, including `npm`, `git` and `make`, asks every time.
   - **Deny:** with an optional note, which goes to the agent.
 
   Unanswered requests are denied after 15 minutes. You can change that with `approval_timeout_min` in `run.json`.
