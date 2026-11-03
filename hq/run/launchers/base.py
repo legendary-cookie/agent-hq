@@ -27,7 +27,7 @@ class Launcher(Protocol):
     def levels(self) -> set[str]: ...
     def build(self, req: RunRequest, profile: Profile | None, workdir: Path, run_id: str,
               env_base: Mapping[str, str], pass_names: list[str]) -> Launch: ...
-    def parse(self, line: str) -> None: ...
+    def parse(self, line: str): ...
 
 
 class BaseLauncher:
@@ -42,8 +42,9 @@ class BaseLauncher:
     def levels(self) -> set[str]:
         return set(self.offered)
 
-    def parse(self, line: str) -> None:
-        return None
+    def parse(self, line: str):
+        from hq.run.stream import parse_json
+        return parse_json(line, self.name)
 
     def prepare(self, req: RunRequest, profile: Profile | None, workdir: Path,
                 env_base: Mapping[str, str], pass_names: list[str]) -> dict[str, str]:
