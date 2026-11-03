@@ -38,6 +38,28 @@ class WorkspaceTests(unittest.TestCase):
         self.git(path, 'add', filename)
         self.git(path, 'commit', '-m', 'change')
 
+    def test_snapshot_with_only_nested_repo_changes_does_not_crash(self):
+        # Found by the re-review: a nested repo (a submodule-like entry) whose files change
+        # leaves nothing staged, and a bare `git commit` then exits with status 1.
+        workdir, branch, base = self.create()
+        nested = workdir / 'nested'
+        nested.mkdir()
+        self.git(nested, 'init', '-q')
+        self.change(nested, 'one')
+        workspace.snapshot(workdir, 'run_123', project=self.project)
+        (nested / 'file.txt').write_text('two', encoding='utf-8')
+        self.assertFalse(workspace.snapshot(workdir, 'run_123', project=self.project))
+
+    def test_planted_hook_in_empty_hooks_folder_refuses_git(self):
+        workdir, branch, base = self.create()
+        hooks = workspace._hooks_dir()
+        (hooks / 'post-commit').write_text('#!/bin/sh\necho pwned\n')
+        try:
+            with self.assertRaisesRegex(ValueError, 'hooks folder is not empty'):
+                workspace.diff(self.project, branch, base, workdir=workdir)
+        finally:
+            (hooks / 'post-commit').unlink()
+
     def test_create_makes_branch_and_worktree(self):
         workdir, branch, base = self.create()
         self.assertEqual(workdir, self.worktrees / 'run_123')

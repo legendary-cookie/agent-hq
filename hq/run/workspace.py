@@ -7,12 +7,21 @@ from pathlib import Path
 from hq.config import is_forbidden
 
 _lock = threading.RLock()
-_hooks = Path(tempfile.gettempdir()) / 'agent-hq-empty-hooks'
+_hooks = None  # a fresh random empty folder, made on first use (never a fixed, guessable path)
 
 def configure(data_dir):
     global _hooks
-    _hooks = Path(data_dir) / 'empty-hooks'
-    _hooks.mkdir(parents=True, exist_ok=True)
+    _hooks = Path(tempfile.mkdtemp(prefix='empty-hooks-', dir=data_dir))
+
+
+def _hooks_dir():
+    global _hooks
+    with _lock:
+        if _hooks is None or not _hooks.is_dir():
+            _hooks = Path(tempfile.mkdtemp(prefix='agent-hq-empty-hooks-'))
+        if any(_hooks.iterdir()):
+            raise ValueError('the empty git hooks folder is not empty; refusing to run git')
+        return _hooks
 
 def _path(path):
     path = Path(path)
@@ -20,8 +29,7 @@ def _path(path):
     return path
 
 def _command(repo_args, *args):
-    _hooks.mkdir(parents=True, exist_ok=True)
-    return ['git', '-c', 'core.fsmonitor=false', '-c', f'core.hooksPath={_hooks}',
+    return ['git', '-c', 'core.fsmonitor=false', '-c', f'core.hooksPath={_hooks_dir()}',
             '-c', 'core.sshCommand=false', '-c', 'protocol.allow=never',
             '-c', 'diff.external=', '-c', 'core.pager=cat', '-c', 'credential.helper=',
             *repo_args, *args]
@@ -80,6 +88,8 @@ def snapshot(workdir, run_id, *, project=None, git_dir=None):
     with _lock:
         if not _git(repo, 'status', '--porcelain', '--untracked-files=normal').stdout: return False
         _git(repo, 'add', '-A')
+        # Changes only inside a nested repository stage nothing; committing would exit 1.
+        if _git(repo, 'diff', '--cached', '--quiet', check=False).returncode == 0: return False
         _git(repo, '-c', 'user.name=Agent HQ', '-c', 'user.email=agent-hq@localhost', 'commit', '-q', '--no-verify', '-m', 'hq run ' + run_id)
         return True
 

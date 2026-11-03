@@ -150,6 +150,7 @@ class RunService:
                     commit = workspace.revision(project, run['branch'])
             else: text, truncated = '', False
         except ValueError as exc: raise RunError(409, str(exc)) from exc
+        except (OSError, subprocess.SubprocessError) as exc: raise RunError(409, f'git failed: {type(exc).__name__}') from exc
         with self._lock: self._viewed[rid] = commit
         return {'diff': text, 'truncated': truncated, 'branch': run['branch'], 'commit': commit}
 
@@ -163,12 +164,14 @@ class RunService:
             try:
                 state = workspace.merge(self._project(run), run['branch'], workdir=Path(run['workdir']), git_dir=run.get('git_dir'), commit=commit)
             except ValueError as exc: raise RunError(409, str(exc)) from exc
+            except (OSError, subprocess.SubprocessError) as exc: raise RunError(409, f'git failed: {type(exc).__name__}') from exc
             self.store.update_run(rid, merge_state=state)
         return {'merge_state':state}
 
     def discard(self, rid):
         run = self.get(rid); self._finished(run)
         if not run['branch']: raise RunError(409, 'run has no branch')
-        workspace.discard(self._project(run), Path(run['workdir']), run['branch'])
+        try: workspace.discard(self._project(run), Path(run['workdir']), run['branch'])
+        except (OSError, subprocess.SubprocessError) as exc: raise RunError(409, f'git failed: {type(exc).__name__}') from exc
         self.store.update_run(rid, merge_state='discarded')
         return {'merge_state':'discarded'}
