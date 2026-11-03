@@ -44,10 +44,29 @@ function connect() {
   };
 }
 
+// Browsers allow only 6 connections per host. A hidden tab closes its live feed so it never
+// starves other Agent HQ tabs, and reconnects (with one refetch) when shown again.
+let visibilityBound = false;
+function onVisibility() {
+  if (subscribers.size === 0) return;
+  if (document.visibilityState === 'hidden') {
+    source?.close();
+    source = undefined;
+    clearTimeout(timer);
+  } else if (!source) {
+    reconnecting = true;
+    connect();
+  }
+}
+
 export function subscribeChanges(onChange: () => void): () => void {
   const subscriber = () => onChange();
   subscribers.add(subscriber);
-  if (subscribers.size === 1) connect();
+  if (!visibilityBound && typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibility);
+    visibilityBound = true;
+  }
+  if (subscribers.size === 1 && (typeof document === 'undefined' || document.visibilityState !== 'hidden')) connect();
   return () => {
     subscribers.delete(subscriber);
     if (subscribers.size === 0) {

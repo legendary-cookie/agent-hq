@@ -79,3 +79,20 @@ it('SSE failures probe health and surface 403', async () => {
   window.removeEventListener('hq-forbidden', forbidden);
   stop();
 });
+
+it('closes the live feed while the tab is hidden and reopens it when shown', () => {
+  // Browsers allow 6 connections per host; hidden tabs holding live feeds starve other tabs.
+  const cb = vi.fn();
+  const closed = vi.fn();
+  const stop = subscribeChanges(cb);
+  MockSource.instances[0].close = closed;
+  Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(closed).toHaveBeenCalled();
+  Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(MockSource.instances).toHaveLength(2);
+  MockSource.instances[1].onopen!();
+  expect(cb).toHaveBeenCalledTimes(1); // refetch once after coming back
+  stop();
+});
