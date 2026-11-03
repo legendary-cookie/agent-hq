@@ -1,16 +1,24 @@
 """Run API operations and their shared validation."""
+import hashlib
 import subprocess
 import sys
 import threading
 import time
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 from hq.run import guard, pool, request, workspace
+from hq.run.approvals import ApprovalBook, AnsweredError, ExpiredError
 from hq.run.config import load_projects, load_run_config
 from hq.run.launchers import REGISTRY
 from hq.run.nonce import NonceBook
-from hq.run.runner import Busy, Runner
+from hq.run.runner import Busy, NotIdle, Runner
+
+
+@dataclass(frozen=True)
+class MessageKey:
+    run_id: str
+    text_hash: str
 
 
 class RunError(Exception):
@@ -31,8 +39,10 @@ class RunService:
         self._lock = threading.RLock()
         self._viewed = {}
         self.on_event = lambda event: None
+        self.approvals = ApprovalBook(store, self.run_cfg.approval_timeout_min * 60,
+                                      lambda event: self.on_event(event))
         self.runner = (runner_factory or Runner)(store, self.run_cfg, self.launchers, Path(data_dir)/'worktrees',
-            self.pu_log, on_event=lambda event: self.on_event(event), pu_limit=self.pu_limit, projects=self.projects)
+            self.pu_log, on_event=lambda event: self.on_event(event), pu_limit=self.pu_limit, projects=self.projects, approvals=self.approvals, profiles=self._profiles())
 
     def _pu(self, command, provider, model, *args):
         if self.pu_dir is None: return
@@ -83,7 +93,7 @@ class RunService:
     def options(self):
         states = pool.profile_states(self.store, self._profiles(), time.time())
         return {'run_mode': self.run_cfg.run_mode,
-                'tools': {n: {'levels': sorted(l.levels()), 'harness': l.harness, 'tested': getattr(l, 'tested', False)} for n,l in self._tools().items()},
+                'tools': {n: {'levels': sorted(l.levels()), 'harness': l.harness, 'tested': getattr(l, 'tested', False), 'can_ask': getattr(l, 'can_ask', False), 'steer_mode': getattr(l, 'steer_mode', None)} for n,l in self._tools().items()},
                 'projects': [p.name for p in self.projects],
                 'profiles': [{'id': s.profile.id, 'tool': s.profile.tool, 'account_id': s.profile.account_id,
                               'max_used_percent': s.max_used_percent, 'blocked_until': s.blocked_until} for s in states],
@@ -129,6 +139,48 @@ class RunService:
     def stop(self, rid):
         self.get(rid); self.runner.stop(rid); return {'ok': True}
 
+    def approvals_list(self, state):
+        self._enabled()
+        if state != 'waiting': raise RunError(400, 'Invalid approval state')
+        return [asdict(item) for item in self.approvals.waiting()]
+
+    def answer(self, aid, data):
+        self._enabled()
+        note = data.get('note')
+        if note is not None and not isinstance(note, str): raise RunError(400, 'Invalid note')
+        try: return asdict(self.approvals.answer(aid, data.get('decision'), note))
+        except KeyError as exc: raise RunError(404, 'approval not found') from exc
+        except AnsweredError as exc: raise RunError(409, 'approval already answered') from exc
+        except ExpiredError as exc: raise RunError(410, 'approval expired') from exc
+        except ValueError as exc: raise RunError(400, str(exc)) from exc
+
+    def _message_key(self, rid, data):
+        self.get(rid)
+        text = data.get('text')
+        if not isinstance(text, str) or not text.strip() or len(text) > 100000:
+            raise RunError(400, 'Invalid message')
+        return MessageKey(rid, hashlib.sha256(text.encode('utf-8')).hexdigest())
+
+    def message_prepare(self, rid, data):
+        key = self._message_key(rid, data)
+        nonce, expires = self.nonces.issue(key)
+        return {'nonce': nonce, 'expires_at': expires}
+
+    def message(self, rid, data):
+        key = self._message_key(rid, data)
+        if not self.nonces.redeem(data.get('nonce'), key): raise RunError(403, 'confirm again')
+        run = self.get(rid)
+        req = request.RunRequest(run['tool'], run['model'], run['project'], run['prompt_preview'],
+                                 run['level'], run['guard_mode'], run['account'], 1)
+        # Auto was resolved at start; recheck that actual selection rather than selecting again.
+        if req.guard_mode == 'auto': req = replace(req, guard_mode='block')
+        verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time(), offered=set(self._tools()))
+        if not verdict.allowed: raise RunError(409, '; '.join(verdict.reasons))
+        try: self.runner.send(rid, data['text'])
+        except (NotIdle, Busy, KeyError) as exc: raise RunError(409, str(exc)) from exc
+        except ValueError as exc: raise RunError(409, str(exc)) from exc
+        return {'ok': True}
+
     def _project(self, run):
         project = next((p for p in self.projects if p.name == run['project']), None)
         if project is None or project.path != project.path.resolve() or not project.path.is_dir():
@@ -136,7 +188,7 @@ class RunService:
         return project.path
 
     def _finished(self, run):
-        if run['status'] in ('queued', 'starting', 'running'): raise RunError(409, 'run is not finished')
+        if run['status'] not in ('idle', 'done', 'failed', 'stopped', 'timed_out', 'rate_limited', 'interrupted'): raise RunError(409, 'run is not finished')
 
     def diff(self, rid):
         run = self.get(rid)

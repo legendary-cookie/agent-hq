@@ -1,0 +1,6 @@
+{
+  "hosts": [
+    {"name": "homeserver", "ssh": "homeserver", "os": "linux", "interval_s": 60, "sources": ["claude_code", "codex"]},
+    {"name": "box1-web", "ssh": "box1", "os": "linux", "container": "web", "sources": ["claude_code"]}
+  ]
+}

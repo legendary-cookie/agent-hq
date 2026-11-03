@@ -37,7 +37,7 @@ if os.name == 'nt':
 class Child:
     def __init__(self, process, job=None, pidfile=None):
         self.process, self.job, self.pidfile = process, job, pidfile
-        self.stdout, self.stdin = process.stdout, process.stdin
+        self.stdout, self.stderr, self.stdin = process.stdout, process.stderr, process.stdin
         self._kill_lock = threading.Lock()
 
     def alive(self):
@@ -62,8 +62,9 @@ class Child:
         code = self.process.wait(timeout=timeout)
         return code
 
-    def close(self):
+    def close(self, close_stderr=True):
         if self.stdout: self.stdout.close()
+        if self.stderr and close_stderr: self.stderr.close()
         if self.stdin and not self.stdin.closed: self.stdin.close()
         with self._kill_lock:
             if os.name == 'nt' and self.job:
@@ -74,7 +75,7 @@ class Child:
 def spawn(launch, should_stop=lambda: False):
     kwargs = dict(args=launch.argv, shell=False, cwd=launch.cwd, env=launch.env,
                   stdin=subprocess.PIPE if launch.stdin_text is not None else subprocess.DEVNULL,
-                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                   encoding='utf-8', errors='replace', bufsize=1)
     if os.name == 'nt':
         kwargs['creationflags'] = 0x4 | subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
@@ -110,5 +111,6 @@ def spawn(launch, should_stop=lambda: False):
         process.wait()
         if job: kernel.CloseHandle(job)
         if process.stdout: process.stdout.close()
+        if process.stderr: process.stderr.close()
         if process.stdin: process.stdin.close()
         raise

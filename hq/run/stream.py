@@ -1,5 +1,14 @@
+import re
 import json
 from dataclasses import dataclass, replace
+
+
+def valid_session_id(value):
+    return isinstance(value, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}', value) is not None
+
+
+def _session(value):
+    return StreamEvent('session', session_id=value) if valid_session_id(value) else StreamEvent('warning')
 
 
 @dataclass(frozen=True)
@@ -8,6 +17,7 @@ class StreamEvent:
     session_id: str | None = None
     text: str | None = None
     rate_limited: bool = False
+    request: dict | None = None
 
 
 def _limited(data, tool):
@@ -35,6 +45,13 @@ def parse_json(line, tool):
         return None
     if not isinstance(data, dict):
         return StreamEvent('working')
+    if data.get('type') == 'control_request':
+        request = data.get('request')
+        request = request if isinstance(request, dict) else {}
+        details = {'request_id': data.get('request_id'), 'tool_name': request.get('tool_name'),
+                   'input': request.get('input'), 'tool_use_id': request.get('tool_use_id')}
+        kind = 'permission' if request.get('subtype') == 'can_use_tool' else 'control_unknown'
+        return StreamEvent(kind, request=details)
     if tool == 'agy' and 'event' in data:
         return _agy(data)
     kind = data.get('type', '')
@@ -47,8 +64,8 @@ def parse_json(line, tool):
         session = data.get('session_id')
     elif tool == 'opencode':
         session = data.get('sessionID')
-    if session:
-        return StreamEvent('session', session_id=str(session))
+    if session is not None:
+        return _session(session)
     if kind == 'rate_limit_event':
         # Claude Code / Antigravity print this on every run; only 'rejected' means blocked.
         info = data.get('rate_limit_info') or {}
@@ -56,6 +73,8 @@ def parse_json(line, tool):
     failed = kind in ('error', 'turn.failed') or (kind == 'result' and data.get('is_error') is True)
     if failed:
         return StreamEvent('error', text=json.dumps(data)[:2000])
+    if (tool in ('claude', 'agy') and kind == 'result') or (tool == 'codex' and kind == 'turn.completed'):
+        return StreamEvent('turn_end')
     mapped = {'result': 'done', 'turn.completed': 'done',
               'started': 'started', 'waiting': 'waiting'}.get(kind, 'working')
     return StreamEvent(mapped)
@@ -64,12 +83,12 @@ def parse_json(line, tool):
 def _agy(data):
     """Antigravity 1.4.9 stream: {"event": "init"|"step_update"|"result", ...} (seen on real runs)."""
     event = data.get('event')
-    if event == 'init' and data.get('conversation_id'):
-        return StreamEvent('session', session_id=str(data['conversation_id']))
+    if event == 'init' and 'conversation_id' in data:
+        return _session(data['conversation_id'])
     if event == 'result':
         result = data.get('result') or {}
         if result.get('status') == 'SUCCESS':
-            return StreamEvent('done')
+            return StreamEvent('turn_end')
         return StreamEvent('error', text=json.dumps(result)[:2000])
     return StreamEvent('working')
 

@@ -154,3 +154,9 @@ it('active imported npc sits at desk with dotted ring flag', () => {
   expect(npc).toMatchObject({ state: 'active', targetRoomId: 'codex', imported: true });
   expect(npc.deskId).toBeTruthy();
 });
+
+it('office groups remote agents by host', () => {
+  const scene = buildScene([session('local'), session('a', { host: 'box' }), session('b', { host: 'other' })], [], new Map(), now);
+  expect(scene.npcs.map((n) => n.targetRoomId)).toEqual(['codex', 'host:box', 'host:other']);
+  expect(scene.rooms.map((r) => r.label)).toEqual(expect.arrayContaining(['box', 'other']));
+});

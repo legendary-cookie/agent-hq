@@ -22,6 +22,14 @@ class ServerTests(unittest.TestCase):
         data=self.req('/api/sessions/s')[1]; self.assertIn('children',data); self.assertIn('value',data)
     def test_kpis_week(self): self.assertIn('previous',self.req('/api/kpis?range=week')[1])
     def test_limits_cards(self): self.assertEqual(self.req('/api/limits')[1][0]['account_id'],'a')
+    def test_api_responses_are_never_cached(self):
+        # Found in the real check: a 410 for a run's output was served from the browser cache
+        # after the run became live again (410 is cacheable by default).
+        for path, headers in (('/api/health', {'X-HQ-Token': self.token}), ('/api/nope', {'X-HQ-Token': self.token}),
+                              ('/api/health', {})):
+            c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=3); self.addCleanup(c.close)
+            c.request('GET', path, None, headers); r = c.getresponse(); r.read()
+            self.assertEqual(r.getheader('Cache-Control'), 'no-store', path)
     def test_health(self): self.assertIn('recommend',self.req('/api/health')[1])
     def test_bad_host_rejected(self): self.assertEqual(self.req('/api/health',headers={'Host':'evil.com'})[0],403)
     def test_post_without_token_rejected(self):

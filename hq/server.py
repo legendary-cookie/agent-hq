@@ -39,7 +39,7 @@ def validate_settings(data, sources, relabel=None):
         raise ValueError('invalid source settings')
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
-def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None):
+def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None):
     run_key = secrets.token_urlsafe(32)
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
@@ -57,7 +57,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
         def send_json(self,status,data):
-            body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
+            body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
         def host_ok(self): return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
         def token_ok(self, value): return isinstance(value,str) and hmac.compare_digest(value.encode(),token.encode())
         def write_ok(self):
@@ -102,6 +102,12 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if target.is_relative_to(root) and target.is_file():
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
+                if path == '/api/approvals':
+                    # Reads need the token (checked above) and the run key; browsers send no Origin
+                    # on same-origin GETs. Answers (POST) still require a same-origin Origin.
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    return self.send_json(200, run_service.approvals_list(param('state', 'waiting')))
                 if path == '/api/runs/options': return self.send_json(200, (run_service.options() if run_service else {'run_mode': False, 'tools': {}, 'projects': [], 'profiles': [], 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':30}, 'max_concurrent':3}) | {'run_key_ok': self.run_key_ok()})
                 if path == '/api/runs' or path.startswith('/api/runs/'):
                     if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
@@ -111,7 +117,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if len(parts) == 3: return self.send_json(200, run_service.get(unquote(parts[2])))
                     if len(parts) == 4 and parts[3] in ('output', 'diff'): return self.send_json(200, getattr(run_service, parts[3])(unquote(parts[2])))
                     run_service._enabled()
-                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error, 'pu_failures': run_service.pu_failures if run_service else 0})
+                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error, 'pu_failures': run_service.pu_failures if run_service else 0, 'hosts': remote_collector.health() if remote_collector else {}})
                 if path=='/api/settings':
                     with closing(store.conn()) as conn:
                         models = compute_kpis(conn,cfg,resolve_range('month',datetime.now().astimezone()),None,now)['top_models']
@@ -134,6 +140,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
                                 if param(key): sessions=[s for s in sessions if s[col]==param(key)]
+                            if param('host'):
+                                sessions=[s for s in sessions if s['host']==(None if param('host') == 'local' else param('host'))]
                             if param('from'): sessions=[s for s in sessions if s['started_at']>=float(param('from'))]
                             if param('to'): sessions=[s for s in sessions if s['started_at']<float(param('to'))]
                             sessions=sessions[:min(2000,max(1,int(param('limit','500'))))]
@@ -178,10 +186,17 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
                         if valid: self.server.bootstrap_code=None
                     return self.send_json(200,{'token':token, 'run_key':run_key}) if valid else self.send_json(403,{'error':'forbidden'})
+                if path.startswith('/api/approvals/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'forbidden'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    parts = path.strip('/').split('/')
+                    if method == 'POST' and len(parts) == 3: return self.send_json(200, run_service.answer(unquote(parts[2]), data))
                 if path == '/api/runs' or path.startswith('/api/runs/'):
                     if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
                     if run_service is None: raise RunError(403, 'run mode is off')
                     parts = path.strip('/').split('/')
+                    if method == 'POST' and len(parts) == 5 and parts[3:] == ['message', 'prepare']: return self.send_json(200, run_service.message_prepare(unquote(parts[2]), data))
+                    if method == 'POST' and len(parts) == 4 and parts[3] == 'message': return self.send_json(202, run_service.message(unquote(parts[2]), data))
                     if method == 'POST' and path == '/api/runs/prepare': return self.send_json(200, run_service.prepare(data))
                     if method == 'POST' and path == '/api/runs': return self.send_json(201, run_service.start(data))
                     if method == 'POST' and len(parts) == 4 and parts[3] in ('stop', 'merge', 'discard'): return self.send_json(200, run_service.merge(unquote(parts[2]), data) if parts[3] == 'merge' else getattr(run_service, parts[3])(unquote(parts[2])))
@@ -229,6 +244,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
             except RunError as exc: return self.send_json(exc.status, {'error':str(exc)})
             except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc:
                 return self.send_json(403,{'error':'forbidden'}) if exchange else self.send_json(400,{'error':str(exc)})
+    if remote_collector: remote_collector.on_change(changed)
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler); server.daemon_threads=True
     server.bootstrap_code=secrets.token_urlsafe(24); server.bootstrap_expires=time.monotonic()+120
     return server,token

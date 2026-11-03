@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Dashboard } from './Dashboard';
 import kpis from '../test/fixtures/dashboard-kpis.json';
@@ -61,4 +61,13 @@ it('Dashboard plots tokens when any row is unpriced', () => {
   } finally {
     Object.assign(series[0], original[0]);
   }
+});
+
+it('host filter narrows sessions', () => {
+  Object.assign(sessions[0], { host: 'box' });
+  try {
+    render(<Dashboard />);
+    fireEvent.change(screen.getByLabelText('Host'), { target: { value: 'local' } });
+    expect(screen.queryByText(sessions[0].title!)).not.toBeInTheDocument();
+  } finally { delete (sessions[0] as { host?: string }).host; }
 });

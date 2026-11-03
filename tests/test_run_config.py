@@ -69,6 +69,17 @@ class RunConfigTests(unittest.TestCase):
         self.assertEqual(store.get_run('running')['status'], 'interrupted')
         self.assertEqual(store.get_run('done')['status'], 'done')
 
+    def test_mark_interrupted_includes_live_steer_states(self):
+        # Found in the real check: an idle live run kept 'idle' after a restart, so it looked
+        # live but had no process, and Send stayed disabled.
+        store = self.store()
+        for status in ('queued', 'idle', 'needs_you', 'closing', 'done', 'failed'):
+            store.insert_run(dict(id=status, tool='x', project='p', workdir='p', level='edit', guard_mode='block', status=status, time_limit_s=60))
+        self.assertEqual(store.mark_interrupted(), 4)
+        for status in ('queued', 'idle', 'needs_you', 'closing'):
+            self.assertEqual(store.get_run(status)['status'], 'interrupted')
+        self.assertEqual(store.get_run('failed')['status'], 'failed')
+
     def test_runs_migration_on_existing_db(self):
         with closing(sqlite3.connect(self.path / 'test.db')) as conn:
             conn.execute('CREATE TABLE old (id INTEGER)')

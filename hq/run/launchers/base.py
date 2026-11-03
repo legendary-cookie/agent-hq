@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -36,6 +37,21 @@ class BaseLauncher:
     links_by_stream = True
     offered: frozenset[str] = frozenset({'edit'})
     worktree_auto = False
+    steer_mode: str | None = None
+    can_ask = False
+
+    def first_input(self, prompt: str) -> str:
+        return self.user_message(prompt)
+
+    def user_message(self, text: str) -> str:
+        return json.dumps({'type': 'user', 'message': {'role': 'user', 'content': text}},
+                          separators=(',', ':')) + '\n'
+
+    def control_reply(self, request_id, decision, note, tool_input) -> str:
+        raise NotImplementedError
+
+    def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names) -> Launch:
+        raise NotImplementedError
 
     def __init__(self, worktrees_root: Path = Path('data/worktrees')):
         self.worktrees_root = Path(worktrees_root)

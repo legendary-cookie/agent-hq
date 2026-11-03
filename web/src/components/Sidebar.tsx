@@ -1,4 +1,6 @@
 import type { Route } from '../app/router';
+import { useEffect, useRef, useState } from 'react';
+import type { Approval } from '../api/types';
 import type { LimitCard } from '../api/types';
 import { useApi } from '../api/client';
 import { LimitBar } from './LimitBar';
@@ -44,6 +46,18 @@ export function selectSidebarLimits(cards: LimitCard[], n = 4) {
 export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r: Route) => void; onRun?: () => void }) {
   const { data } = useApi<LimitCard[]>('/api/limits');
   const limits = selectSidebarLimits(data ?? []);
+  const { data: options } = useApi<{ run_mode: boolean; run_key_ok?: boolean }>('/api/runs/options', { live: false });
+  const { data: approvals } = useApi<Approval[]>(options?.run_mode && options.run_key_ok ? '/api/approvals?state=waiting' : null);
+  const [notifications, setNotifications] = useState(false);
+  const seen = useRef(new Set<string>());
+  useEffect(() => { const enable = () => setNotifications(true); window.addEventListener('hq-notifications-enabled', enable); return () => window.removeEventListener('hq-notifications-enabled', enable); }, []);
+  useEffect(() => {
+    if (!approvals) return;
+    for (const item of approvals) {
+      if (notifications && !seen.current.has(item.id) && !location.hash.startsWith('#/inbox') && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(`Run ${item.run_id}`, { body: item.tool_name });
+      seen.current.add(item.id);
+    }
+  }, [approvals, notifications]);
   return (
     <aside className="sidebar">
       <div className="brand">Agent HQ</div>
@@ -54,6 +68,7 @@ export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r
             {r[0].toUpperCase() + r.slice(1)}
           </button>
         ))}
+        <button className={location.hash.startsWith('#/inbox') ? 'selected' : ''} onClick={() => { location.hash = '/inbox'; }}>Inbox {approvals?.length ? `(${approvals.length})` : ''}</button>
         <hr />
         <div className="mini-limits">
           {limits.map((limit, index) => (

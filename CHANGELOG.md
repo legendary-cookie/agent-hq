@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.0.0 (2026-11-04): Steer and remote watching
+
+Added
+- **Steer.** Talk to the agents Agent HQ starts.
+  - **Follow-ups:**
+    - Claude Code takes them live, over the open connection.
+    - Codex, opencode and Antigravity resume the same session.
+    - A follow-up keeps the run's level, worktree and account, also after a restart, a time-out or a failed turn.
+  - **Ask me level and Inbox:**
+    - The agent's edits and commands wait in the Inbox for **Allow once**, **Allow for this run** or **Deny** (with an optional note to the agent).
+    - Unanswered requests are denied after 15 minutes (`approval_timeout_min`).
+    - A list of commands always asks, even with a rule.
+    - Only Claude Code supports Ask me so far.
+  - **Conversation view:** prompts, agent replies, tool calls and approvals, with a raw-output toggle.
+  - **Time limits:** they count each turn's working time and pause while a run is idle; idle live runs close after 30 minutes.
+- **Remote watching.** Agents on other machines (Linux, Windows, macOS, Docker), read over your own SSH (`config/hosts.json`).
+  - A fixed read-only scanner sends new log bytes. Agent HQ validates them into a local mirror and runs the same readers on it.
+  - Sessions are namespaced `<host>/<id>`, with a host filter, host badge, office zone per host, and host health in Settings.
+
+Verified on this PC (2026-11-03/04)
+- **Remote watching**, with WSL Debian reached over real SSH as a stand-in server:
+  - 90 Codex sessions and 68,712,888 tokens, identical to the local reader for the same files, with 0 mismatched sessions;
+  - the mirror is byte-identical to the remote files (SHA-256, 90 of 90).
+- **Ask me** in the real UI with Claude Code:
+  - the inbox showed `Write hello.txt` (allowed) and `rm calc.py` (denied with a note);
+  - on disk, hello.txt was created, calc.py was untouched, and the project checkout stayed clean;
+  - the agent received the note word for word.
+- **Follow-ups:**
+  - real follow-ups on Claude Code, Codex, opencode and Antigravity, each answered in its original session;
+  - repeated after a server restart, and with the session ids passed fused to their flags.
+- **Tests:** 500 Python and 144 web tests pass on Windows.
+
+Fixed during the real checks
+- **Inbox 403:** `GET /api/approvals` required an `Origin` header that browsers don't send on same-origin GETs, so the Inbox always got 403.
+- **Codex follow-ups:** `codex exec resume` has no `-s`; the sandbox is now set with `-c sandbox_mode`, so a resume never falls back to a default.
+- **Resuming:**
+  - Codex, opencode and Antigravity runs couldn't be continued after a restart;
+  - timed-out and failed runs couldn't be continued;
+  - the time limit counted idle time.
+- **Restart status:** idle and waiting runs kept their status after a restart.
+- **Mirror budget:** the scanner request never reached `python -`, a scanner note stopped a host, and the mirror's 20 MB log cap blocked databases.
+- **Office count:** the office zone count left out idle agents.
+- **Caching:** API responses could be served from the browser cache (a stale 410); every API response is now `no-store`.
+- **Connections:** several open tabs could exhaust the browser's 6 connections per host; hidden tabs now close their live feed.
+
+Security review (independent, Claude Opus; re-checked after fixes)
+- **High:** a session id taken unchecked from agent output (stderr was merged into it) could become a CLI flag on resume (`--dangerously-skip-permissions`).
+  - Ids are now validated, the first one wins, they're passed fused (`--resume=<id>`), and stderr is read separately and never parsed.
+- **Medium:**
+  - the always-ask list could be bypassed (`rm.exe`, `cmd /c del`, `bash -c`, PowerShell `Remove-Item`, `git -c alias`). Interpreters now always ask.
+  - a hostile host could flood the mirror. Answers are capped at 2,000 entries and 64 MB, at 20,000 files per host, and at a 30 MB database.
+- **Low:**
+  - Windows device names, alternate data streams and trailing dots in mirrored paths;
+  - the session linker could pick a remote session;
+  - a stray control request could end a run.
+- The 0.5.0 review fixes from earlier the same day were also re-checked.
+
+Known limits
+- Ask me works only with Claude Code. Antigravity and opencode headless haven't been probed; Codex headless can't pause.
+- Remote runs, the optional relay, and Orchestrate (M5c) aren't in this release.
+- Gemini CLI, Kimi and DeepSeek Harness are still hidden until their setup is fixed. Hermes is disabled (`--in` doesn't keep its shell in the project).
+
 ## 0.5.0 (2026-11-03): run mode, Dispatch (Milestone 5a)
 
 Added

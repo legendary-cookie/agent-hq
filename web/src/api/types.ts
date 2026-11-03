@@ -1,5 +1,6 @@
 export interface SessionRow {
   id: string;
+  host?: string | null;
   imported: 0 | 1;
   launched_run_id?: string | null;
   harness: string | null;
@@ -174,7 +175,16 @@ export interface ReaderHealth {
   error: string | null;
   last_error_at: number | null;
 }
-export type Health = Record<string, ReaderHealth | string | null> & {
+export interface HostHealth {
+  state: string;
+  last_pass: number | null;
+  bytes: number;
+  catching_up: boolean;
+  error: string | null;
+  notes?: string[];
+}
+export type Health = Record<string, ReaderHealth | Record<string, HostHealth> | string | number | null> & {
+  hosts: Record<string, HostHealth>;
   recommend: string | null;
   importer: ReaderHealth;
 };
@@ -199,7 +209,7 @@ export interface DelegationRow {
 export interface RunOptions {
   run_key_ok?: boolean;
   run_mode: boolean;
-  tools: Record<string, { levels: string[]; harness: string; tested: boolean | string }>;
+  tools: Record<string, { levels: string[]; harness: string; tested: boolean | string; can_ask?: boolean; steer_mode?: string | null }>;
   projects: string[];
   profiles: { id: string; tool: string; account_id: string; max_used_percent: number | null; blocked_until: number | null }[];
   defaults: { level: string; guard_mode: string; time_limit_min: number };
@@ -220,3 +230,5 @@ export interface Run {
   started_at: number | null; ended_at: number | null; exit_code: number | null;
   time_limit_s: number; merge_state: string | null;
 }
+
+export interface Approval { id: string; run_id: string; tool_name: string; summary: string; requested_at: number; expires_at: number; state: string }

@@ -85,7 +85,7 @@ export function Inspector({
             {session.harness ? harnessLabel(session.harness) : 'Agent'}
           </div>
           <div className="inspector-subtitle">
-            {session.model ?? '—'} · {session.account_id ?? '—'}
+            <span className="pill">{session.host ?? 'This PC'}</span> · {session.model ?? '—'} · {session.account_id ?? '—'}
           </div>
           <button onClick={() => window.dispatchEvent(new Event('hq-open-run'))}>Run</button>
           {run && ['queued', 'starting', 'running'].includes(run.status) && <button onClick={() => void stopRun(run.id).then(reloadRun)}>Stop run</button>}

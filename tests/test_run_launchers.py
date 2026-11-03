@@ -26,7 +26,7 @@ class LauncherTests(unittest.TestCase):
         return launcher.build(req, profile, workdir or self.workdir, 'run_123', {'PATH': 'bin', 'SECRET': 'no'}, [])
 
     def test_claude_argv_read_only(self):
-        self.assertEqual(self.build('claude', 'read_only').argv, ['claude', '-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', '--model', 'model'])
+        self.assertEqual(self.build('claude', 'read_only').argv, ['claude', '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'plan', '--model', 'model'])
 
     def test_claude_argv_edit(self):
         self.assertIn('acceptEdits', self.build('claude').argv)
@@ -101,6 +101,10 @@ class LauncherTests(unittest.TestCase):
                 elif tool == 'opencode':
                     self.assertEqual(occurrences, [prompt])
                     self.assertEqual(launch.argv[launch.argv.index(prompt) - 1], '--')
+                elif tool == 'claude':
+                    import json as _json
+                    self.assertEqual(occurrences, [])
+                    self.assertEqual(_json.loads(launch.stdin_text)['message']['content'], prompt)
                 else:
                     self.assertEqual(occurrences, [])
                     self.assertEqual(launch.stdin_text, prompt)

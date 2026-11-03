@@ -35,7 +35,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('X-HQ-Token', sessionStorage.getItem('hq-token') ?? '');
-  if (path === '/api/runs' || path.startsWith('/api/runs/')) headers.set('X-HQ-Run-Key', sessionStorage.getItem('hq-run-key') ?? '');
+  if (path === '/api/runs' || path.startsWith('/api/runs/') || path.startsWith('/api/approvals')) headers.set('X-HQ-Run-Key', sessionStorage.getItem('hq-run-key') ?? '');
   if ((init.method ?? 'GET').toUpperCase() !== 'GET')
     headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
@@ -44,7 +44,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       error?: string;
     } | null;
     const error = new ApiError(response.status, body?.error);
-    if (response.status === 403 && !path.startsWith('/api/runs')) window.dispatchEvent(new Event('hq-forbidden'));
+    if (response.status === 403 && !path.startsWith('/api/runs') && !path.startsWith('/api/approvals')) window.dispatchEvent(new Event('hq-forbidden'));
     throw error;
   }
   return response.json() as Promise<T>;
@@ -110,3 +110,7 @@ export const stopRun = (id: string) => post<unknown>(`${runPath(id)}/stop`);
 export const runDiff = (id: string) => api<{ diff: string; truncated: boolean; branch: string | null; commit: string | null }>(`${runPath(id)}/diff`);
 export const mergeRun = (id: string, commit: string) => post<{ merge_state: string }>(`${runPath(id)}/merge`, { commit });
 export const discardRun = (id: string) => post<unknown>(`${runPath(id)}/discard`);
+
+export const answerApproval = (id: string, decision: string, note: string) => post<unknown>(`/api/approvals/${encodeURIComponent(id)}`, { decision, note });
+export const prepareMessage = (id: string, text: string) => post<{ nonce: string }>(`${runPath(id)}/message/prepare`, { text });
+export const sendMessage = (id: string, text: string, nonce: string) => post<unknown>(`${runPath(id)}/message`, { text, nonce });
