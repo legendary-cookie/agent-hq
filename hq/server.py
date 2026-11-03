@@ -102,6 +102,10 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if target.is_relative_to(root) and target.is_file():
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
+                if path == '/api/approvals':
+                    if not self.run_key_ok() or self.headers.get('Origin') != f'http://{self.headers.get("Host")}': return self.send_json(403, {'error':'forbidden'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    return self.send_json(200, run_service.approvals_list(param('state', 'waiting')))
                 if path == '/api/runs/options': return self.send_json(200, (run_service.options() if run_service else {'run_mode': False, 'tools': {}, 'projects': [], 'profiles': [], 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':30}, 'max_concurrent':3}) | {'run_key_ok': self.run_key_ok()})
                 if path == '/api/runs' or path.startswith('/api/runs/'):
                     if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
@@ -180,10 +184,17 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
                         if valid: self.server.bootstrap_code=None
                     return self.send_json(200,{'token':token, 'run_key':run_key}) if valid else self.send_json(403,{'error':'forbidden'})
+                if path.startswith('/api/approvals/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'forbidden'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    parts = path.strip('/').split('/')
+                    if method == 'POST' and len(parts) == 3: return self.send_json(200, run_service.answer(unquote(parts[2]), data))
                 if path == '/api/runs' or path.startswith('/api/runs/'):
                     if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
                     if run_service is None: raise RunError(403, 'run mode is off')
                     parts = path.strip('/').split('/')
+                    if method == 'POST' and len(parts) == 5 and parts[3:] == ['message', 'prepare']: return self.send_json(200, run_service.message_prepare(unquote(parts[2]), data))
+                    if method == 'POST' and len(parts) == 4 and parts[3] == 'message': return self.send_json(202, run_service.message(unquote(parts[2]), data))
                     if method == 'POST' and path == '/api/runs/prepare': return self.send_json(200, run_service.prepare(data))
                     if method == 'POST' and path == '/api/runs': return self.send_json(201, run_service.start(data))
                     if method == 'POST' and len(parts) == 4 and parts[3] in ('stop', 'merge', 'discard'): return self.send_json(200, run_service.merge(unquote(parts[2]), data) if parts[3] == 'merge' else getattr(run_service, parts[3])(unquote(parts[2])))
