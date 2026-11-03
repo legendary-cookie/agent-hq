@@ -31,7 +31,10 @@ class SteerLauncherTests(unittest.TestCase):
         self.assertEqual(json.loads(launcher.user_message('hello')), expected)
         self.assertEqual(json.loads(launcher.build(self.req, None, self.root, 'run_123', {}, []).stdin_text), expected)
         self.assertEqual(self.launcher('agy').steer_mode, 'resume')  # live unverified until the Task 6 probe
-        self.assertIn('--input-format', self.launcher('agy').build(replace(self.req, tool='agy', level='edit'), None, self.root, 'run_123', {}, []).argv)
+        # Antigravity keeps the checked M5a launch: prompt attached to -p, no stream-json input.
+        agy = self.launcher('agy').build(replace(self.req, tool='agy', level='edit'), None, self.root, 'run_123', {}, [])
+        self.assertNotIn('--input-format', agy.argv)
+        self.assertEqual(agy.argv[-1], '-p=hello')
 
     def test_control_reply_allow_and_deny_exact_json(self):
         launcher = self.launcher('claude')
