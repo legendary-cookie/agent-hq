@@ -185,4 +185,4 @@ class Store:
 
     def mark_interrupted(self) -> int:
         with self._lock, self._writer:
-            return self._writer.execute("UPDATE runs SET status='interrupted' WHERE status IN ('starting','running')").rowcount
+            return self._writer.execute("UPDATE runs SET status='interrupted' WHERE status IN ('queued','starting','running','idle','needs_you','closing')").rowcount
