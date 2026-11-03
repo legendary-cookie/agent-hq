@@ -39,6 +39,7 @@ class LauncherTests(unittest.TestCase):
         profile = Profile('p', 'codex', '/profiles/codex', 'a')
         launch = self.build('codex', 'full_auto', profile=profile)
         self.assertEqual(launch.argv[:4], ['wsl', '-d', 'Debian', '--cd'])
+        self.assertEqual(launch.argv[5:7], ['--exec', 'bash'])
         self.assertEqual(launch.argv[-10:], ['codex', 'exec', '--json', '-m', 'model', '-s', 'workspace-write', '-c', 'sandbox_workspace_write.network_access=true', '-'])
         self.assertEqual(launch.argv[-1], '-')
         self.assertIn('sandbox_workspace_write.network_access=true', launch.argv)
@@ -204,7 +205,8 @@ class LauncherTests(unittest.TestCase):
         from subprocess import CompletedProcess
         with patch('hq.run.wsl.subprocess.run', side_effect=[CompletedProcess([], 0, '123\n'), CompletedProcess([], 0), CompletedProcess([], 0)]) as run, patch('hq.run.wsl.time.sleep') as sleep:
             wsl_stop('/tmp/hq-runs/run_123.pid')
-        self.assertEqual(run.call_args_list[1].args[0], ['wsl', '-d', 'Debian', '--', '/bin/kill', '-TERM', '--', '-123'])
+        self.assertEqual(run.call_args_list[0].args[0], ['wsl', '-d', 'Debian', '--exec', 'cat', '/tmp/hq-runs/run_123.pid'])
+        self.assertEqual(run.call_args_list[1].args[0], ['wsl', '-d', 'Debian', '--exec', '/bin/kill', '-TERM', '--', '-123'])
         self.assertEqual(run.call_args_list[2].args[0][-3:], ['-KILL', '--', '-123'])
         sleep.assert_called_once_with(3)
 

@@ -1,95 +1,120 @@
-"""Manage the isolated Git workspace for an editing run."""
+"""Manage isolated Git workspaces without repository discovery in worktrees."""
 import re
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
-
 from hq.config import is_forbidden
 
-
 _lock = threading.RLock()
+_hooks = Path(tempfile.gettempdir()) / 'agent-hq-empty-hooks'
 
+def configure(data_dir):
+    global _hooks
+    _hooks = Path(data_dir) / 'empty-hooks'
+    _hooks.mkdir(parents=True, exist_ok=True)
 
-def _path(path: Path) -> Path:
+def _path(path):
     path = Path(path)
-    if is_forbidden(path):
-        raise ValueError('Forbidden workspace path')
+    if is_forbidden(path): raise ValueError('Forbidden workspace path')
     return path
 
+def _command(repo_args, *args):
+    _hooks.mkdir(parents=True, exist_ok=True)
+    return ['git', '-c', 'core.fsmonitor=false', '-c', f'core.hooksPath={_hooks}',
+            '-c', 'core.sshCommand=false', '-c', 'protocol.allow=never',
+            '-c', 'diff.external=', '-c', 'core.pager=cat', '-c', 'credential.helper=',
+            *repo_args, *args]
 
-def _git(project: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-    return subprocess.run(['git', '-C', str(project), *args], timeout=60,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check)
+def _repo(project):
+    return ['--git-dir', str(project / '.git'), '--work-tree', str(project)]
 
+def _git(repo_args, *args, check=True):
+    return subprocess.run(_command(repo_args, *args), timeout=60, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check)
 
-def _branch(branch: str) -> str:
-    if not re.fullmatch(r'hq/run-[A-Za-z0-9_-]+', branch):
-        raise ValueError('Invalid run branch')
+def _branch(branch):
+    if not re.fullmatch(r'hq/run-[A-Za-z0-9_-]+', branch): raise ValueError('Invalid run branch')
     return branch
 
-
-def is_git_repo(path: Path) -> bool:
+def is_git_repo(path):
     path = _path(path)
-    result = _git(path, 'rev-parse', '--is-inside-work-tree', check=False)
-    return result.returncode == 0 and result.stdout.strip() == b'true'
+    result = _git(_repo(path), 'rev-parse', '--git-dir', check=False)
+    return result.returncode == 0
 
-
-def create(project: Path, run_id: str, root: Path) -> tuple[Path, str | None, str | None]:
+def create(project, run_id, root):
     project, root = _path(project), _path(root)
     branch = _branch('hq/run-' + run_id)
     workdir = _path(root / run_id)
     with _lock:
-        if not is_git_repo(project):
-            return project, None, None
-        base = _git(project, 'rev-parse', 'HEAD').stdout.decode('ascii').strip()
+        if not is_git_repo(project): return project, None, None, None
+        base = _git(_repo(project), 'rev-parse', 'HEAD').stdout.decode('ascii').strip()
+        common = Path(_git(_repo(project), 'rev-parse', '--git-common-dir').stdout.decode().strip()).resolve()
         root.mkdir(parents=True, exist_ok=True)
-        _git(project, 'worktree', 'add', '-b', branch, str(workdir), base)
-    return workdir, branch, base
+        _git(_repo(project), 'worktree', 'add', '-b', branch, str(workdir), base)
+        return workdir, branch, base, str(common / 'worktrees' / workdir.name)
 
+def _validate(workdir, admin, project):
+    try:
+        dotgit = workdir / '.git'
+        expected = f'gitdir: {admin}\n'
+        common = (admin / 'commondir').read_text().strip()
+        if (dotgit.is_symlink() or not dotgit.is_file() or dotgit.read_text() != expected
+            or (admin / 'config.worktree').exists() or (admin / common).resolve() != (project / '.git').resolve()):
+            raise ValueError
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError('worktree .git was changed by the run') from None
 
-def snapshot(workdir: Path, run_id: str) -> bool:
+def snapshot(workdir, run_id, *, project=None, git_dir=None):
     workdir = _path(workdir)
     _branch('hq/run-' + run_id)
+    if project is None:
+        raise ValueError('project required for snapshot')
+    project = _path(project)
+    admin = Path(git_dir) if git_dir else project / '.git' / 'worktrees' / workdir.name
+    _validate(workdir, admin, project)
+    repo = ['--git-dir', str(admin), '--work-tree', str(workdir)]
     with _lock:
-        if not _git(workdir, 'status', '--porcelain', '--untracked-files=normal').stdout:
-            return False
-        _git(workdir, 'add', '-A')
-        _git(workdir, '-c', 'user.name=Agent HQ', '-c', 'user.email=agent-hq@localhost',
-             'commit', '-q', '--no-verify', '-m', 'hq run ' + run_id)
+        if not _git(repo, 'status', '--porcelain', '--untracked-files=normal').stdout: return False
+        _git(repo, 'add', '-A')
+        _git(repo, '-c', 'user.name=Agent HQ', '-c', 'user.email=agent-hq@localhost', 'commit', '-q', '--no-verify', '-m', 'hq run ' + run_id)
         return True
 
+def revision(project, branch):
+    return _git(_repo(_path(project)), 'rev-parse', _branch(branch)).stdout.decode('ascii').strip()
 
-def diff(project: Path, branch: str, base_commit: str, cap: int = 2_000_000,
-         *, workdir: Path | None = None) -> tuple[str, bool]:
-    project = _path(project)
-    _branch(branch)
-    if not re.fullmatch(r'[0-9a-fA-F]{40,64}', base_commit) or cap < 0:
-        raise ValueError('Invalid base commit or diff cap')
-    if workdir is not None:
-        snapshot(workdir, branch.removeprefix('hq/run-'))
-    output = _git(project, 'diff', '--no-ext-diff', base_commit, branch, '--').stdout
+def diff(project, branch, base_commit, cap=2_000_000, *, workdir=None, git_dir=None):
+    project = _path(project); _branch(branch)
+    if not re.fullmatch(r'[0-9a-fA-F]{40,64}', base_commit) or cap < 0: raise ValueError('Invalid base commit or diff cap')
+    if workdir is not None: snapshot(workdir, branch.removeprefix('hq/run-'), project=project, git_dir=git_dir)
+    repo = _repo(project)
+    stat = _git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', base_commit, branch, '--').stdout.decode()
+    changed = sum(int(n) for n in re.findall(r'(\d+) (?:insertion|deletion)', stat))
+    if changed > 50000: raise ValueError('diff exceeds 50,000 changed lines')
+    proc = subprocess.Popen(_command(repo, 'diff', '--no-ext-diff', '--no-textconv', base_commit, branch, '--'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        output = proc.stdout.read(cap + 1)
+        if len(output) > cap: proc.kill()
+        proc.wait(timeout=60)
+        if len(output) <= cap and proc.returncode: raise subprocess.CalledProcessError(proc.returncode, proc.args)
+    finally:
+        if proc.poll() is None: proc.kill(); proc.wait()
+        proc.stdout.close()
     return output[:cap].decode('utf-8', errors='replace'), len(output) > cap
 
-
-def merge(project: Path, branch: str, *, workdir: Path | None = None) -> str:
+def merge(project, branch, *, workdir=None, git_dir=None, commit=None):
     project, branch = _path(project), _branch(branch)
     with _lock:
-        if workdir is not None:
-            snapshot(workdir, branch.removeprefix('hq/run-'))
-        if _git(project, 'status', '--porcelain', '--untracked-files=normal').stdout:
-            return 'dirty'
-        result = _git(project, 'merge', '--no-edit', branch, check=False)
-        if result.returncode == 0:
-            return 'merged'
-        if _git(project, 'diff', '--name-only', '--diff-filter=U').stdout:
-            _git(project, 'merge', '--abort')
-            return 'conflict'
+        if workdir is not None: snapshot(workdir, branch.removeprefix('hq/run-'), project=project, git_dir=git_dir)
+        if commit is not None and revision(project, branch) != commit: raise ValueError('the run changed after you viewed the diff; view it again')
+        if _git(_repo(project), 'status', '--porcelain', '--untracked-files=normal').stdout: return 'dirty'
+        result = _git(_repo(project), 'merge', '--no-edit', commit or branch, check=False)
+        if result.returncode == 0: return 'merged'
+        if _git(_repo(project), 'diff', '--name-only', '--diff-filter=U').stdout:
+            _git(_repo(project), 'merge', '--abort'); return 'conflict'
         result.check_returncode()
-    raise AssertionError('unreachable')
 
-
-def discard(project: Path, workdir: Path, branch: str) -> None:
+def discard(project, workdir, branch):
     project, workdir, branch = _path(project), _path(workdir), _branch(branch)
     with _lock:
-        _git(project, 'worktree', 'remove', '--force', str(workdir))
-        _git(project, 'branch', '-D', branch)
+        _git(_repo(project), 'worktree', 'remove', '--force', str(workdir))
+        _git(_repo(project), 'branch', '-D', branch)

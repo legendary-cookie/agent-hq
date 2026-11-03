@@ -28,7 +28,7 @@ def parse_request(data: dict, run_cfg: RunConfig, projects: list[Project], tools
     if not isinstance(level, str) or level not in tools[tool]:
         raise ValueError('Level is not offered for this tool')
     model = data.get('model')
-    if model is not None and (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9._:/-]{1,80}', model)):
+    if model is not None and (not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}', model)):
         raise ValueError('Invalid model')
     prompt = data.get('prompt')
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 100000:

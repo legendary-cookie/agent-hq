@@ -60,6 +60,21 @@ class RunnerTests(unittest.TestCase):
         row = self.wait(self.start()['id']); self.assertEqual(row['status'], 'done')
         self.assertEqual(row['session_id'], 'fake:s-1'); self.assertEqual(len(self.runner.output(row['id'])), 4)
 
+    def test_long_line_is_bounded_and_run_completes(self):
+        rid = self.start('longline')['id']
+        self.assertEqual(self.wait(rid)['status'], 'done')
+        lines = self.runner.output(rid)
+        self.assertEqual(len(lines), 1)
+        self.assertLessEqual(len(lines[0]), 65536)
+        self.assertTrue(lines[0].endswith(' …[truncated]'))
+
+    def test_finished_run_states_are_pruned(self):
+        for _ in range(205):
+            rid = self.start()['id']
+            self.wait(rid)
+        with self.runner._lock:
+            self.assertLessEqual(len(self.runner._runs), 200)
+
     def test_fail_run_failed_exit_code(self):
         row = self.wait(self.start('fail')['id']); self.assertEqual((row['status'], row['exit_code']), ('failed', 3))
 

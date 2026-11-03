@@ -40,6 +40,7 @@ def validate_settings(data, sources, relabel=None):
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None):
+    run_key = secrets.token_urlsafe(32)
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
     tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
@@ -67,6 +68,10 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
             data=json.loads(self.rfile.read(length));
             if not isinstance(data,dict): raise ValueError('expected object')
             return data
+        def run_key_ok(self):
+            value = self.headers.get('X-HQ-Run-Key', '')
+            return hmac.compare_digest(value.encode(), run_key.encode())
+
         def do_GET(self):
             if not self.host_ok(): return self.send_json(403,{'error':'forbidden host'})
             parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query,keep_blank_values=True); now=time.time()
@@ -97,8 +102,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if target.is_relative_to(root) and target.is_file():
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
-                if path == '/api/runs/options': return self.send_json(200, run_service.options() if run_service else {'run_mode': False, 'tools': {}, 'projects': [], 'profiles': [], 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':30}, 'max_concurrent':3})
+                if path == '/api/runs/options': return self.send_json(200, (run_service.options() if run_service else {'run_mode': False, 'tools': {}, 'projects': [], 'profiles': [], 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':30}, 'max_concurrent':3}) | {'run_key_ok': self.run_key_ok()})
                 if path == '/api/runs' or path.startswith('/api/runs/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
                     if run_service is None: raise RunError(403, 'run mode is off')
                     parts = path.strip('/').split('/')
                     if len(parts) == 2: return self.send_json(200, run_service.list())
@@ -171,13 +177,14 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     with lock:
                         valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
                         if valid: self.server.bootstrap_code=None
-                    return self.send_json(200,{'token':token}) if valid else self.send_json(403,{'error':'forbidden'})
+                    return self.send_json(200,{'token':token, 'run_key':run_key}) if valid else self.send_json(403,{'error':'forbidden'})
                 if path == '/api/runs' or path.startswith('/api/runs/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
                     if run_service is None: raise RunError(403, 'run mode is off')
                     parts = path.strip('/').split('/')
                     if method == 'POST' and path == '/api/runs/prepare': return self.send_json(200, run_service.prepare(data))
                     if method == 'POST' and path == '/api/runs': return self.send_json(201, run_service.start(data))
-                    if method == 'POST' and len(parts) == 4 and parts[3] in ('stop', 'merge', 'discard'): return self.send_json(200, getattr(run_service, parts[3])(unquote(parts[2])))
+                    if method == 'POST' and len(parts) == 4 and parts[3] in ('stop', 'merge', 'discard'): return self.send_json(200, run_service.merge(unquote(parts[2]), data) if parts[3] == 'merge' else getattr(run_service, parts[3])(unquote(parts[2])))
                     run_service._enabled()
                 if method=='POST' and path=='/api/importer/install':
                     if not install_lock.acquire(blocking=False):

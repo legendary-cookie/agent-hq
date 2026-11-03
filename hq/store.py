@@ -40,6 +40,9 @@ class Store:
         if 'base_commit' not in run_columns:
             self._writer.execute('ALTER TABLE runs ADD COLUMN base_commit TEXT')
             self._writer.commit()
+        if 'git_dir' not in run_columns:
+            self._writer.execute('ALTER TABLE runs ADD COLUMN git_dir TEXT')
+            self._writer.commit()
         columns = {row[1] for row in self._writer.execute('PRAGMA table_info(sessions)')}
         if 'imported' not in columns:
             self._writer.execute('ALTER TABLE sessions ADD COLUMN imported INTEGER DEFAULT 0')

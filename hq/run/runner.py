@@ -22,6 +22,7 @@ class Runner:
                  link_interval_s=5.0, link_window_s=120.0, link_grace_s=20.0):
         self.store, self.run_cfg = store, run_cfg
         self.worktrees_root = Path(worktrees_root)
+        workspace.configure(self.worktrees_root.parent)
         self.launchers = {name: copy.copy(launcher) for name, launcher in launchers.items()}
         for launcher in self.launchers.values():
             if hasattr(launcher, 'worktrees_root'):
@@ -87,10 +88,10 @@ class Runner:
             with self._lock:
                 stopped = self._runs[rid]['stop']
             if stopped: return
-            workdir, branch, base_commit = project, None, None
+            workdir, branch, base_commit, git_dir = project, None, None, None
             if req.level != 'read_only':
-                workdir, branch, base_commit = workspace.create(project, rid, self.worktrees_root)
-            self.store.update_run(rid, workdir=str(workdir), branch=branch, base_commit=base_commit)
+                workdir, branch, base_commit, git_dir = workspace.create(project, rid, self.worktrees_root)
+            self.store.update_run(rid, workdir=str(workdir), branch=branch, base_commit=base_commit, git_dir=git_dir)
             self._start_linker(rid, launcher, workdir, self.store.get_run(rid)['started_at'])
             launch = launcher.build(req, profile, workdir, rid, os.environ,
                                     self.run_cfg.pass_env.get(req.tool, []))
@@ -126,7 +127,14 @@ class Runner:
                         child.stdin.write(launch.stdin_text)
                         child.stdin.close()
                     except (BrokenPipeError, OSError): pass
-            for line in child.stdout:
+            while True:
+                line = child.stdout.readline(65536)
+                if not line: break
+                if len(line) == 65536 and not line.endswith('\n'):
+                    while True:
+                        remainder = child.stdout.readline(65536)
+                        if not remainder or remainder.endswith('\n'): break
+                    line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
                 line = line.rstrip('\r\n')
                 with self._lock: self._runs[rid]['output'].append(line)
                 event = parse_line(req.tool, line, launcher)
@@ -154,13 +162,19 @@ class Runner:
             with self._lock:
                 state = self._runs[rid]
                 status = state['stop'] or ('rate_limited' if state.get('limited') else ('done' if exit_code == 0 else 'failed'))
-                state['finished'] = True
             outcome = {'done': 'ok', 'failed': 'error', 'timed_out': 'error', 'interrupted': 'error',
                        'rate_limited': 'rate_limited', 'stopped': 'cancelled'}[status]
             try:
                 self.pu_log(launcher.name, req.model, 'hq-run', outcome, max(0, self.clock() - started), None)
             finally:
                 self._status(rid, status, ended_at=self.clock(), exit_code=exit_code)
+                with self._lock:
+                    self._runs[rid]['finished'] = True
+                    self._runs[rid]['finished_at'] = time.monotonic_ns()
+                    finished = sorted((key for key, value in self._runs.items() if value['finished']), key=lambda key: self._runs[key].get('finished_at', 0))
+                    for key in finished[:-200]:
+                        self._runs[key]['link_stop'].set()
+                        del self._runs[key]
 
     def _start_linker(self, rid, launcher, workdir, started_at):
         with self._lock:

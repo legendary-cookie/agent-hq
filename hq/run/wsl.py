@@ -16,11 +16,11 @@ def to_wsl_path(p: Path) -> str:
 def wsl_stop(pidfile: str) -> None:
     if not re.fullmatch(r'/tmp/hq-runs/run_[A-Za-z0-9_-]+\.pid', pidfile):
         raise ValueError('Invalid WSL pidfile')
-    result = subprocess.run(['wsl', '-d', 'Debian', '--', 'cat', pidfile],
+    result = subprocess.run(['wsl', '-d', 'Debian', '--exec', 'cat', pidfile],
                             capture_output=True, text=True, check=False)
     pgid = result.stdout.strip()
     if result.returncode != 0 or not re.fullmatch(r'[1-9][0-9]*', pgid):
         return
     for signal in ('TERM', 'KILL'):
-        subprocess.run(['wsl', '-d', 'Debian', '--', '/bin/kill', '-' + signal, '--', '-' + pgid], check=False)
+        subprocess.run(['wsl', '-d', 'Debian', '--exec', '/bin/kill', '-' + signal, '--', '-' + pgid], check=False)
         if signal == 'TERM': time.sleep(3)

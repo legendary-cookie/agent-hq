@@ -13,9 +13,11 @@ export function bootstrapToken(
       })
         .then((response) => {
           if (!response.ok) throw new Error('Exchange failed');
-          return response.json() as Promise<{ token: string }>;
+          return response.json() as Promise<{ token: string; run_key: string }>;
         })
-        .then(({ token }) => {
+        .then(({ token, run_key }) => {
+          if (run_key) storage.setItem('hq-run-key', run_key);
+          else storage.removeItem('hq-run-key');
           storage.setItem('hq-token', token);
           return token;
         })
@@ -27,6 +29,7 @@ export function bootstrapToken(
   const token = new URLSearchParams(loc.hash.slice(1)).get('token');
   if (token) {
     storage.setItem('hq-token', token);
+    storage.removeItem('hq-run-key');
     history.replaceState(null, '', `${loc.pathname}${loc.search}#/office`);
     return token;
   }

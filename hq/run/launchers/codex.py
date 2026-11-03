@@ -23,7 +23,7 @@ class CodexLauncher(BaseLauncher):
         if profile: env['WSLENV'] = 'CODEX_HOME/u'
         pidfile = f'/tmp/hq-runs/{run_id}.pid'
         wrapper = Path(__file__).resolve().parent.parent / 'wsl_wrap.sh'
-        argv = ['wsl', '-d', 'Debian', '--cd', to_wsl_path(workdir), '--', 'bash',
+        argv = ['wsl', '-d', 'Debian', '--cd', to_wsl_path(workdir), '--exec', 'bash',
                 to_wsl_path(wrapper), pidfile, 'codex', 'exec', '--json']
         if req.model: argv += ['-m', req.model]
         argv += ['-s', 'read-only' if req.level == 'read_only' else 'workspace-write']

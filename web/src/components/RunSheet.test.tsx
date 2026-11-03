@@ -23,6 +23,11 @@ function setup(verdict = allowed, enterTask = true) {
   if (enterTask) fireEvent.change(screen.getByLabelText('Task'), { target: { value: 'Do work' } });
   return fetcher;
 }
+it('asks to reopen when the run key is missing', () => {
+  render(<RunSheet options={{ ...options, run_key_ok: false }} onClose={() => {}} />);
+  expect(screen.getByText(/reopen Agent HQ from its launch link to use run mode/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText('Task')).not.toBeInTheDocument();
+});
 it('lists only installed tools and their levels', () => {
   setup();
   expect(screen.getByRole('option', { name: 'codex' })).toBeInTheDocument();

@@ -14,7 +14,7 @@ const item = { id: 'run_1', tool: 'codex', model: null, account: 'account', proj
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 function setupRun(status = 'done') {
   const run = { ...item, status };
-  const fetcher = vi.fn().mockImplementation(async (path: string, init?: RequestInit) => ({ ok: true, json: async () => path.endsWith('/diff') ? { diff: '+added', truncated: false, branch: 'branch' } : path.endsWith('/output') ? ['output'] : path.endsWith('/merge') ? { merge_state: 'conflict' } : init?.method === 'POST' ? {} : path === '/api/runs' ? [run] : run }));
+  const fetcher = vi.fn().mockImplementation(async (path: string, init?: RequestInit) => ({ ok: true, json: async () => path.endsWith('/diff') ? { diff: '+added', truncated: false, branch: 'branch', commit: 'abc' } : path.endsWith('/output') ? ['output'] : path.endsWith('/merge') ? { merge_state: 'conflict' } : init?.method === 'POST' ? {} : path === '/api/runs' ? [run] : run }));
   vi.stubGlobal('fetch', fetcher);
   vi.stubGlobal('EventSource', class { addEventListener() {} close() {} });
   render(<Runs />);

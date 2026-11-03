@@ -1,5 +1,4 @@
 import json
-import re
 from dataclasses import dataclass, replace
 
 
@@ -11,7 +10,22 @@ class StreamEvent:
     rate_limited: bool = False
 
 
-_LIMIT = re.compile(r'\b(429|rate.?limit|usage limit|quota)\b', re.I)
+def _limited(data, tool):
+    kind = data.get('type', data.get('event', ''))
+    err = data.get('error')
+    info = err if isinstance(err, dict) else {}
+    code = info.get('code', info.get('status'))
+    if tool == 'claude':
+        if kind == 'rate_limit_event': return (data.get('rate_limit_info') or {}).get('status') == 'rejected'
+        return kind == 'result' and data.get('is_error') is True and (err == 429 or code == 429 or data.get('api_error_status') == 429)
+    if tool == 'codex':
+        return kind in ('turn.failed', 'error') and (code in (429, 'rate_limit_exceeded', 'usage_limit_reached') or data.get('status') in (429, 'rate_limit_exceeded', 'usage_limit_reached') or str(info.get('message', data.get('message', ''))).startswith("You've hit your usage limit"))
+    if tool == 'agy':
+        result = data.get('result') if isinstance(data.get('result'), dict) else data
+        error = result.get('error')
+        error_code = error.get('code') if isinstance(error, dict) else result.get('code')
+        return (kind == 'result' and result.get('status') == 'RATE_LIMITED') or error_code in (429, 'RESOURCE_EXHAUSTED')
+    return kind == 'error' and (type(data.get('status')) is int and data['status'] == 429 or type(data.get('code')) is int and data['code'] == 429 or type(code) is int and code == 429)
 
 
 def parse_json(line, tool):
@@ -70,8 +84,10 @@ def parse_line(tool, line, launcher=None):
     if event.session_id:
         # Store ids the way the readers do ('<harness>:<id>') so the run joins its session.
         event = replace(event, session_id=f'{launcher.harness}:{event.session_id}')
-    # Only an error event can mean a rate limit: an agent that merely mentions "429" or "quota"
-    # in its work must not block an account.
-    if event.kind == 'error' and _LIMIT.search(event.text or line):
+    try:
+        data = json.loads(line)
+    except (ValueError, TypeError):
+        data = None
+    if isinstance(data, dict) and _limited(data, tool):
         event = replace(event, rate_limited=True)
     return event

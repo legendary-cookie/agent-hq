@@ -20,16 +20,18 @@ export function RunSheet({ options, onClose, onStarted }: { options: RunOptions;
   closeCallback.current = onClose;
   const hasTools = Object.keys(options.tools).length > 0;
   const version = useRef(0);
+  const confirmation = useRef<{ nonce: string | null; verdict: RunVerdict } | null>(null);
   useEffect(() => {
     const generation = ++version.current;
     setVerdict(null);
+    confirmation.current = null;
     setError('');
-    if (!options.run_mode || !hasTools || !form.prompt.trim() || closing) return;
+    if (!options.run_mode || options.run_key_ok === false || !hasTools || !form.prompt.trim() || closing) return;
     const timer = setTimeout(() => {
-      prepareRun(form).then((result) => { if (version.current === generation) { setVerdict(result.verdict); setError(''); } }).catch((err: Error) => { if (version.current === generation) setError(err.message); });
+      prepareRun(form).then((result) => { if (version.current === generation) { confirmation.current = result; setVerdict(result.verdict); setError(''); } }).catch((err: Error) => { if (version.current === generation) setError(err.message); });
     }, 300);
     return () => clearTimeout(timer);
-  }, [form, options.run_mode, hasTools, closing]);
+  }, [form, options.run_mode, options.run_key_ok, hasTools, closing]);
   useEffect(() => {
     if (!options.run_mode || !sheet.current) return;
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -60,13 +62,12 @@ export function RunSheet({ options, onClose, onStarted }: { options: RunOptions;
   async function start() {
     setStarting(true); setError(''); ++version.current;
     try {
-      const prepared = await prepareRun(form);
-      setVerdict(prepared.verdict);
-      if (!prepared.verdict.allowed || !prepared.nonce) return;
+      const prepared = confirmation.current;
+      if (!prepared || !prepared.verdict.allowed || !prepared.nonce) return;
       if (form.level === 'full_auto' && !confirming) { setConfirming(true); return; }
       try { await startRun({ ...form, nonce: prepared.nonce }); } catch (err) {
         if (err instanceof ApiError && err.status === 403 && err.message === 'confirm again') {
-          const fresh = await prepareRun(form); setVerdict(fresh.verdict); setConfirming(false); setError('Confirmation expired. Review the verdict and start again.'); return;
+          const fresh = await prepareRun(form); confirmation.current = fresh; setVerdict(fresh.verdict); setConfirming(false); setError('Confirmation expired. Review the verdict and start again.'); return;
         }
         throw err;
       }
@@ -74,6 +75,7 @@ export function RunSheet({ options, onClose, onStarted }: { options: RunOptions;
     } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setStarting(false); }
   }
   if (!options.run_mode) return <div className="run-popover" role="status">Run mode is off. Turn it on in config/run.json. <button onClick={onClose} aria-label="Close">×</button></div>;
+  if (options.run_key_ok === false) return <div className="run-popover" role="status">reopen Agent HQ from its launch link to use run mode <button onClick={onClose} aria-label="Close">×</button></div>;
   const profile = options.profiles.find((item) => item.id === (form.profile ?? verdict?.profile));
   return <div className="run-scrim" onClick={close}><div className="run-sheet" style={{ opacity: 0 }} ref={sheet} role="dialog" aria-modal="true" aria-label="Start run" onClick={(e) => e.stopPropagation()}>
     <header><h2>Start run</h2><button onClick={close} aria-label="Close">×</button></header>

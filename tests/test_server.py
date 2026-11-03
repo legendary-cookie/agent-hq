@@ -36,7 +36,10 @@ class ServerTests(unittest.TestCase):
 
     def test_exchange_code_single_use(self):
         h={'Origin':f'http://127.0.0.1:{self.port}'}; data={'code':self.server.bootstrap_code}
-        self.assertEqual(self.req('/api/exchange','POST',data,h), (200, {'token':self.token}))
+        status, result = self.req('/api/exchange','POST',data,h)
+        self.assertEqual(status, 200)
+        self.assertEqual(result['token'], self.token)
+        self.assertTrue(result['run_key'])
         self.assertEqual(self.req('/api/exchange','POST',data,h)[0],403)
     def test_exchange_code_expires(self):
         from unittest.mock import patch

@@ -28,7 +28,7 @@ class RequestTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.parse(level='full_auto')
 
     def test_bad_model_refused(self):
-        for model in ('gpt 6', 'a;b', 'a' * 81):
+        for model in ('gpt 6', 'a;b', 'a' * 81, '--dangerously-skip-permissions'):
             with self.subTest(model=model), self.assertRaises(ValueError): self.parse(model=model)
 
     def test_prompt_too_long_refused(self):

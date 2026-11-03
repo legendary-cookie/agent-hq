@@ -29,7 +29,7 @@ class RunService:
         self.pu_dir = Path(pu) if pu is not None else None
         self.pu_failures = 0
         self._lock = threading.RLock()
-        self._viewed = set()
+        self._viewed = {}
         self.on_event = lambda event: None
         self.runner = (runner_factory or Runner)(store, self.run_cfg, self.launchers, Path(data_dir)/'worktrees',
             self.pu_log, on_event=lambda event: self.on_event(event), pu_limit=self.pu_limit, projects=self.projects)
@@ -92,16 +92,22 @@ class RunService:
 
     def prepare(self, data):
         self._enabled(); req = self._parse(data); verdict = self._verdict(req)
-        nonce, expires = self.nonces.issue(req) if verdict.allowed else (None, None)
+        resolved = req
+        if verdict.allowed and req.guard_mode == 'auto':
+            resolved = replace(req, tool=verdict.suggestion['tool'], model=verdict.suggestion.get('model'), profile=verdict.profile)
+        nonce, expires = self.nonces.issue(req, resolved) if verdict.allowed else (None, None)
         return {'verdict': asdict(verdict), 'nonce': nonce, 'expires_at': expires}
 
     def start(self, data):
         self._enabled(); req = self._parse(data)
-        if not self.nonces.redeem(data.get('nonce'), req): raise RunError(403, 'confirm again')
-        verdict = self._verdict(req)
+        resolved = self.nonces.redeem_resolved(data.get('nonce'), req)
+        if resolved is None: raise RunError(403, 'confirm again')
+        req = resolved
+        try: self._parse(asdict(req))
+        except RunError as exc: raise RunError(409, str(exc)) from exc
+        verdict = (guard.check(replace(req, guard_mode='block'), self.store, self._profiles(), lambda _: [], time.time(), offered=set(self._tools()))
+                   if req.guard_mode == 'auto' else self._verdict(req))
         if not verdict.allowed: raise RunError(409, '; '.join(verdict.reasons))
-        if req.guard_mode == 'auto':
-            req = replace(req, tool=verdict.suggestion['tool'], model=verdict.suggestion.get('model'), profile=verdict.profile)
         profile = next ( (p for p in self._profiles() if p.id == verdict.profile and p.tool == req.tool), None)
         try: return self.runner.start(req, profile)
         except Busy as exc: raise RunError(409, str(exc)) from exc
@@ -134,19 +140,29 @@ class RunService:
 
     def diff(self, rid):
         run = self.get(rid)
-        if run['branch']:
-            self._finished(run)
-            text, truncated = workspace.diff(self._project(run), run['branch'], run['base_commit'], workdir=Path(run['workdir']))
-        else: text, truncated = '', False
-        with self._lock: self._viewed.add(rid)
-        return {'diff':text, 'truncated':truncated, 'branch':run['branch']}
+        commit = None
+        try:
+            if run['branch']:
+                self._finished(run)
+                project = self._project(run)
+                with workspace._lock:
+                    text, truncated = workspace.diff(project, run['branch'], run['base_commit'], workdir=Path(run['workdir']), git_dir=run.get('git_dir'))
+                    commit = workspace.revision(project, run['branch'])
+            else: text, truncated = '', False
+        except ValueError as exc: raise RunError(409, str(exc)) from exc
+        with self._lock: self._viewed[rid] = commit
+        return {'diff': text, 'truncated': truncated, 'branch': run['branch'], 'commit': commit}
 
-    def merge(self, rid):
+    def merge(self, rid, data=None):
         run = self.get(rid); self._finished(run)
         with self._lock:
+            commit = (data or {}).get('commit')
             if rid not in self._viewed: raise RunError(409, 'view the diff first')
             if not run['branch']: raise RunError(409, 'run has no branch')
-            state = workspace.merge(self._project(run), run['branch'], workdir=Path(run['workdir']))
+            if not commit or commit != self._viewed[rid]: raise RunError(409, 'the run changed after you viewed the diff; view it again')
+            try:
+                state = workspace.merge(self._project(run), run['branch'], workdir=Path(run['workdir']), git_dir=run.get('git_dir'), commit=commit)
+            except ValueError as exc: raise RunError(409, str(exc)) from exc
             self.store.update_run(rid, merge_state=state)
         return {'merge_state':state}
 

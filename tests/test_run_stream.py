@@ -22,7 +22,7 @@ class StreamTests(unittest.TestCase):
         self.assertIsNone(parse_line('claude', 'garbage'))
 
     def test_rate_limit_detected(self):
-        self.assertTrue(parse_line('claude', '{"type":"error","message":"429 rate limit"}').rate_limited)
+        self.assertFalse(parse_line('claude', '{"type":"error","message":"failed to read docs/quota.md"}').rate_limited)
 
     def test_claude_rejected_rate_limit_event(self):
         line = '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","resetsAt":1793700000}}'
@@ -44,12 +44,23 @@ class StreamTests(unittest.TestCase):
 
     def test_error_result_with_limit_text_is_a_limit(self):
         line = '{"type":"result","subtype":"error_during_execution","is_error":true,"result":"usage limit reached"}'
-        self.assertTrue(parse_line('claude', line).rate_limited)
+        self.assertFalse(parse_line('claude', line).rate_limited)
 
     def test_codex_turn_failed_with_429(self):
-        line = '{"type":"turn.failed","error":{"message":"stream error: 429 Too Many Requests"}}'
+        line = '{"type":"turn.failed","error":{"code":429}}'
         self.assertTrue(parse_line('codex', line).rate_limited)
 
+
+    def test_structured_limits(self):
+        cases = [('claude', '{"type":"result","is_error":true,"api_error_status":429}'),
+                 ('codex', '{"type":"error","error":{"code":"usage_limit_reached"}}'),
+                 ('codex', "{\"type\":\"error\",\"error\":{\"message\":\"You've hit your usage limit today\"}}"),
+                 ('agy', '{"event":"result","result":{"status":"RATE_LIMITED"}}'),
+                 ('agy', '{"event":"result","result":{"error":{"code":"RESOURCE_EXHAUSTED"}}}'),
+                 ('kimi', '{"type":"error","status":429}')]
+        for tool, line in cases:
+            with self.subTest(tool=tool, line=line):
+                self.assertTrue(parse_line(tool, line).rate_limited)
 
 class RealShapeTests(unittest.TestCase):
     # Shapes from real runs on this PC (2026-11-03); ids and values invented.
@@ -62,7 +73,7 @@ class RealShapeTests(unittest.TestCase):
         self.assertEqual(parse_line('agy', line).kind, 'done')
 
     def test_agy_result_failure_is_error(self):
-        line = '{"event":"result","result":{"conversation_id":"c-1","status":"FAILED","error":"429 quota"}}'
+        line = '{"event":"result","result":{"conversation_id":"c-1","status":"RATE_LIMITED"}}'
         event = parse_line('agy', line)
         self.assertEqual(event.kind, 'error')
         self.assertTrue(event.rate_limited)

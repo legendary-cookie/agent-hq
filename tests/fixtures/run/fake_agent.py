@@ -15,8 +15,10 @@ elif mode == 'grandchild':
     child = subprocess.Popen([sys.executable, __file__, 'sleep', '60'])
     print(json.dumps({'type': 'pid', 'pid': child.pid}), flush=True)
     time.sleep(60)
+elif mode == 'longline':
+    print('x' * 5_000_000, flush=True)
 elif mode == 'ratelimit':
-    print(json.dumps({'type': 'error', 'message': '429 rate limit'}), flush=True)
+    print(json.dumps({'type': 'error', 'status': 429}), flush=True)
 elif mode == 'garbage':
     print('not json', flush=True)
 elif mode == 'lines':

@@ -197,6 +197,7 @@ export interface DelegationRow {
 }
 
 export interface RunOptions {
+  run_key_ok?: boolean;
   run_mode: boolean;
   tools: Record<string, { levels: string[]; harness: string; tested: boolean | string }>;
   projects: string[];

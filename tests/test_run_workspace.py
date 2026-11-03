@@ -31,7 +31,7 @@ class WorkspaceTests(unittest.TestCase):
                               check=True, capture_output=True, text=True, timeout=60).stdout.strip()
 
     def create(self, run_id='run_123'):
-        return workspace.create(self.project, run_id, self.worktrees)
+        return workspace.create(self.project, run_id, self.worktrees)[:3]
 
     def change(self, path, text, filename='file.txt'):
         (path / filename).write_text(text, encoding='utf-8')
@@ -48,7 +48,7 @@ class WorkspaceTests(unittest.TestCase):
     def test_non_git_returns_project(self):
         folder = self.root / 'plain'
         folder.mkdir()
-        self.assertEqual(workspace.create(folder, 'run_1', self.worktrees), (folder, None, None))
+        self.assertEqual(workspace.create(folder, 'run_1', self.worktrees), (folder, None, None, None))
 
     def test_diff_shows_change(self):
         workdir, branch, base = self.create()
@@ -74,7 +74,7 @@ class WorkspaceTests(unittest.TestCase):
     def test_snapshot_without_changes_does_not_commit(self):
         workdir, _, _ = self.create()
         head = self.git(workdir, 'rev-parse', 'HEAD')
-        self.assertFalse(workspace.snapshot(workdir, 'run_123'))
+        self.assertFalse(workspace.snapshot(workdir, 'run_123', project=self.project))
         self.assertEqual(self.git(workdir, 'rev-parse', 'HEAD'), head)
 
     def test_diff_includes_agent_commit_and_later_edits(self):
@@ -138,6 +138,56 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotEqual(results[0][0], results[1][0])
         self.assertNotEqual(results[0][1], results[1][1])
         self.assertTrue(all(item[0].is_dir() for item in results))
+
+    def test_tampered_worktree_git_is_refused(self):
+        workdir, branch, base = self.create()
+        evil = workdir / 'evil'
+        evil.mkdir()
+        marker = self.root / 'marker'
+        (evil / 'hook.py').write_text(f"open({str(marker)!r}, 'w').write('executed')")
+        (evil / 'config').write_text('[core]\n fsmonitor = python evil/hook.py\n')
+        (workdir / '.git').write_text('gitdir: evil\n')
+        for operation in (lambda: workspace.diff(self.project, branch, base, workdir=workdir),
+                          lambda: workspace.merge(self.project, branch, workdir=workdir)):
+            with self.assertRaisesRegex(ValueError, 'worktree .git was changed'):
+                operation()
+        self.assertFalse(marker.exists())
+
+    def test_worktree_config_is_refused(self):
+        workdir, branch, base = self.create()
+        admin = self.project / '.git' / 'worktrees' / workdir.name
+        (admin / 'config.worktree').write_text('[core]\n hooksPath = evil\n')
+        with self.assertRaisesRegex(ValueError, 'worktree .git was changed'):
+            workspace.diff(self.project, branch, base, workdir=workdir)
+
+    def test_merge_rejects_changes_since_viewed_commit(self):
+        workdir, branch, base = self.create()
+        workspace.diff(self.project, branch, base, workdir=workdir)
+        commit = workspace.revision(self.project, branch)
+        (workdir / 'file.txt').write_text('later edit\n')
+        with self.assertRaisesRegex(ValueError, 'the run changed after you viewed'):
+            workspace.merge(self.project, branch, workdir=workdir, commit=commit)
+        workspace.diff(self.project, branch, base, workdir=workdir)
+        commit = workspace.revision(self.project, branch)
+        self.assertEqual(workspace.merge(self.project, branch, workdir=workdir, commit=commit), 'merged')
+
+    def test_large_diff_is_truncated(self):
+        workdir, branch, base = self.create()
+        (workdir / 'large').write_text('x' * 10_000_000)
+        from unittest.mock import Mock
+        real_popen = subprocess.Popen
+        processes = []
+        def traced(*args, **kwargs):
+            proc = real_popen(*args, **kwargs)
+            if kwargs.get('stderr') == subprocess.DEVNULL:
+                proc.stdout = Mock(wraps=proc.stdout)
+                processes.append(proc)
+            return proc
+        with patch('hq.run.workspace.subprocess.Popen', side_effect=traced):
+            text, truncated = workspace.diff(self.project, branch, base, cap=1024, workdir=workdir)
+        processes[-1].stdout.read.assert_called_once_with(1025)
+        self.assertTrue(truncated)
+        self.assertLessEqual(len(text), 1024)
 
     def test_path_with_space(self):
         workdir, branch, base = self.create()

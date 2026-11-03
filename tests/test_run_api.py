@@ -77,6 +77,16 @@ class RunServiceTests(unittest.TestCase):
         self.service.runner.rings.clear()
         with self.assertRaises(RunError) as e: self.service.output(rec['id'])
         self.assertEqual(e.exception.status,410)
+    def test_auto_start_uses_prepared_recommendation(self):
+        from hq.run.guard import Verdict
+        body = self.body | {'guard_mode': 'auto'}
+        first = Verdict(True, [], [], {'tool': 'fake', 'model': 'confirmed', 'profile': None}, None, None)
+        with patch.object(self.service, '_verdict', return_value=first), patch('hq.run.service.guard.check', return_value=Verdict(True, [], [], None, None, None)):
+            prepared = self.service.prepare(body)
+            with patch.object(self.service.runner, 'start', return_value={}) as start:
+                self.service.start(body | {'nonce': prepared['nonce']})
+                self.assertEqual(start.call_args.args[0].model, 'confirmed')
+
     def test_full_auto_start_recorded_with_level(self):
         body = self.body | {'level':'full_auto'}
         self.assertEqual(self.service.start(body | {'nonce':self.service.prepare(body)['nonce']})['level'],'full_auto')
@@ -97,9 +107,9 @@ class RunServiceTests(unittest.TestCase):
     def test_diff_then_merge_ok(self):
         rec = self.service.start(self.body | {'nonce':self.service.prepare(self.body)['nonce']})
         self.store.update_run(rec['id'],status='done',branch='branch',base_commit='base')
-        with patch('hq.run.service.workspace.diff',return_value=('patch',False)), patch('hq.run.service.workspace.merge',return_value='merged'):
+        with patch('hq.run.service.workspace.diff',return_value=('patch',False)), patch('hq.run.service.workspace.merge',return_value='merged'), patch('hq.run.service.workspace.revision',return_value='abc'):
             self.assertEqual(self.service.diff(rec['id'])['diff'],'patch')
-            self.service.merge(rec['id'])
+            self.service.merge(rec['id'], {'commit':'abc'})
         self.assertEqual(self.store.get_run(rec['id'])['merge_state'],'merged')
 
 
@@ -113,17 +123,39 @@ class RunHttpTests(unittest.TestCase):
         self.server, self.token = make_server(self.store, self.collector, self.cfg, ROOT, port=0, run_service=self.service)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True); self.thread.start()
         self.addCleanup(self.close_server)
+        import http.client
+        conn = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=3)
+        conn.request('POST', '/api/exchange', json.dumps({'code': self.server.bootstrap_code}), {'Origin': f'http://127.0.0.1:{self.server.server_port}'})
+        self.run_key = json.loads(conn.getresponse().read())['run_key']
+        conn.close()
     def close_server(self):
         self.server.shutdown(); self.server.server_close(); self.thread.join()
     def req(self, path, method='GET', data=None, origin=None):
         import http.client
         port = self.server.server_port
         conn = http.client.HTTPConnection('127.0.0.1', port, timeout=3); self.addCleanup(conn.close)
-        headers = {'X-HQ-Token':self.token}
+        headers = {'X-HQ-Token':self.token, 'X-HQ-Run-Key':self.run_key}
         if method != 'GET': headers['Origin'] = origin or f'http://127.0.0.1:{port}'
         conn.request(method, path, json.dumps(data) if data is not None else None, headers)
         response = conn.getresponse()
         return response.status, json.loads(response.read())
+    def test_run_key_required_and_exchange_key_works(self):
+        import http.client
+        port = self.server.server_port
+        conn = http.client.HTTPConnection('127.0.0.1', port, timeout=3)
+        self.addCleanup(conn.close)
+        headers = {'X-HQ-Token': self.token, 'Origin': f'http://127.0.0.1:{port}'}
+        for key in ('', 'wrong'):
+            conn.request('GET', '/api/runs', headers=headers | {'X-HQ-Run-Key': key})
+            response = conn.getresponse()
+            self.assertEqual(response.status, 403)
+            response.read()
+        key = self.run_key
+        conn.request('GET', '/api/runs', headers=headers | {'X-HQ-Run-Key': key})
+        response = conn.getresponse()
+        self.assertEqual(response.status, 200)
+        self.assertNotIn(key.encode(), response.read())
+
     def test_wrong_origin_403(self):
         self.assertEqual(self.req('/api/runs/prepare', 'POST', self.body, 'http://evil.com')[0],403)
     def test_start_ok_201_then_list_and_get(self):
@@ -172,6 +204,6 @@ class RunExtraTests(RunServiceTests):
         self.assertEqual(exc.exception.status,409)
     def test_no_branch_diff_and_discard_while_running(self):
         rec = self.service.start(self.body | {'nonce':self.service.prepare(self.body)['nonce']})
-        self.assertEqual(self.service.diff(rec['id']), {'diff':'', 'truncated':False, 'branch':None})
+        self.assertEqual(self.service.diff(rec['id']), {'diff':'', 'truncated':False, 'branch':None, 'commit':None})
         with self.assertRaises(RunError) as exc: self.service.discard(rec['id'])
         self.assertEqual(exc.exception.status,409)
