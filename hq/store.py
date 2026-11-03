@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS runs (
   session_id TEXT, prompt_preview TEXT, started_at REAL, ended_at REAL,
   exit_code INTEGER, time_limit_s INTEGER NOT NULL, merge_state TEXT
 );
+CREATE TABLE IF NOT EXISTS approvals (
+  id TEXT PRIMARY KEY, run_id TEXT NOT NULL, tool_name TEXT NOT NULL,
+  summary TEXT NOT NULL, requested_at REAL NOT NULL, answered_at REAL, state TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, provider TEXT, label TEXT, plan TEXT, monthly_price_usd REAL, billing_day INTEGER, "match" TEXT, cap_tokens TEXT);
 CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, harness TEXT, provider TEXT, model TEXT, account_id TEXT, project TEXT, title TEXT, started_at REAL, last_event_at REAL, ended_at REAL, status TEXT, parent_id TEXT, source_ref TEXT, imported INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, session_id TEXT, ext_id TEXT, ts REAL, kind TEXT, tool TEXT, preview TEXT, tokens_in INTEGER, tokens_out INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_estimated INTEGER, model TEXT, UNIQUE(session_id, ext_id));
@@ -37,6 +41,9 @@ class Store:
         self._writer.execute('PRAGMA journal_mode=WAL')
         self._writer.executescript(_SCHEMA)
         run_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(runs)')}
+        if 'turns' not in run_columns:
+            self._writer.execute('ALTER TABLE runs ADD COLUMN turns INTEGER NOT NULL DEFAULT 1')
+            self._writer.commit()
         if 'base_commit' not in run_columns:
             self._writer.execute('ALTER TABLE runs ADD COLUMN base_commit TEXT')
             self._writer.commit()

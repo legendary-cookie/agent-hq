@@ -15,6 +15,7 @@ class RunConfig:
     max_time_limit_min: int = 240
     pass_env: dict[str, list[str]] = field(default_factory=dict)
     show_untested: bool = False
+    approval_timeout_min: int = 15
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,8 @@ def load_run_config(config_dir: Path) -> RunConfig:
     return RunConfig(data.get('run_mode') is True,
                      _clamp(data.get('max_concurrent'), 3, 240),
                      _clamp(data.get('default_time_limit_min'), min(30, maximum), maximum),
-                     maximum, names, data.get('show_untested') is True)
+                     maximum, names, data.get('show_untested') is True,
+                     _clamp(data.get('approval_timeout_min'), 15, 120))
 
 
 def load_projects(config_dir: Path) -> list[Project]:
