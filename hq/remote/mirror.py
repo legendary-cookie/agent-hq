@@ -5,7 +5,7 @@ import math
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from hq.config import is_forbidden
@@ -19,6 +19,7 @@ class MirrorResult:
     resets: int
     more: bool
     errors: list[str]
+    notes: list[str] = field(default_factory=list)  # reported by the scanner, e.g. a skipped big database
 
 
 def _target(root, host, name):
@@ -66,8 +67,9 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
     result.more = bool(answer.get('more', False))
     errors = answer.get('errors', [])
     if isinstance(errors, list):
-        result.errors.extend(str(error) for error in errors)
+        result.notes.extend(str(error)[:300] for error in errors[:50])
     metadata = _metadata(root)
+    db_bytes = 0
     for entry in answer.get('files', []):
         try:
             if not isinstance(entry, dict):
@@ -83,7 +85,9 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
             if type(size) is not int or size < 0 or not isinstance(mtime, (int, float)) or isinstance(mtime, bool) or not math.isfinite(mtime):
                 raise ValueError('invalid size or mtime')
             data = base64.b64decode(entry.get('data_b64', ''), validate=True)
-            if result.bytes + len(data) > 20000000 or offset + len(data) > size or (kind != 'append' and offset != 0):
+            is_db = kind == 'replace' and name.lower().endswith('.db')
+            budget_used = db_bytes if is_db else result.bytes - db_bytes
+            if budget_used + len(data) > (40000000 if is_db else 20000000) or offset + len(data) > size or (kind != 'append' and offset != 0):
                 raise ValueError('invalid data size')
             if kind == 'replace' and len(data) != size:
                 raise ValueError('incomplete replacement')
@@ -102,6 +106,8 @@ def apply_answer(answer: dict, host, root: Path) -> MirrorResult:
             metadata[name] = mtime
             result.written += 1
             result.bytes += len(data)
+            if is_db:
+                db_bytes += len(data)
         except (ValueError, TypeError, OSError, binascii.Error) as exc:
             result.errors.append(str(exc))
     if metadata:
