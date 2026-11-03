@@ -1,7 +1,8 @@
+import { Inbox } from './Inbox';
 import { makeSyntheticSessions, syntheticCount } from '../office/synthetic';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApi } from '../api/client';
-import type { DelegationRow, Overview, SessionRow, Settings } from '../api/types';
+import type { Approval, DelegationRow, Overview, SessionRow, Settings } from '../api/types';
 import { Inspector } from '../components/Inspector';
 import { Segmented } from '../components/Segmented';
 import { StatusPills } from '../components/StatusPills';
@@ -13,10 +14,17 @@ import type { Skin, SkinId } from '../office/skin';
 import { parseSkin, SKINS } from '../office/skins';
 import './office.css';
 
-export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Skin> } = {}) {
+export function Office(props: { skinFactory?: (id: SkinId) => Promise<Skin> } = {}) {
+  const [hash, setHash] = useState(location.hash);
+  useEffect(() => { const update = () => setHash(location.hash); window.addEventListener('hashchange', update); return () => window.removeEventListener('hashchange', update); }, []);
+  return hash.startsWith('#/inbox') ? <Inbox /> : <OfficeView {...props} />;
+}
+function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Skin> } = {}) {
   const { data: sessions } = useApi<SessionRow[]>('/api/sessions');
   const { data: delegations } = useApi<DelegationRow[]>('/api/delegations?limit=20');
   const { data: overview } = useApi<Overview>('/api/overview');
+  const { data: options } = useApi<{ run_mode: boolean; run_key_ok?: boolean }>('/api/runs/options', { live: false });
+  const { data: approvals } = useApi<Approval[]>(options?.run_mode && options.run_key_ok ? '/api/approvals?state=waiting' : null);
   const { data: settings } = useApi<Settings>('/api/settings', { live: false });
   const [skin, setSkin] = useState<SkinId>(() => {
     try {
@@ -139,7 +147,7 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
               skin={skin}
               scene={scene}
               selectedId={selected}
-              onPick={setSelected}
+              onPick={(id) => { const session = allSessions.find((item) => item.id === id); const approval = approvals?.find((item) => item.run_id === session?.launched_run_id); if (approval) location.hash = `/inbox?approval=${encodeURIComponent(approval.id)}`; else setSelected(id); }}
               skinFactory={skinFactory}
             />
           )}
@@ -158,9 +166,9 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
         <ul className="office-accessible" aria-label="Office agents">
           {scene.npcs.map((npc) => (
             <li key={npc.id}>
-              <button type="button" onClick={() => setSelected(npc.sessionId)}>
+              <button type="button" onClick={() => { const item = approvals?.find((entry) => entry.run_id === npc.launchedRunId); if (item) location.hash = `/inbox?approval=${encodeURIComponent(item.id)}`; else setSelected(npc.sessionId); }}>
                 {harnessLabel(npc.harness)} ·{' '}
-                {npc.state === 'active' ? 'Active (imported)' : npc.state} · {npc.title}{npc.launchedRunId && ' · launched by HQ'}
+                {approvals?.some((item) => item.run_id === npc.launchedRunId) ? 'Needs you' : npc.state === 'active' ? 'Active (imported)' : npc.state} · {npc.title}{npc.launchedRunId && ' · launched by HQ'}
               </button>
             </li>
           ))}

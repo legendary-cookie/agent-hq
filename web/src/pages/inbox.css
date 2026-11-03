@@ -1,0 +1,6 @@
+.inbox-page { padding: 24px; }
+.inbox-page header { display: flex; align-items: center; justify-content: space-between; }
+.inbox-item { padding: 16px; margin: 12px 0; border-radius: 12px; background: var(--surface, rgba(128,128,128,.1)); }
+.inbox-item h2 { font-size: 1.1rem; }
+.inbox-item label { display: block; margin: 12px 0; }
+.inbox-item textarea { display: block; width: 100%; max-width: 40rem; }
