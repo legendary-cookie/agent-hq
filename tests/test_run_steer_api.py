@@ -98,6 +98,22 @@ class SteerHttpTests(unittest.TestCase):
         response = conn.getresponse(); response.read()
         self.assertEqual(response.status, 403)
 
+    def test_browser_get_without_origin_lists_approvals(self):
+        # Found in the real app: browsers send no Origin on same-origin GETs, so requiring one
+        # made the Inbox page always 403.
+        import http.client
+        port = self.server.server_port
+        conn = http.client.HTTPConnection('127.0.0.1', port, timeout=3); self.addCleanup(conn.close)
+        conn.request('POST', '/api/exchange', json.dumps({'code': self.server.bootstrap_code}), {'Origin': f'http://127.0.0.1:{port}'})
+        run_key = json.loads(conn.getresponse().read())['run_key']
+        conn.request('GET', '/api/approvals?state=waiting', None, {'X-HQ-Token': self.token, 'X-HQ-Run-Key': run_key})
+        response = conn.getresponse(); body = json.loads(response.read())
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body, [])
+        conn.request('GET', '/api/approvals?state=waiting', None, {'X-HQ-Token': self.token})
+        response = conn.getresponse(); response.read()
+        self.assertEqual(response.status, 403)
+
     def test_http_message_and_approval_routes(self):
         import http.client
         port = self.server.server_port

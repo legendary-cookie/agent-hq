@@ -17,6 +17,9 @@ class Busy(Exception):
     pass
 
 
+_RESUMABLE = ('done', 'interrupted', 'stopped', 'timed_out')
+
+
 class NotIdle(Exception):
     pass
 
@@ -139,9 +142,7 @@ class Runner:
                     child.kill_tree()
                 else:
                     self.on_event({'type': 'run', 'id': rid, 'status': 'running'})
-                timer = threading.Timer(req.time_limit_min * self.minute_s, self._request_stop, args=(rid, 'timed_out'))
-                timer.daemon = True
-                timer.start()
+                timer = self._start_limit(rid, req)
                 if launch.stdin_text is not None:
                     try:
                         with self._runs[rid]['write_lock']:
@@ -240,11 +241,23 @@ class Runner:
             if approval and self.approvals.has_waiting(rid):
                 self._status(rid, 'needs_you')
 
+    def _start_limit(self, rid, req):
+        """Start (or restart) the per-turn time limit; it is paused while the run is idle."""
+        timer = threading.Timer(req.time_limit_min * self.minute_s, self._request_stop, args=(rid, 'timed_out'))
+        timer.daemon = True
+        with self._lock:
+            old = self._runs[rid].get('limit_timer')
+            if old: old.cancel()
+            self._runs[rid]['limit_timer'] = timer
+        timer.start()
+        return timer
+
     def _idle(self, rid):
         if self.approvals and self.approvals.has_waiting(rid): return
         with self._lock:
             state = self._runs[rid]
             if state['stop']: return
+            if state.get('limit_timer'): state['limit_timer'].cancel()
             if state['idle_timer']: state['idle_timer'].cancel()
             timer = threading.Timer(self.idle_close_s, self._close_idle, args=(rid,))
             timer.daemon = True
@@ -276,10 +289,11 @@ class Runner:
                 state['turns'] += 1
                 self.store.update_run(rid, status='running', turns=state['turns'])
                 state['output'].append(f'[agent-hq] turn {state["turns"]}')
+                self._start_limit(rid, state['req'])
                 self._write(rid, launcher.user_message(text))
                 self.on_event({'type': 'run', 'id': rid, 'status': 'running'})
                 return
-            if mode not in ('live', 'resume') or not state['finished'] or state['status'] not in ('done', 'interrupted', 'stopped'):
+            if mode not in ('live', 'resume') or not state['finished'] or state['status'] not in _RESUMABLE:
                 raise NotIdle('The agent is still working')
             if not state['raw_session_id']:
                 session_id = state.get('session_id') or self.store.get_run(rid).get('session_id')
@@ -307,7 +321,7 @@ class Runner:
         if row is None:
             raise KeyError(rid)
         launcher = self.launchers.get(row['tool'])
-        if not launcher or getattr(launcher, 'steer_mode', None) != 'live' or row['status'] not in ('done', 'interrupted', 'stopped'):
+        if not launcher or getattr(launcher, 'steer_mode', None) not in ('live', 'resume') or row['status'] not in _RESUMABLE:
             raise NotIdle('The run cannot be resumed')
         project = self.projects.get(row['project'])
         if project is None or project != project.resolve() or not project.is_dir():

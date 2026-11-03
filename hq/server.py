@@ -103,7 +103,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
                 if path == '/api/approvals':
-                    if not self.run_key_ok() or self.headers.get('Origin') != f'http://{self.headers.get("Host")}': return self.send_json(403, {'error':'forbidden'})
+                    # Reads need the token (checked above) and the run key; browsers send no Origin
+                    # on same-origin GETs. Answers (POST) still require a same-origin Origin.
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
                     if run_service is None: raise RunError(403, 'run mode is off')
                     return self.send_json(200, run_service.approvals_list(param('state', 'waiting')))
                 if path == '/api/runs/options': return self.send_json(200, (run_service.options() if run_service else {'run_mode': False, 'tools': {}, 'projects': [], 'profiles': [], 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':30}, 'max_concurrent':3}) | {'run_key_ok': self.run_key_ok()})

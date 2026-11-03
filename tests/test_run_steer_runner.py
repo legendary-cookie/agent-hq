@@ -95,8 +95,8 @@ class SteerRunnerTests(unittest.TestCase):
         self.assertIn('raw-id', self.runner.launchers['claude'].resumed.argv)
         self.assertEqual(self.store.get_run(rid)['turns'], 2)
 
-    def finished_row(self, project='p'):
-        self.store.insert_run(dict(id='old', tool='claude', project=project, workdir=str(self.root),
+    def finished_row(self, project='p', rid='old'):
+        self.store.insert_run(dict(id=rid, tool='claude', project=project, workdir=str(self.root),
             level='read_only', guard_mode='warn', status='done', prompt_preview='original', started_at=1,
             time_limit_s=60, session_id='claude:raw-id'))
 
@@ -112,6 +112,39 @@ class SteerRunnerTests(unittest.TestCase):
         self.assertEqual(launch.argv[launch.argv.index('--permission-mode') + 1], 'plan')
         self.assertEqual(launch.argv[launch.argv.index('--resume') + 1], 'raw-id')
         self.assertEqual(self.store.get_run('old')['turns'], 2)
+
+    def restarted(self, launcher, minute_s=60.0):
+        self.runner.shutdown()
+        self.runner = Runner(self.store, RunConfig(max_concurrent=2), {'claude': launcher},
+                             self.root / 'worktrees', lambda *args: None, lambda event: None,
+                             approvals=self.book, idle_close_s=.4, projects=[Project('p', self.root)],
+                             minute_s=minute_s)
+        self.addCleanup(self.runner.shutdown)
+
+    def test_resume_tool_followup_after_restart(self):
+        # Found in the real check: Codex, opencode and Antigravity runs from before a restart
+        # could never be continued ("The run cannot be resumed").
+        self.finished_row(rid='run_old')  # launchers require real run ids
+        self.restarted(FakeResume())
+        self.runner.send('run_old', 'followup')
+        self.wait_for(lambda: self.store.get_run('run_old')['turns'] == 2)
+        self.wait_for(lambda: hasattr(self.runner.launchers['claude'], 'resumed'))
+        self.assertIn('raw-id', self.runner.launchers['claude'].resumed)
+
+    def test_followup_on_timed_out_run_resumes(self):
+        self.finished_row()
+        with self.store._lock, self.store._writer:
+            self.store._writer.execute("update runs set status='timed_out' where id='old'")
+        self.restarted(FakeLiveResume())
+        self.runner.send('old', 'followup'); self.output_has('old', 'followup')
+
+    def test_time_limit_pauses_while_idle(self):
+        # Found in the real check: an Ask me run timed out while it sat idle waiting for a follow-up.
+        self.runner.minute_s = .3  # 1 minute limit = 0.3 s
+        self.runner.idle_close_s = 5  # stay idle well past the time limit
+        rid = self.start('live'); self.status(rid, 'idle')
+        time.sleep(.6)  # idle for twice the limit
+        self.assertEqual(self.store.get_run(rid)['status'], 'idle')
 
     def test_followup_after_restart_refused_when_project_gone(self):
         self.finished_row('gone')
