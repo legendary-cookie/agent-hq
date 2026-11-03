@@ -29,7 +29,7 @@ Checked from each tool's `--help` on this PC, 2026-11-03.
 
 | Tool | Follow-up | Ask me |
 |---|---|---|
-| Claude Code | **live**: `--input-format stream-json`; the input stays open | **yes**: `--permission-prompts host` |
+| Claude Code | **live**: `--input-format stream-json`; the input stays open | **yes**: `--permission-prompts host --permission-prompt-tool stdio` (probed) |
 | Antigravity | **live**: `--input-format stream-json` | **probe**: offered only if a headless permission request reaches Agent HQ |
 | Codex (WSL) | **resume**: `codex exec resume <session>` | **no**: headless Codex can't pause for a person |
 | opencode | **resume**: `opencode run -s <session>` | **probe**: offered only if its server mode (`--attach`) exposes permission requests |
@@ -46,7 +46,7 @@ Launchers gain three things:
 
 ### 3.1 Ask me
 - A new level, `ask`, listed in the UI between Read-only and Edit project folder. It works in a worktree, like Edit.
-- Claude Code gets `--permission-mode manual --permission-prompts host`, so reads go through and edits and commands ask. The exact mode name is pinned by the probe.
+- Claude Code gets `--permission-mode default --permission-prompts host --permission-prompt-tool stdio`, so reads go through and edits and commands ask. A real probe on 2026-11-03 confirmed the `can_use_tool` request and the deny reply (see the plan's Global Constraints).
 
 ### 3.2 Approvals (`hq/run/approvals.py`)
 - `Approval(id, run_id, tool_name, summary, requested_at, expires_at, state)`.

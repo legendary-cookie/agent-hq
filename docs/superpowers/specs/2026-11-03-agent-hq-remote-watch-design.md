@@ -78,7 +78,7 @@ Agent HQ never writes this file.
 - When a host is removed from `hosts.json`, its mirror folder is deleted at the next start.
 
 ### 3.5 Data and UI
-- `sessions` gains `host TEXT`: null for local, the host name for remote. A remote session id is `<host>/<harness>:<id>`. Limits are recorded with that host.
+- `sessions` gains `host TEXT`: null for local, the host name for remote. A remote session id is `<host>/<harness>:<id>`. Limits keep the account they belong to: the same login has the same limits on every machine.
 - **UI:**
   - a host filter on Agents and Dashboard, and a host badge in the inspector;
   - in the office, one zone per host (isometric and top-down) or one floor per host (tower);
