@@ -35,12 +35,13 @@ export function Inbox() {
     catch (err) { setMessage(err instanceof Error ? err.message : String(err)); reload(); }
     finally { setBusy(''); }
   }
+  const countdown = (expires: number) => { const seconds = Math.max(0, Math.ceil(expires - now)); return seconds < 60 ? `${seconds} s left` : `${Math.floor(seconds / 60)} min left`; };
   return <section className="inbox-page"><header><h1>Inbox</h1><button onClick={() => void enableNotifications()}>Enable notifications</button></header>
     {error && <p role="alert">{error.message}</p>}{message && <p role="status">{message}</p>}
     {data?.length === 0 && <p>No approvals waiting.</p>}
     {(data ?? []).map((item) => <article className="inbox-item" id={`approval-${item.id}`} key={item.id}>
-      <h2>{item.run_id} · {item.tool_name}</h2><p>{item.summary}</p><p>{Math.max(0, Math.ceil(item.expires_at - now))}s remaining</p>
-      <label>Note<textarea maxLength={500} value={notes[item.id] ?? ''} onChange={(e) => setNotes({ ...notes, [item.id]: e.target.value })} /></label>
+      <h2>{item.run_id} · {item.tool_name}</h2><p>{item.summary}</p><p>{countdown(item.expires_at)}</p>
+      <label htmlFor={`note-${item.id}`}>Note</label><textarea id={`note-${item.id}`} maxLength={500} value={notes[item.id] ?? ''} onChange={(e) => setNotes({ ...notes, [item.id]: e.target.value })} />
       <div><button disabled={!!busy} onClick={() => void answer(item, 'allow_once')}>Allow once</button> <button disabled={!!busy} onClick={() => void answer(item, 'allow_run')}>Allow for this run</button> <button disabled={!!busy} onClick={() => void answer(item, 'deny')}>Deny</button></div>
     </article>)}
   </section>;
