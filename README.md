@@ -8,9 +8,10 @@ Status:
 - **Milestone 3:** the office view, with isometric, top-down and tower skins. Done.
 - **Milestone 4:** more sources (Kimi, DeepSeek Harness, Zylos, Antigravity tokens, a long-tail importer), DeepSeek balance and LiteLLM prices. Done.
 - **Milestone 5a:** run mode, Dispatch. Start one-shot agent runs, watch them live, stop them, and review the diff, then merge or discard it. Done.
-- **Next:** Steer (M5b), Orchestrate (M5c), and remote hosts.
+- **1.0:** Steer: follow-ups and an approvals inbox. Remote watching: agents on other machines, read over SSH. Done.
+- **Next:** Orchestrate (M5c), remote runs, and the office extras.
 
-Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
+Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [Steer spec](docs/superpowers/specs/2026-11-03-agent-hq-steer-design.md), [remote watching spec](docs/superpowers/specs/2026-11-03-agent-hq-remote-watch-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
 ## Requirements
 
@@ -130,6 +131,23 @@ How a run works:
 - **Stopping:** Stop, the time limit and quitting Agent HQ all end the agent and everything it started.
 - **Logging:** every run is logged to provider-usage. A run that hits a real rate limit marks its account blocked for an hour.
 
+### Steer: follow-ups and approvals
+
+- **Follow-ups.** When a run is idle or finished, write a follow-up in the run's conversation view and press **Send**.
+  - **Claude Code** takes it live, over the open connection.
+  - **Codex, opencode and Antigravity** resume the same session.
+
+  A follow-up keeps the run's level, worktree and account, and starts a new turn. It also works after Agent HQ restarts, and after a run timed out or failed.
+- **Ask me.** At this level the agent works in its own worktree, and every edit or command waits for you in the **Inbox**: a sidebar counter, with a "Needs you" figure in the office.
+  - **Allow once.**
+  - **Allow for this run:** the same tool, and the same command or file folder, for the rest of the run.
+  - **Deny:** with an optional note, which goes to the agent.
+
+  Unanswered requests are denied after 15 minutes. You can change that with `approval_timeout_min` in `run.json`.
+- **Always asks**, even with an allow-for-this-run rule: `rm`, `del`, `rmdir`, `git push`, `git reset`, `curl`, `wget`, `ssh`, `scp`, `nc`, `powershell`, `pwsh`, `sudo`, and any command containing `|`, `;`, `&`, `>`, `<`, `` ` ``, `$(` or a newline.
+- **Where Ask me works:** only for Claude Code, so far. Antigravity and opencode headless haven't been checked for permission requests, and Codex headless can't pause.
+- **Time limit:** it counts each turn's working time, and pauses while a run is idle. An idle live run closes after 30 minutes; a follow-up resumes it.
+
 **Tools on this PC**, checked with real runs on 2026-11-03:
 
 | Tool | Status |
@@ -141,6 +159,39 @@ How a run works:
 | Hermes | Disabled: its shell commands run in its configured folder even with `--in` |
 
 To see untested tools anyway, set `"show_untested": true` in `run.json`.
+
+## Remote hosts
+
+Agent HQ can show agents running on other machines: Linux servers and VMs, Windows PCs, Macs, and Docker containers on them. It reads them over your own SSH.
+
+1. Make sure `ssh <name>` works without a password: a key or ssh-agent, plus an entry in `~/.ssh/config`. The host key must already be in `known_hosts`. Machines on Tailscale or another VPN work the same way; only the host name differs.
+2. List the machine in `config/hosts.json` (copy `config/hosts.json.example`):
+   ```json
+   {"hosts": [{"name": "homeserver", "ssh": "homeserver", "os": "linux", "sources": ["claude_code", "codex"]}]}
+   ```
+   Fields:
+   - `os` is `linux`, `macos` or `windows`.
+   - Add `"container": "<name>"` to read a Docker container on that machine.
+   - `interval_s` (30–3600, default 60) sets how often it's read.
+3. Restart Agent HQ.
+
+How it works:
+- Every interval, Agent HQ runs one `ssh` command. It sends a small read-only scanner to `python3 -` on the machine, so the machine needs Python 3.
+- The scanner returns only new bytes of the agent log files. Agent HQ checks every path and size, writes the bytes to a local mirror under `<data folder>/remote/<name>/`, and runs the same readers it uses locally.
+- Sessions show up with a host badge, a host filter on Agents and Dashboard, and their own office zone or floor. Settings shows each host's health.
+
+Safety:
+- Agent HQ never reads, copies or passes keys or passwords. It runs your `ssh` with `BatchMode=yes`, `StrictHostKeyChecking=yes`, and no agent or X11 forwarding.
+- Everything a host sends back is treated as untrusted:
+  - paths must stay inside that host's mirror folder;
+  - each pass is capped at 20 MB of logs and one database of at most 40 MB;
+  - forbidden files (`auth.json`, `.credentials.json`, `.env`, `secrets` and so on) are skipped on both sides.
+- An unreachable or misbehaving host only affects its own health row. It backs off up to 10 minutes and retries.
+
+Checked on this PC, 2026-11-03: WSL Debian, reached over SSH as a stand-in server.
+- 90 Codex sessions, with 68,712,888 tokens.
+- They match exactly what the local reader reports for the same files.
+- The mirror is byte-identical to the remote files (SHA-256).
 
 ## What it reads
 
@@ -175,6 +226,10 @@ Readers that have been checked against real logs on this PC show plain health. T
 - `prices.json`: API price per model in USD per 1M tokens (`input`, `output`, `cache_read`, `cache_write`). Empty by default. Tokens of a model without a price are reported as **unpriced**, never guessed.
 
 ## API
+
+Steer routes:
+- `GET /api/approvals?state=waiting` and `POST /api/approvals/{id}`
+- `POST /api/runs/{id}/message/prepare` and `POST /api/runs/{id}/message`
 
 Run mode routes:
 - `GET /api/runs/options`
