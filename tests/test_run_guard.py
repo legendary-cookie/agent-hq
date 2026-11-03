@@ -103,6 +103,15 @@ class GuardTests(unittest.TestCase):
         self.assertTrue(verdict.allowed)
         self.assertTrue(verdict.warnings)
 
+    @patch('hq.run.guard._installed', return_value=True)
+    def test_suggestion_skips_tools_run_mode_does_not_offer(self, installed):
+        # Found in the real app: the guard suggested Hermes, whose launcher is turned off.
+        rows = [{'provider': 'hermes', 'model': 'kr/claude-haiku-4.5'}, {'provider': 'codex', 'model': 'gpt-6.1-terra'}]
+        verdict = check(self.req, self.store, [self.a], lambda kind: rows, 100, offered={'codex', 'claude'})
+        self.assertEqual(verdict.suggestion['tool'], 'codex')
+        auto = check(replace(self.req, guard_mode='auto'), self.store, [self.a], lambda kind: rows[:1], 100, offered={'codex'})
+        self.assertFalse(auto.allowed)
+
     @patch('hq.run.guard._installed', side_effect=lambda tool: tool == 'agy')
     def test_auto_mode_fills_from_recommend(self, installed):
         agy = Profile('agy-profile', 'agy', 'unused', 'account-b')

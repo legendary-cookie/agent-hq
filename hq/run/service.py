@@ -69,7 +69,8 @@ class RunService:
         except (ValueError, TypeError, AttributeError) as exc: raise RunError(400, str(exc)) from exc
 
     def _verdict(self, req):
-        verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time())
+        verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time(),
+                              offered=set(self._tools()))
         if req.guard_mode == 'auto' and verdict.allowed:
             suggestion = verdict.suggestion
             candidate = asdict(req) | {'tool': suggestion['tool'], 'model': suggestion.get('model'), 'profile': suggestion.get('profile')}

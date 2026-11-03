@@ -39,7 +39,9 @@ def model_blocked(store: Store, provider: str, model: str | None, now: float) ->
 
 
 def check(req: RunRequest, store: Store, profiles: list[Profile],
-          recommend: Callable[[str], list | None], now: float) -> Verdict:
+          recommend: Callable[[str], list | None], now: float,
+          offered: set[str] | None = None) -> Verdict:
+    """`offered`: tools the Run sheet offers (tested, with levels); suggestions stay inside it."""
     rows = recommend('hq-run')
     warnings = []
     reasons = []
@@ -49,7 +51,7 @@ def check(req: RunRequest, store: Store, profiles: list[Profile],
     suggestion = None
     for row in rows:
         tool = _PROVIDER_TO_TOOL.get(row.get('provider'))
-        if not tool or not _installed(tool):
+        if not tool or not _installed(tool) or (offered is not None and tool not in offered):
             continue
         if req.guard_mode == 'auto' and model_blocked(store, row['provider'], row.get('model'), now) is not None:
             continue
