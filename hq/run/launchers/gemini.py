@@ -7,7 +7,8 @@ from .base import BaseLauncher, Launch
 
 
 class GeminiLauncher(BaseLauncher):
-    name = exe = harness = 'gemini'
+    name = exe = 'gemini'
+    harness = 'gemini_cli'  # the reader's adapter name
     offered = frozenset({'read_only', 'full_auto'})
     links_by_stream = False
 

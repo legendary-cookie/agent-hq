@@ -22,7 +22,14 @@ def find_session(store, harness, workdir, started_at, window_s=60):
             'AND started_at<=? ORDER BY started_at DESC',
             (harness, started_at, started_at + window_s),
         )
-        return next((sid for sid, project in rows if project and _normal(project) in paths), None)
+        rows = rows.fetchall()
+    match = next((sid for sid, project in rows if project and _normal(project) in paths), None)
+    if match:
+        return match
+    # Some readers (Gemini CLI, Kimi) record no project: link only when exactly one such
+    # session of this harness started in the window, never by guessing between several.
+    projectless = [sid for sid, project in rows if not project]
+    return projectless[0] if len(projectless) == 1 else None
 
 
 def add_profile_paths(cfg):

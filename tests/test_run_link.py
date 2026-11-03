@@ -45,6 +45,34 @@ class LinkTests(unittest.TestCase):
     def test_link_none_when_absent(self):
         self.assertIsNone(find_session(self.store, 'codex', self.root, 100))
 
+    def no_project_session(self, sid, harness='gemini_cli', started=100):
+        with self.store._lock, self.store._writer:
+            self.store._writer.execute('INSERT INTO sessions (id,harness,project,started_at) VALUES (?,?,NULL,?)',
+                                       (sid, harness, started))
+
+    def test_link_single_session_without_project(self):
+        # Gemini CLI and Kimi readers record no project: accept only an unambiguous match.
+        self.no_project_session('g1', started=110)
+        self.assertEqual(find_session(self.store, 'gemini_cli', self.root, 100), 'g1')
+
+    def test_link_ambiguous_sessions_without_project_not_linked(self):
+        self.no_project_session('g1', started=110)
+        self.no_project_session('g2', started=120)
+        self.assertIsNone(find_session(self.store, 'gemini_cli', self.root, 100))
+
+    def test_project_match_beats_projectless_session(self):
+        self.no_project_session('g1', harness='codex', started=110)
+        self.session('c1', started=120)
+        self.assertEqual(find_session(self.store, 'codex', self.root, 100), 'c1')
+
+    def test_launcher_harness_names_match_readers(self):
+        from hq.__main__ import build_adapters
+        from hq.run.launchers import REGISTRY
+        cfg = Config({}, [], {}, {}, 'isometric', 'coding')
+        readers = {a.name for a in build_adapters(cfg, self.root)} | {'hermes'}
+        for name, launcher in REGISTRY.items():
+            self.assertIn(launcher.harness, readers, name)
+
     def test_link_wsl_project(self):
         self.session('wsl', project='/mnt/c/Users/A Project', started=100)
         self.assertEqual(find_session(self.store, 'codex', Path(r'C:\Users\A Project'), 100), 'wsl')

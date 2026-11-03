@@ -7,7 +7,8 @@ from .base import BaseLauncher, Launch
 
 
 class ClaudeLauncher(BaseLauncher):
-    name = exe = harness = 'claude'
+    name = exe = 'claude'
+    harness = 'claude_code'  # the reader's adapter name
     profile_var = 'CLAUDE_CONFIG_DIR'
     offered = frozenset({'read_only', 'edit', 'full_auto'})
     worktree_auto = True
