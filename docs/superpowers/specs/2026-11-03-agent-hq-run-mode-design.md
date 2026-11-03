@@ -255,6 +255,14 @@ The new screens (Run sheet, Runs page, run inspector, diff view) follow the Appl
 
 **M5c Orchestrate.** A goal becomes a plan of runs (one planner run, then routed worker runs) with dependencies; routing uses the Auto-route guard and the pool; the office shows the team gathered at a table. Needs its own design for plan review, budget caps and failure handling.
 
+**Remote hosts (after M5a; decided with the user on 2026-11-03, design pending).** Agents on other servers and VMs are both watched and run.
+- **Default connection:** plain SSH through the user's own `ssh` and `~/.ssh/config` host names, with key or agent login set up by the user.
+  - For watching, Agent HQ sends a small read-only log scanner over SSH. The remote machine only needs Python 3.
+  - For running, launchers gain a host (`local`, `wsl`, `ssh:<name>`). The WSL wrapper used for Codex is the model for remote process groups.
+- **Optional relay:** a small Agent HQ relay installed on busy servers, streaming over an SSH tunnel.
+- **Order:** watching first, then remote runs.
+- **Needs its own design:** host config, the trust model for what a remote host may send back, and how a remote host's limits and profiles fit the pool.
+
 ## 11. Out of scope for M5a
 
 Follow-up messages, approvals, multi-run goals, remote or SSH hosts, pushing branches, scheduling runs, and storing full transcripts.
