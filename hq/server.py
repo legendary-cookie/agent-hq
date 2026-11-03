@@ -57,7 +57,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self,*args): pass
         def send_json(self,status,data):
-            body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
+            body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
         def host_ok(self): return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
         def token_ok(self, value): return isinstance(value,str) and hmac.compare_digest(value.encode(),token.encode())
         def write_ok(self):
