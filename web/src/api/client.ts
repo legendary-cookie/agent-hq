@@ -17,7 +17,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   ) {
     return request<T>(path, init);
   }
-  const key = JSON.stringify([path, sessionStorage.getItem('hq-token'), changeCounter]);
+  const key = JSON.stringify([path, sessionStorage.getItem('hq-token'), sessionStorage.getItem('hq-run-key'), changeCounter]);
   const existing = inFlight.get(key);
   if (existing) return existing as Promise<T>;
   const promise = request<T>(path, init);
@@ -35,6 +35,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set('X-HQ-Token', sessionStorage.getItem('hq-token') ?? '');
+  if (path === '/api/runs' || path.startsWith('/api/runs/')) headers.set('X-HQ-Run-Key', sessionStorage.getItem('hq-run-key') ?? '');
   if ((init.method ?? 'GET').toUpperCase() !== 'GET')
     headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
@@ -43,7 +44,7 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
       error?: string;
     } | null;
     const error = new ApiError(response.status, body?.error);
-    if (response.status === 403) window.dispatchEvent(new Event('hq-forbidden'));
+    if (response.status === 403 && !path.startsWith('/api/runs')) window.dispatchEvent(new Event('hq-forbidden'));
     throw error;
   }
   return response.json() as Promise<T>;
@@ -95,3 +96,17 @@ export function useApi<T>(
   useEffect(() => (path && live ? subscribeChanges(reload) : undefined), [path, live, reload]);
   return { data, error, loading, reload };
 }
+
+import type { Run, RunOptions, RunRequest, RunVerdict } from './types';
+const runPath = (id: string) => `/api/runs/${encodeURIComponent(id)}`;
+const post = <T>(path: string, body: unknown = {}) => api<T>(path, { method: 'POST', body: JSON.stringify(body) });
+export const runOptions = () => api<RunOptions>('/api/runs/options');
+export const prepareRun = (body: RunRequest) => post<{ verdict: RunVerdict; nonce: string | null; expires_at: number | null }>('/api/runs/prepare', body);
+export const startRun = (body: RunRequest & { nonce: string }) => post<Run>('/api/runs', body);
+export const listRuns = () => api<Run[]>('/api/runs');
+export const getRun = (id: string) => api<Run>(runPath(id));
+export const runOutput = (id: string) => api<string[]>(`${runPath(id)}/output`);
+export const stopRun = (id: string) => post<unknown>(`${runPath(id)}/stop`);
+export const runDiff = (id: string) => api<{ diff: string; truncated: boolean; branch: string | null; commit: string | null }>(`${runPath(id)}/diff`);
+export const mergeRun = (id: string, commit: string) => post<{ merge_state: string }>(`${runPath(id)}/merge`, { commit });
+export const discardRun = (id: string) => post<unknown>(`${runPath(id)}/discard`);

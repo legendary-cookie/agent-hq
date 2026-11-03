@@ -11,6 +11,17 @@ class SourceCfg:
     paths: list[Path]
 
 @dataclass
+class Profile:
+    id: str
+    tool: str
+    config_dir: str
+    account_id: str
+
+    def __post_init__(self):
+        if is_forbidden(Path(self.config_dir).expanduser()):
+            raise ForbiddenPathError("Forbidden profile path")
+
+@dataclass
 class Account:
     id: str
     provider: str
@@ -20,6 +31,10 @@ class Account:
     billing_day: int
     match: list[dict]
     cap_tokens: dict[str, int]
+    profiles: list[Profile] = field(default_factory=list)
+
+    def __post_init__(self):
+        self.profiles = [Profile(**{**p, 'account_id': self.id}) if isinstance(p, dict) else p for p in self.profiles]
 
 @dataclass
 class Price:
@@ -87,7 +102,17 @@ def save_config(config_dir: Path, cfg: Config) -> None:
                'alerts': cfg.alerts, 'default_skin': cfg.default_skin, 'recommend_task_kind': cfg.recommend_task_kind,
                'relabel': [{'under': str(path), 'harness': harness} for path, harness in cfg.relabel],
                'zylos_previews': cfg.zylos_previews, 'deepseek_alert': cfg.deepseek_alert}
-    for name, data in [('sources.json', sources), ('accounts.json', [asdict(a) for a in cfg.accounts]), ('prices.json', {k: asdict(v) for k, v in cfg.prices.items()})]:
+    accounts_path = config_dir / 'accounts.json'
+    existing = json.loads(accounts_path.read_text(encoding='utf-8')) if accounts_path.exists() else []
+    existing_profiles = {a['id']: a['profiles'] for a in existing if 'profiles' in a}
+    accounts = []
+    for account in cfg.accounts:
+        data = asdict(account)
+        data.pop('profiles')
+        if account.id in existing_profiles:
+            data['profiles'] = existing_profiles[account.id]
+        accounts.append(data)
+    for name, data in [('sources.json', sources), ('accounts.json', accounts), ('prices.json', {k: asdict(v) for k, v in cfg.prices.items()})]:
         (config_dir / name).write_text(json.dumps(data, indent=2) + '\n', encoding='utf-8')
 
 def match_account(cfg, harness, provider, model) -> str:

@@ -46,8 +46,8 @@ it('Settings save sends unchanged sources', async () => {
   const fetcher = setup();
   await screen.findByDisplayValue('Codex');
   fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
-  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(4));
-  expect(JSON.parse(fetcher.mock.calls[3][1].body).sources).toEqual(settings.sources);
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(5));
+  expect(JSON.parse(fetcher.mock.calls.find((call) => call[1]?.method === 'PUT')![1].body).sources).toEqual(settings.sources);
   expect(await screen.findByText('Saved')).toBeInTheDocument();
 });
 
@@ -94,4 +94,14 @@ it('Settings install importer posts', async () => {
       expect.objectContaining({ method: 'POST' }),
     ),
   );
+});
+
+it('run mode card is read-only and links config files', async () => {
+  const options = { run_mode: true, tools: {}, projects: ['example'], profiles: [{ id: 'profile', tool: 'codex' }], defaults: {}, max_concurrent: 3 };
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async (path: string) => ({ ok: true, json: async () => path === '/api/runs/options' ? options : path === '/api/settings' ? settings : path === '/api/health' ? health : kpis })));
+  vi.stubGlobal('EventSource', class { addEventListener() {} close() {} });
+  render(<Settings />);
+  expect(await screen.findByText(/Turn run mode on and list projects/)).toHaveTextContent('config/run.json');
+  expect(screen.getByText('Projects: example')).toBeInTheDocument();
+  expect(screen.getByText('Profiles: profile (codex)')).toBeInTheDocument();
 });

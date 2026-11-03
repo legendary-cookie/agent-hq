@@ -219,7 +219,7 @@ The new screens (Run sheet, Runs page, run inspector, diff view) follow the Appl
 3. **Executables.** Resolved once at startup with `shutil.which`; a result inside the current folder, any allowlisted project, or `<data>/worktrees` is refused.
 4. **Arguments.** Fixed lists per tool; the prompt is one argument or stdin; model names must match `^[A-Za-z0-9._:/-]{1,80}$`; prompts are capped at 100,000 characters.
 5. **Paths.** The project's real path (symlinks and junctions resolved) must equal an allowlisted real path; the existing forbidden-path checks apply to projects, worktrees and profile folders.
-6. **Environment.** Children get a minimal environment: `PATH`, `HOME`/`USERPROFILE`, `SYSTEMROOT`, `TEMP`/`TMP`, `LANG`, the profile's config-folder variable, and `pass_env` entries for that tool. Anything else matching `KEY|TOKEN|SECRET|PASSWORD` is never passed.
+6. **Environment.** Children get a minimal environment: `PATH`, `HOME`/`USERPROFILE`, `SYSTEMROOT`, `TEMP`/`TMP`, `LANG`, plus the non-secret startup names Windows and POSIX tools need (`APPDATA`, `LOCALAPPDATA`, `PATHEXT`, `COMSPEC`, `SYSTEMDRIVE`, `WINDIR`, `PROGRAMDATA`, `PROGRAMFILES`, `USERNAME`, `HOMEDRIVE`, `HOMEPATH`, `USER`, `LOGNAME`, `SHELL`, `TERM`, `LC_ALL`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME`; full list in `hq/run/env.py`), the profile's config-folder variable, and `pass_env` entries for that tool. Anything else matching `KEY|TOKEN|SECRET|PASSWORD` is never passed.
 7. **Full auto** needs a second confirm in the UI, is offered only per the table in section 2, and every use is logged.
 8. **Merge** is never automatic and never pushes.
 9. **Output** stays in memory; the database keeps status and the 200-character preview only.
@@ -254,6 +254,14 @@ The new screens (Run sheet, Runs page, run inspector, diff view) follow the Appl
 **M5b Steer.** Keep stdin open for tools with a stream-json input (Claude Code, Antigravity, Kimi) to send follow-up messages; resume-based follow-ups for the others (`codex exec resume`, `opencode run -s`, `hermes --resume`). Approvals inbox through each tool's permission-prompt hook where one exists (for example Claude Code's permission-prompt tool); tools without one can't use an "Ask me" level. The engine already keeps the reader thread and a stdin handle per run.
 
 **M5c Orchestrate.** A goal becomes a plan of runs (one planner run, then routed worker runs) with dependencies; routing uses the Auto-route guard and the pool; the office shows the team gathered at a table. Needs its own design for plan review, budget caps and failure handling.
+
+**Remote hosts (after M5a; decided with the user on 2026-11-03, design pending).** Agents on other servers and VMs are both watched and run.
+- **Default connection:** plain SSH through the user's own `ssh` and `~/.ssh/config` host names, with key or agent login set up by the user.
+  - For watching, Agent HQ sends a small read-only log scanner over SSH. The remote machine only needs Python 3.
+  - For running, launchers gain a host (`local`, `wsl`, `ssh:<name>`). The WSL wrapper used for Codex is the model for remote process groups.
+- **Optional relay:** a small Agent HQ relay installed on busy servers, streaming over an SSH tunnel.
+- **Order:** watching first, then remote runs.
+- **Needs its own design:** host config, the trust model for what a remote host may send back, and how a remote host's limits and profiles fit the pool.
 
 ## 11. Out of scope for M5a
 

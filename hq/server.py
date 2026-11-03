@@ -17,6 +17,7 @@ from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
 from .status import last_kinds, session_status
 import sqlite3
+from .run.service import RunError
 
 def validate_settings(data, sources, relabel=None):
     if data['sources'] != {k:{'enabled':v.enabled,'paths':[str(p) for p in v.paths]} for k,v in sources.items()}:
@@ -38,15 +39,17 @@ def validate_settings(data, sources, relabel=None):
         raise ValueError('invalid source settings')
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
-def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None):
+def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None):
+    run_key = secrets.token_urlsafe(32)
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
     tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
     if tracker_path and tracker_path.name == 'usage.db': tracker_path=tracker_path.parent
     def recommend(kind): return recommend_bridge(tracker_path,kind) if tracker_path else None
-    def changed():
+    def changed(event=None):
         with lock:
-            for q in listeners: q.put(time.time())
+            for q in listeners: q.put(event if event is not None else time.time())
+    if run_service is not None: run_service.on_event = changed
     collector.on_change(changed)
     from .adapters.importer import ImporterAdapter, install
     if not any(a.name == 'importer' for a in collector.adapters):
@@ -65,6 +68,10 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
             data=json.loads(self.rfile.read(length));
             if not isinstance(data,dict): raise ValueError('expected object')
             return data
+        def run_key_ok(self):
+            value = self.headers.get('X-HQ-Run-Key', '')
+            return hmac.compare_digest(value.encode(), run_key.encode())
+
         def do_GET(self):
             if not self.host_ok(): return self.send_json(403,{'error':'forbidden host'})
             parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query,keep_blank_values=True); now=time.time()
@@ -77,7 +84,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     try:
                         self.send_response(200); self.send_header('Content-Type','text/event-stream'); self.send_header('Cache-Control','no-cache'); self.end_headers(); self.wfile.flush()
                         while True:
-                            try: msg=f'event: changed\ndata: {json.dumps({"ts":q.get(timeout=15)})}\n\n'
+                            try:
+                                event=q.get(timeout=15)
+                                msg=f'event: changed\ndata: {json.dumps(event if isinstance(event, dict) else {"ts":event})}\n\n'
                             except queue.Empty: msg=': ping\n\n'
                             self.wfile.write(msg.encode()); self.wfile.flush()
                     except (BrokenPipeError,ConnectionResetError,TimeoutError): pass
@@ -93,7 +102,16 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if target.is_relative_to(root) and target.is_file():
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
-                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error})
+                if path == '/api/runs/options': return self.send_json(200, (run_service.options() if run_service else {'run_mode': False, 'tools': {}, 'projects': [], 'profiles': [], 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':30}, 'max_concurrent':3}) | {'run_key_ok': self.run_key_ok()})
+                if path == '/api/runs' or path.startswith('/api/runs/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    parts = path.strip('/').split('/')
+                    if len(parts) == 2: return self.send_json(200, run_service.list())
+                    if len(parts) == 3: return self.send_json(200, run_service.get(unquote(parts[2])))
+                    if len(parts) == 4 and parts[3] in ('output', 'diff'): return self.send_json(200, getattr(run_service, parts[3])(unquote(parts[2])))
+                    run_service._enabled()
+                if path=='/api/health': return self.send_json(200,collector.health() | {'recommend': limits_module.recommend_error, 'pu_failures': run_service.pu_failures if run_service else 0})
                 if path=='/api/settings':
                     with closing(store.conn()) as conn:
                         models = compute_kpis(conn,cfg,resolve_range('month',datetime.now().astimezone()),None,now)['top_models']
@@ -111,7 +129,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         name=param('range','today'); start=param('from'); end=param('to'); rng=resolve_range(name,datetime.now().astimezone(),start,end)
                         return self.send_json(200,compute_kpis(conn,cfg,rng,param('group_by'),now))
                     if path in ('/api/sessions','/api/overview'):
-                        sessions=_rows(conn,'select * from sessions order by last_event_at desc'); last=last_kinds(conn)
+                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn)
                         for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now,imported=bool(s['imported']))
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
@@ -130,7 +148,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         counts={k:sum(s['status']==k for s in sessions) for k in ('working','active','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
                         return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path.startswith('/api/sessions/'):
-                        sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select * from sessions where id=?',(sid,))
+                        sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select sessions.*, r.id as launched_run_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) where sessions.id=?',(sid,))
                         if not rows: return self.send_json(404,{'error':'session not found'})
                         order=param('order','asc')
                         if order not in ('asc','desc'): raise ValueError('invalid order')
@@ -138,6 +156,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})
+            except RunError as exc: return self.send_json(exc.status, {'error':str(exc)})
             except (ValueError,TypeError,KeyError,AttributeError,OverflowError,json.JSONDecodeError) as exc: return self.send_json(400,{'error':str(exc)})
             except sqlite3.Error: return self.send_json(500,{'error':'database error'})
         def other_request(self):
@@ -158,7 +177,15 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     with lock:
                         valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
                         if valid: self.server.bootstrap_code=None
-                    return self.send_json(200,{'token':token}) if valid else self.send_json(403,{'error':'forbidden'})
+                    return self.send_json(200,{'token':token, 'run_key':run_key}) if valid else self.send_json(403,{'error':'forbidden'})
+                if path == '/api/runs' or path.startswith('/api/runs/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'reopen Agent HQ from its launch link to use run mode'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    parts = path.strip('/').split('/')
+                    if method == 'POST' and path == '/api/runs/prepare': return self.send_json(200, run_service.prepare(data))
+                    if method == 'POST' and path == '/api/runs': return self.send_json(201, run_service.start(data))
+                    if method == 'POST' and len(parts) == 4 and parts[3] in ('stop', 'merge', 'discard'): return self.send_json(200, run_service.merge(unquote(parts[2]), data) if parts[3] == 'merge' else getattr(run_service, parts[3])(unquote(parts[2])))
+                    run_service._enabled()
                 if method=='POST' and path=='/api/importer/install':
                     if not install_lock.acquire(blocking=False):
                         return self.send_json(409, {'error': 'install already running'})
@@ -186,6 +213,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     new=validate_settings(data,cfg.sources,cfg.relabel)
                     save_config(Path(config_dir), new)
                     cfg.sources = new.sources
+                    profiles = {a.id: a.profiles for a in cfg.accounts}
+                    for account in new.accounts: account.profiles = profiles.get(account.id, [])
                     cfg.accounts = new.accounts
                     cfg.prices = new.prices
                     cfg.pricebook.user = cfg.prices
@@ -197,6 +226,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     changed()
                     return self.send_json(200, {'ok': True})
                 return self.send_json(404,{'error':'not found'})
+            except RunError as exc: return self.send_json(exc.status, {'error':str(exc)})
             except (ValueError,TypeError,KeyError,AttributeError,OverflowError,OSError) as exc:
                 return self.send_json(403,{'error':'forbidden'}) if exchange else self.send_json(400,{'error':str(exc)})
     server=ThreadingHTTPServer(('127.0.0.1',port),Handler); server.daemon_threads=True

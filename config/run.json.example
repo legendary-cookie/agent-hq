@@ -1,0 +1,8 @@
+{
+  "run_mode": true,
+  "max_concurrent": 3,
+  "default_time_limit_min": 30,
+  "max_time_limit_min": 240,
+  "pass_env": {},
+  "show_untested": false
+}

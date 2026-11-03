@@ -160,7 +160,7 @@ export function Office({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<
             <li key={npc.id}>
               <button type="button" onClick={() => setSelected(npc.sessionId)}>
                 {harnessLabel(npc.harness)} ·{' '}
-                {npc.state === 'active' ? 'Active (imported)' : npc.state} · {npc.title}
+                {npc.state === 'active' ? 'Active (imported)' : npc.state} · {npc.title}{npc.launchedRunId && ' · launched by HQ'}
               </button>
             </li>
           ))}

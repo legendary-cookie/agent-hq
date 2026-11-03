@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, useApi } from '../api/client';
-import type { Health, Kpis, Settings as SettingsData } from '../api/types';
+import type { Health, Kpis, RunOptions, Settings as SettingsData } from '../api/types';
 import { EmptyState } from '../components/EmptyState';
 import './settings.css';
 
@@ -21,6 +21,7 @@ export function Settings() {
   } = useApi<SettingsData>('/api/settings');
   const { data: kpis, error: kpisError } = useApi<Kpis>('/api/kpis?range=month');
   const { data: health, error: healthError, reload: reloadHealth } = useApi<Health>('/api/health');
+  const { data: runOptions } = useApi<RunOptions>('/api/runs/options', { live: false });
   const [draft, setDraft] = useState<SettingsData | null>(null);
   const [pendingPrices, setPendingPrices] = useState<
     Record<string, Partial<Record<keyof Price, string>>>
@@ -110,6 +111,7 @@ export function Settings() {
   return (
     <div className="settings-page">
       <h1>Settings</h1>
+      {runOptions?.projects && runOptions?.profiles && <section className="settings-card"><h2>Run mode</h2><p>{runOptions.run_mode ? 'On' : 'Off'}</p><p>Projects: {runOptions.projects.join(', ') || 'None'}</p><p>Profiles: {runOptions.profiles.map((p) => `${p.id} (${p.tool})`).join(', ') || 'None'}</p><p>Turn run mode on and list projects in config/run.json and config/projects.json; profiles live in config/accounts.json.</p></section>}
       {(settingsError || kpisError || healthError) && (
         <p role="alert">{(settingsError || kpisError || healthError)?.message}</p>
       )}

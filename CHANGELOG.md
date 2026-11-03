@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.5.0 (2026-11-03): run mode, Dispatch (Milestone 5a)
+
+Added
+- **Run mode**, off by default (`config/run.json`). From a Run sheet you can start one-shot agent runs, watch them live on a new Runs page, stop them, and review the diff, then merge or discard it.
+  - **Launchers:** eight of them: Claude Code, Codex (always in WSL Debian), Antigravity, opencode, Kimi, Gemini CLI, DeepSeek Harness and Hermes. Each run picks a level (Read-only, Edit project folder, Full auto), mapped to each tool's own flags.
+  - **Worktrees:** each editing run gets its own git worktree and branch. You can view the diff, merge exactly the commit you viewed, or discard it. Nothing is pushed.
+  - **Project allowlist** (`config/projects.json`).
+  - **Account pool:** one config folder per profile.
+  - **Quota guard** (Warn, Block and suggest, Auto-route): it uses provider-usage and the stored limit snapshots.
+  - **Process control:**
+    - Windows: a Job Object, with the child started suspended until it's assigned.
+    - Linux: POSIX process groups.
+    - WSL: a wrapper that records the run's process group.
+    - Also time limits, recovery after a restart, and at most 3 concurrent runs by default.
+  - **Session linking:** a run links to the session the readers find, through the stream id in the readers' format or a time-and-project fallback. Tokens and value come from the checked readers. Office figures show "launched by HQ".
+  - **Logging:** every run is logged to provider-usage, and a real rate limit marks the profile blocked.
+- `config/run.json.example` and `config/projects.json.example`.
+
+Verified on this PC (2026-11-03)
+- **Real read-only runs** through the API:
+  - **Claude Code:** session linked, and its tokens in Agent HQ equal an independent hand count (104,794).
+  - **Codex** (in WSL), **opencode** and **Antigravity:** sessions linked and token totals checked.
+  - Every run left the project checkout untouched.
+- Kimi, DeepSeek Harness and Gemini CLI fail for setup reasons on this PC and stay hidden. Hermes is disabled (see Known limits).
+- **Tests:** 384 Python and 125 web tests pass on Windows (Python 3.14). The runner tests also pass in WSL.
+
+Fixed during the real-tool checks
+- **Session ids:** stream session ids now use the readers' `<harness>:<id>` format. Before this, no run joined its session.
+- **Rate limits:** they now come only from structured error fields. Before, Claude Code's informational `rate_limit_event`, or an agent merely mentioning "429", would have blocked an account.
+- **Antigravity:** `-p` takes the prompt as its value, and its real event stream (`init`, `result`) is now parsed.
+- **npm 10 shims** (`opencode.CMD`, `gemini.CMD`, `dsh.CMD`) are resolved to the real program, so no prompt passes through `cmd.exe`.
+- **Harness names:** launcher names now match the readers (`claude_code`, `gemini_cli`). Readers that record no project (Gemini CLI, Kimi) link a run only when exactly one session matches.
+- **Guard suggestions** stay within the tools the Run sheet offers. Before, it suggested Hermes, which is disabled.
+- **Windows environments** keep the non-secret variables tools need to start (`APPDATA`, `PATHEXT`, ...).
+
+Security review (independent, Claude Opus; re-checked after the fixes)
+- **High:** an agent could plant a git config (`core.fsmonitor`) in its worktree, and Agent HQ's own diff or merge would run it.
+  - Fix: git never finds a repository from inside a worktree. It gets an explicit `--git-dir`/`--work-tree`, hooks and fsmonitor are off, and the empty hooks folder is random.
+  - A run that changed its worktree's `.git` is refused.
+- **Medium:** an agent that could read the token file could start runs itself.
+  - Fix: run routes also need an in-memory run key, handed to the page once at launch.
+- **Medium:** output lines and diffs had no size limit.
+  - Fix: 64 KB per line and 500 lines kept; diffs are read in a stream up to 2 MB, and a diff of more than 50,000 changed lines is refused.
+- **Low:**
+  - Merge used a fresh snapshot; it now uses the commit you viewed.
+  - Rate limits were matched in free text.
+  - Arguments after `wsl --` went through the Linux shell; now `--exec`.
+  - Model names could start with `-`.
+  - Auto mode could change the tool between confirm and start.
+  - A nested repository could crash diff or merge.
+
+Known limits
+- **Hermes is disabled.** On this PC its shell commands run in its configured folder (`zl_os`) even with `--in`.
+- **Run key exposure:** other programs run by the same user can see the launch link's one-time code for 120 s, and the browser may keep the run key in its session-restore data.
+- **Untested launchers:** Kimi, DeepSeek Harness and Gemini CLI haven't passed a real run. The bundled stream samples are invented; the real shapes are pinned in tests.
+- **Not in this release:** Steer (follow-ups, approvals), Orchestrate and remote hosts.
+
 ## 0.4.0 (2026-11-03): more sources, Milestone 4
 
 Added

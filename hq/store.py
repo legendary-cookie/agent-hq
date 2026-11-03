@@ -7,6 +7,14 @@ from .records import Batch
 from .providers import normalize_provider
 
 _SCHEMA = '''
+CREATE TABLE IF NOT EXISTS runs (
+  id TEXT PRIMARY KEY, tool TEXT NOT NULL, model TEXT, account TEXT,
+  project TEXT NOT NULL, workdir TEXT NOT NULL, branch TEXT,
+  level TEXT NOT NULL, guard_mode TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'dispatch', status TEXT NOT NULL,
+  session_id TEXT, prompt_preview TEXT, started_at REAL, ended_at REAL,
+  exit_code INTEGER, time_limit_s INTEGER NOT NULL, merge_state TEXT
+);
 CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, provider TEXT, label TEXT, plan TEXT, monthly_price_usd REAL, billing_day INTEGER, "match" TEXT, cap_tokens TEXT);
 CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, harness TEXT, provider TEXT, model TEXT, account_id TEXT, project TEXT, title TEXT, started_at REAL, last_event_at REAL, ended_at REAL, status TEXT, parent_id TEXT, source_ref TEXT, imported INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, session_id TEXT, ext_id TEXT, ts REAL, kind TEXT, tool TEXT, preview TEXT, tokens_in INTEGER, tokens_out INTEGER, tokens_cache_read INTEGER, tokens_cache_write INTEGER, tokens_estimated INTEGER, model TEXT, UNIQUE(session_id, ext_id));
@@ -28,6 +36,13 @@ class Store:
         self._writer = sqlite3.connect(path, check_same_thread=False)
         self._writer.execute('PRAGMA journal_mode=WAL')
         self._writer.executescript(_SCHEMA)
+        run_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(runs)')}
+        if 'base_commit' not in run_columns:
+            self._writer.execute('ALTER TABLE runs ADD COLUMN base_commit TEXT')
+            self._writer.commit()
+        if 'git_dir' not in run_columns:
+            self._writer.execute('ALTER TABLE runs ADD COLUMN git_dir TEXT')
+            self._writer.commit()
         columns = {row[1] for row in self._writer.execute('PRAGMA table_info(sessions)')}
         if 'imported' not in columns:
             self._writer.execute('ALTER TABLE sessions ADD COLUMN imported INTEGER DEFAULT 0')
@@ -116,3 +131,44 @@ class Store:
                 if start is not None:
                     rows.append((start, last_error, 'error') if last_error is not None else (start, None, 'open'))
                 c.executemany('INSERT INTO tasks(session_id,started_at,ended_at,outcome) VALUES (?,?,?,?)',[(sid,)+r for r in rows])
+
+    def insert_run(self, rec: dict) -> None:
+        columns = self._run_columns()
+        if not rec or not set(rec) <= columns:
+            raise ValueError('Unknown run fields')
+        values = dict(rec)
+        if values.get('prompt_preview') is not None:
+            values['prompt_preview'] = values['prompt_preview'][:200]
+        names = list(values)
+        with self._lock, self._writer:
+            self._writer.execute(f"INSERT INTO runs ({','.join(names)}) VALUES ({','.join('?' for _ in names)})", tuple(values[n] for n in names))
+
+    def _run_columns(self) -> set[str]:
+        with self._lock:
+            return {row[1] for row in self._writer.execute('PRAGMA table_info(runs)')}
+
+    def update_run(self, id: str, **fields) -> None:
+        if not set(fields) <= self._run_columns() - {'id'}:
+            raise ValueError('Unknown or immutable run fields')
+        if not fields:
+            return
+        if fields.get('prompt_preview') is not None:
+            fields['prompt_preview'] = fields['prompt_preview'][:200]
+        with self._lock, self._writer:
+            self._writer.execute(f"UPDATE runs SET {','.join(name + '=?' for name in fields)} WHERE id=?", (*fields.values(), id))
+
+    def get_run(self, id: str) -> dict | None:
+        with self._lock:
+            cursor = self._writer.execute('SELECT * FROM runs WHERE id=?', (id,))
+            row = cursor.fetchone()
+            return dict(zip((col[0] for col in cursor.description), row)) if row else None
+
+    def list_runs(self, limit: int = 100) -> list[dict]:
+        with self._lock:
+            cursor = self._writer.execute('SELECT * FROM runs ORDER BY started_at DESC, rowid DESC LIMIT ?', (max(0, limit),))
+            names = [col[0] for col in cursor.description]
+            return [dict(zip(names, row)) for row in cursor.fetchall()]
+
+    def mark_interrupted(self) -> int:
+        with self._lock, self._writer:
+            return self._writer.execute("UPDATE runs SET status='interrupted' WHERE status IN ('starting','running')").rowcount

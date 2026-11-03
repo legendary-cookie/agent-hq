@@ -8,6 +8,8 @@ from .config import load_config
 from .collector import Collector
 from .store import Store
 from .server import make_server
+from .run.service import RunService
+from .limits import recommend_bridge
 from .adapters.claude_code import ClaudeCodeAdapter
 from .adapters.codex import CodexAdapter
 from .adapters.opencode import OpencodeAdapter
@@ -64,13 +66,23 @@ def main(argv=None):
             for name,state in health.items(): print(f"{name:16} {state['state']:8} warnings={state['warnings']} {state['error'] or ''}")
             return int(any(s['state']=='partial' for s in health.values()))
         token = load_token(args.db.parent / 'token', rotate=args.rotate_token)
-        server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist',token=token); collector.start()
-        url=f'http://127.0.0.1:{server.server_port}/#code={server.bootstrap_code}'
-        if args.no_browser: print(url,flush=True)
-        else: webbrowser.open(url)
-        try: server.serve_forever()
+        source=cfg.sources.get('provider_usage')
+        pu_dir=Path(source.paths[0]) if source and source.enabled and source.paths else None
+        if pu_dir and pu_dir.name == 'usage.db': pu_dir=pu_dir.parent
+        service=RunService(store,cfg,args.config,args.db.parent,lambda kind: recommend_bridge(pu_dir,kind) if pu_dir else None,pu=pu_dir)
+        service.runner.recover()
+        try:
+            server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist',token=token,run_service=service); collector.start()
+        except BaseException:
+            service.runner.shutdown()
+            raise
+        try:
+            url=f'http://127.0.0.1:{server.server_port}/#code={server.bootstrap_code}'
+            if args.no_browser: print(url,flush=True)
+            else: webbrowser.open(url)
+            server.serve_forever()
         except KeyboardInterrupt: pass
-        finally: server.server_close(); collector.stop()
+        finally: server.server_close(); collector.stop(); service.runner.shutdown()
         return 0
     finally: store.close()
 
