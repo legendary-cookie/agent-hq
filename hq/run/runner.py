@@ -136,7 +136,9 @@ class Runner:
                 if event.rate_limited:
                     self._rate_limit(rid, req, profile, launcher)
             exit_code = child.wait()
-        except Exception:
+        except Exception as exc:
+            # Make a failure before or during launch visible in the run's output.
+            with self._lock: self._runs[rid]['output'].append(f'[agent-hq] run failed: {type(exc).__name__}: {exc}')
             if child and child.alive():
                 child.kill_tree()
                 exit_code = child.wait()

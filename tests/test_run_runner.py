@@ -35,7 +35,7 @@ class FakeLauncher:
 class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()  # Windows TEMP may be an 8.3 short path
         self.store = Store(self.root / 'db'); self.addCleanup(self.store.close)
         self.logs = []; self.limits = []; self.events = []
         self.runner = Runner(self.store, RunConfig(max_concurrent=1), {'fake': FakeLauncher()},
@@ -61,6 +61,12 @@ class RunnerTests(unittest.TestCase):
 
     def test_fail_run_failed_exit_code(self):
         row = self.wait(self.start('fail')['id']); self.assertEqual((row['status'], row['exit_code']), ('failed', 3))
+
+    def test_missing_executable_fails_with_reason_in_output(self):
+        self.runner.executables['fake'] = None
+        rid = self.start('ok')['id']
+        self.assertEqual(self.wait(rid)['status'], 'failed')
+        self.assertTrue(any('run failed: FileNotFoundError' in line for line in self.runner.output(rid)))
 
     def test_stop_kills_within_5s(self):
         rid = self.start('sleep 30')['id']; self.runner.stop(rid)
