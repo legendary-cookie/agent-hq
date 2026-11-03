@@ -73,7 +73,12 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
     label: `${room.id.startsWith('host:') ? room.label : harnessLabel(room.harness ?? 'break')} · ${
       room.id === 'break'
         ? idleCount
-        : scene.desks.filter((desk) => desk.roomId === room.id).length
+        : // Every agent of the zone, including idle ones waiting in the break room.
+          scene.npcs.filter((npc) =>
+            npc.deskId
+              ? npc.deskId.slice(0, npc.deskId.lastIndexOf(':')) === room.id
+              : !room.id.startsWith('host:') && npc.harness === room.harness,
+          ).length
     }`,
     harness: room.harness,
     labelAt: point(x + 3, y),
