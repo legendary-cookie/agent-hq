@@ -15,7 +15,7 @@ class GeminiLauncher(BaseLauncher):
     def build(self, req: RunRequest, profile: Profile | None, workdir: Path, run_id: str,
               env_base: Mapping[str, str], pass_names: list[str]) -> Launch:
         env = self.prepare(req, profile, workdir, env_base, pass_names)
-        argv = ['gemini']
+        argv = ['gemini', '--skip-trust']  # allowlisted project; headless refuses untrusted folders
         if req.model: argv += ['-m', req.model]
         if req.level == 'full_auto': argv += ['--sandbox', '--yolo']
         return Launch(argv + ['--prompt=' + req.prompt], env, workdir)

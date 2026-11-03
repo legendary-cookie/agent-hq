@@ -21,6 +21,8 @@ def parse_json(line, tool):
         return None
     if not isinstance(data, dict):
         return StreamEvent('working')
+    if tool == 'agy' and 'event' in data:
+        return _agy(data)
     kind = data.get('type', '')
     session = None
     if tool in ('claude', 'agy') and kind == 'system' and data.get('subtype') == 'init':
@@ -43,6 +45,19 @@ def parse_json(line, tool):
     mapped = {'result': 'done', 'turn.completed': 'done',
               'started': 'started', 'waiting': 'waiting'}.get(kind, 'working')
     return StreamEvent(mapped)
+
+
+def _agy(data):
+    """Antigravity 1.4.9 stream: {"event": "init"|"step_update"|"result", ...} (seen on real runs)."""
+    event = data.get('event')
+    if event == 'init' and data.get('conversation_id'):
+        return StreamEvent('session', session_id=str(data['conversation_id']))
+    if event == 'result':
+        result = data.get('result') or {}
+        if result.get('status') == 'SUCCESS':
+            return StreamEvent('done')
+        return StreamEvent('error', text=json.dumps(result)[:2000])
+    return StreamEvent('working')
 
 
 def parse_line(tool, line, launcher=None):

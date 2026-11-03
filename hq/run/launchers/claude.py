@@ -10,6 +10,7 @@ class ClaudeLauncher(BaseLauncher):
     name = exe = 'claude'
     harness = 'claude_code'  # the reader's adapter name
     profile_var = 'CLAUDE_CONFIG_DIR'
+    tested = True  # real read-only run checked on this PC, 2026-11-03
     offered = frozenset({'read_only', 'edit', 'full_auto'})
     worktree_auto = True
 

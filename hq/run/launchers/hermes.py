@@ -10,7 +10,10 @@ from .base import BaseLauncher, Launch
 
 class HermesLauncher(BaseLauncher):
     name = exe = harness = 'hermes'
-    offered = frozenset({'edit', 'full_auto'})
+    # Disabled: on this PC Hermes runs shell commands in its configured terminal folder
+    # (C:\Users\Jane Doe\zl_os) even with --in, so a run would act outside the project.
+    offered = frozenset()
+    disabled_reason = 'Hermes runs shell commands in its configured folder, not the project (--in is ignored)'
     worktree_auto = True
     links_by_stream = False
 

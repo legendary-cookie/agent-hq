@@ -54,7 +54,9 @@ class LauncherTests(unittest.TestCase):
 
     def test_agy_levels(self):
         self.assertEqual(REGISTRY['agy'].levels(), {'edit', 'full_auto'})
-        self.assertIn('--input-format', self.build('agy').argv)
+        launch = self.build('agy')
+        self.assertEqual(launch.argv[-1], '-p=hello')
+        self.assertIsNone(launch.stdin_text)
 
     def test_opencode_levels_no_full_auto(self):
         self.assertEqual(REGISTRY['opencode'].levels(), {'edit'})
@@ -65,26 +67,34 @@ class LauncherTests(unittest.TestCase):
         self.assertIn('-y', self.build('kimi', 'full_auto').argv)
 
     def test_gemini_full_auto_uses_sandbox(self):
-        self.assertEqual(self.build('gemini', 'full_auto').argv, ['gemini', '-m', 'model', '--sandbox', '--yolo', '--prompt=hello'])
+        self.assertEqual(self.build('gemini', 'full_auto').argv, ['gemini', '--skip-trust', '-m', 'model', '--sandbox', '--yolo', '--prompt=hello'])
 
     def test_dsh_levels(self):
         self.assertEqual(REGISTRY['dsh'].levels(), {'edit'})
         self.assertEqual(self.build('dsh').argv, ['dsh', 'headless', '--json', '-'])
 
-    def test_hermes_in_dir_always_set(self):
-        launch = self.build('hermes')
-        self.assertEqual(launch.argv[launch.argv.index('--in') + 1], str(self.workdir))
-        self.assertEqual(launch.argv[launch.argv.index('--usage-file') + 1], str(self.root / 'runs' / 'run_123.usage.json'))
+    def test_hermes_disabled_because_in_is_ignored(self):
+        from hq.run.launchers import available
+        self.assertEqual(REGISTRY['hermes'].levels(), set())
+        self.assertIn('--in is ignored', REGISTRY['hermes'].disabled_reason)
+        self.assertNotIn('hermes', available([]))
+        with self.assertRaises(ValueError):
+            self.build('hermes')
+
+    def test_only_real_checked_tools_are_tested(self):
+        self.assertEqual({n for n, l in REGISTRY.items() if l.tested}, {'claude', 'codex', 'opencode', 'agy'})
 
     def test_prompt_is_inert(self):
         prompt = '--dangerously-skip-permissions; rm -rf / $(x)\n-y'
         for tool, launcher in REGISTRY.items():
+            if not launcher.levels():
+                continue  # disabled launcher (Hermes)
             with self.subTest(tool=tool):
                 level = 'edit' if 'edit' in launcher.levels() else 'read_only'
                 launch = self.build(tool, level, prompt=prompt)
                 occurrences = [arg for arg in launch.argv if prompt in arg]
-                if tool in {'kimi', 'gemini', 'hermes'}:
-                    flag = '--oneshot=' if tool == 'hermes' else '--prompt='
+                if tool in {'kimi', 'gemini', 'agy'}:
+                    flag = '-p=' if tool == 'agy' else '--prompt='
                     self.assertEqual(occurrences, [flag + prompt])
                     self.assertIsNone(launch.stdin_text)
                 elif tool == 'opencode':
@@ -97,6 +107,8 @@ class LauncherTests(unittest.TestCase):
 
     def test_every_launcher_starts_with_bare_tool_name(self):
         for tool, launcher in REGISTRY.items():
+            if not launcher.levels():
+                continue  # disabled launcher (Hermes)
             with self.subTest(tool=tool):
                 level = 'edit' if 'edit' in launcher.levels() else 'read_only'
                 self.assertEqual(self.build(tool, level).argv[0], 'wsl' if tool == 'codex' else tool)

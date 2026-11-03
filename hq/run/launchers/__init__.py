@@ -17,4 +17,4 @@ REGISTRY = {launcher.name: launcher for launcher in (
 
 def available(refused_dirs: list[Path]) -> dict[str, set[str]]:
     return {name: launcher.levels() for name, launcher in REGISTRY.items()
-            if resolve_exe('wsl' if name == 'codex' else launcher.exe, refused_dirs)}
+            if launcher.levels() and resolve_exe('wsl' if name == 'codex' else launcher.exe, refused_dirs)}

@@ -49,3 +49,24 @@ class StreamTests(unittest.TestCase):
     def test_codex_turn_failed_with_429(self):
         line = '{"type":"turn.failed","error":{"message":"stream error: 429 Too Many Requests"}}'
         self.assertTrue(parse_line('codex', line).rate_limited)
+
+
+class RealShapeTests(unittest.TestCase):
+    # Shapes from real runs on this PC (2026-11-03); ids and values invented.
+    def test_agy_init_event_gives_conversation(self):
+        line = '{"event":"init","conversation_id":"c-1","init":{"cwd":"x","permission_mode":"request-review"}}'
+        self.assertEqual(parse_line('agy', line).session_id, 'antigravity:c-1')
+
+    def test_agy_result_success_is_done(self):
+        line = '{"event":"result","result":{"conversation_id":"c-1","status":"SUCCESS","num_turns":1}}'
+        self.assertEqual(parse_line('agy', line).kind, 'done')
+
+    def test_agy_result_failure_is_error(self):
+        line = '{"event":"result","result":{"conversation_id":"c-1","status":"FAILED","error":"429 quota"}}'
+        event = parse_line('agy', line)
+        self.assertEqual(event.kind, 'error')
+        self.assertTrue(event.rate_limited)
+
+    def test_opencode_step_event_gives_session(self):
+        line = '{"type":"step_finish","sessionID":"ses_1","part":{"reason":"stop"}}'
+        self.assertEqual(parse_line('opencode', line).session_id, 'opencode:ses_1')

@@ -12,6 +12,7 @@ from .base import BaseLauncher, Launch
 class CodexLauncher(BaseLauncher):
     name = exe = harness = 'codex'
     profile_var = 'CODEX_HOME'
+    tested = True  # real read-only run checked on this PC, 2026-11-03
     offered = frozenset({'read_only', 'edit', 'full_auto'})
 
     def build(self, req: RunRequest, profile: Profile | None, workdir: Path, run_id: str,

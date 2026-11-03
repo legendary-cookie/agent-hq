@@ -8,6 +8,7 @@ from .base import BaseLauncher, Launch
 
 class OpencodeLauncher(BaseLauncher):
     name = exe = harness = 'opencode'
+    tested = True  # real run checked on this PC, 2026-11-03
 
     def build(self, req: RunRequest, profile: Profile | None, workdir: Path, run_id: str,
               env_base: Mapping[str, str], pass_names: list[str]) -> Launch:
