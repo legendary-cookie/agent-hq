@@ -8,6 +8,7 @@ class StreamEvent:
     session_id: str | None = None
     text: str | None = None
     rate_limited: bool = False
+    request: dict | None = None
 
 
 def _limited(data, tool):
@@ -35,6 +36,13 @@ def parse_json(line, tool):
         return None
     if not isinstance(data, dict):
         return StreamEvent('working')
+    if data.get('type') == 'control_request':
+        request = data.get('request')
+        request = request if isinstance(request, dict) else {}
+        details = {'request_id': data.get('request_id'), 'tool_name': request.get('tool_name'),
+                   'input': request.get('input'), 'tool_use_id': request.get('tool_use_id')}
+        kind = 'permission' if request.get('subtype') == 'can_use_tool' else 'control_unknown'
+        return StreamEvent(kind, request=details)
     if tool == 'agy' and 'event' in data:
         return _agy(data)
     kind = data.get('type', '')
@@ -56,6 +64,8 @@ def parse_json(line, tool):
     failed = kind in ('error', 'turn.failed') or (kind == 'result' and data.get('is_error') is True)
     if failed:
         return StreamEvent('error', text=json.dumps(data)[:2000])
+    if (tool in ('claude', 'agy') and kind == 'result') or (tool == 'codex' and kind == 'turn.completed'):
+        return StreamEvent('turn_end')
     mapped = {'result': 'done', 'turn.completed': 'done',
               'started': 'started', 'waiting': 'waiting'}.get(kind, 'working')
     return StreamEvent(mapped)
@@ -69,7 +79,7 @@ def _agy(data):
     if event == 'result':
         result = data.get('result') or {}
         if result.get('status') == 'SUCCESS':
-            return StreamEvent('done')
+            return StreamEvent('turn_end')
         return StreamEvent('error', text=json.dumps(result)[:2000])
     return StreamEvent('working')
 

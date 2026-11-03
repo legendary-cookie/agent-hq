@@ -70,7 +70,7 @@ class RealShapeTests(unittest.TestCase):
 
     def test_agy_result_success_is_done(self):
         line = '{"event":"result","result":{"conversation_id":"c-1","status":"SUCCESS","num_turns":1}}'
-        self.assertEqual(parse_line('agy', line).kind, 'done')
+        self.assertEqual(parse_line('agy', line).kind, 'turn_end')
 
     def test_agy_result_failure_is_error(self):
         line = '{"event":"result","result":{"conversation_id":"c-1","status":"RATE_LIMITED"}}'

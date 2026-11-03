@@ -12,13 +12,21 @@ class AgyLauncher(BaseLauncher):
     tested = True  # real run checked on this PC, 2026-11-03
     offered = frozenset({'edit', 'full_auto'})
     worktree_auto = True
+    steer_mode = 'resume'  # live stream-json input unverified; resume uses the checked -p= path
 
     def build(self, req: RunRequest, profile: Profile | None, workdir: Path, run_id: str,
               env_base: Mapping[str, str], pass_names: list[str]) -> Launch:
         env = self.prepare(req, profile, workdir, env_base, pass_names)
         # Real agy 1.4.9: -p takes the prompt as its value ("-p took '--output-format' as its
         # prompt"), so attach it as one element and keep it last.
+        return Launch(self._argv(req) + ['-p=' + req.prompt], env, workdir)
+
+    def _argv(self, req):
         argv = ['agy', '--output-format', 'stream-json']
         if req.model: argv += ['--model', req.model]
         if req.level == 'full_auto': argv += ['--dangerously-skip-permissions']
-        return Launch(argv + ['-p=' + req.prompt], env, workdir)
+        return argv
+
+    def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names):
+        env = self.prepare(req, profile, workdir, env_base, pass_names)
+        return Launch(self._argv(req) + ['--conversation', session_id, '-p=' + text], env, workdir)
