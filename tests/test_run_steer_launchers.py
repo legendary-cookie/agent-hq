@@ -64,7 +64,13 @@ class SteerLauncherTests(unittest.TestCase):
         launch = launcher.build_resume(req, None, self.root, 'run_123', 'session', 'follow up', {}, [])
         self.assertEqual(launcher.steer_mode, 'resume')
         self.assertEqual(launch.argv[:3], ['wsl', '-d', 'Debian'])
-        self.assertEqual(launch.argv[-8:], ['codex', 'exec', 'resume', 'session', '--json', '-s', 'read-only', '-'])
+        # Real codex 0.164: `exec resume` has no -s; the sandbox is set through -c, before the id.
+        self.assertEqual(launch.argv[-8:], ['codex', 'exec', 'resume', '--json', '-c', 'sandbox_mode="read-only"', 'session', '-'])
+        edit = launcher.build_resume(replace(req, level='edit'), None, self.root, 'run_123', 'session', 'x', {}, [])
+        self.assertIn('sandbox_mode="workspace-write"', edit.argv)
+        auto = launcher.build_resume(replace(req, level='full_auto'), None, self.root / 'worktrees' / 'run_123', 'run_123', 'session', 'x', {}, [])
+        self.assertIn('sandbox_workspace_write.network_access=true', auto.argv)
+        self.assertNotIn('-s', edit.argv[edit.argv.index('codex'):])
         self.assertEqual(launch.stdin_text, 'follow up')
 
     def test_opencode_resume_argv(self):

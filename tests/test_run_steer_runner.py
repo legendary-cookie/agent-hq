@@ -138,6 +138,15 @@ class SteerRunnerTests(unittest.TestCase):
         self.restarted(FakeLiveResume())
         self.runner.send('old', 'followup'); self.output_has('old', 'followup')
 
+    def test_followup_after_failed_turn_resumes(self):
+        # Found in the real check: a failed resume turn left the run impossible to continue.
+        self.finished_row(rid='run_old')
+        with self.store._lock, self.store._writer:
+            self.store._writer.execute("update runs set status='failed' where id='run_old'")
+        self.restarted(FakeResume())
+        self.runner.send('run_old', 'followup')
+        self.wait_for(lambda: self.store.get_run('run_old')['turns'] == 2)
+
     def test_time_limit_pauses_while_idle(self):
         # Found in the real check: an Ask me run timed out while it sat idle waiting for a follow-up.
         self.runner.minute_s = .3  # 1 minute limit = 0.3 s
@@ -186,7 +195,7 @@ class SteerRunnerTests(unittest.TestCase):
         self.runner.send(rid, 'again'); self.status(rid, 'done')
         argv = self.runner.launchers['claude'].resumed
         self.assertIn('raw-id', argv)
-        self.assertEqual(argv[argv.index('-s') + 1], 'read-only')
+        self.assertIn('sandbox_mode="read-only"', argv)
 
     def test_stop_while_waiting_denies_then_stops(self):
         rid, aid = self.ask(); self.runner.stop(rid); self.status(rid, 'stopped')

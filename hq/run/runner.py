@@ -17,7 +17,7 @@ class Busy(Exception):
     pass
 
 
-_RESUMABLE = ('done', 'interrupted', 'stopped', 'timed_out')
+_RESUMABLE = ('done', 'interrupted', 'stopped', 'timed_out', 'failed')  # a run without a session is refused separately
 
 
 class NotIdle(Exception):

@@ -34,7 +34,9 @@ class CodexLauncher(BaseLauncher):
     def build_resume(self, req, profile, workdir, run_id, session_id, text, env_base, pass_names):
         launch = self.build(req, profile, workdir, run_id, env_base, pass_names)
         index = launch.argv.index('codex')
-        argv = launch.argv[:index] + ['codex', 'exec', 'resume', session_id, '--json']
-        argv += ['-s', 'read-only' if req.level == 'read_only' else 'workspace-write']
+        # Real codex 0.164: `exec resume` has no -s flag; set the run's sandbox explicitly with
+        # -c sandbox_mode, before the session id, so a resume never falls back to a default.
+        mode = 'read-only' if req.level == 'read_only' else 'workspace-write'
+        argv = launch.argv[:index] + ['codex', 'exec', 'resume', '--json', '-c', f'sandbox_mode="{mode}"']
         if req.level == 'full_auto': argv += ['-c', 'sandbox_workspace_write.network_access=true']
-        return Launch(argv + ['-'], launch.env, workdir, text, launch.wsl_pidfile)
+        return Launch(argv + [session_id, '-'], launch.env, workdir, text, launch.wsl_pidfile)
