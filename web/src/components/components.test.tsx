@@ -214,3 +214,13 @@ it('Inspector shows imported note', async () => {
     await screen.findByText('Imported from llm-usage-metrics; no live timeline.'),
   ).toBeInTheDocument();
 });
+
+it('inspector shows host badge', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+    session: { id: 'remote', host: 'box' }, events: [], children: [],
+    value: { tokens: 0, value_usd: 0, unpriced_tokens: 0, effective_cost_usd: null, estimated: false }, account_limit: null,
+  }) }));
+  vi.stubGlobal('EventSource', class { addEventListener() {} close() {} });
+  render(<Inspector sessionId="remote" onClose={() => {}} />);
+  expect(await screen.findByText('box')).toBeInTheDocument();
+});

@@ -1,5 +1,6 @@
 export interface SessionRow {
   id: string;
+  host?: string | null;
   imported: 0 | 1;
   launched_run_id?: string | null;
   harness: string | null;
@@ -174,7 +175,16 @@ export interface ReaderHealth {
   error: string | null;
   last_error_at: number | null;
 }
-export type Health = Record<string, ReaderHealth | string | null> & {
+export interface HostHealth {
+  state: string;
+  last_pass: number | null;
+  bytes: number;
+  catching_up: boolean;
+  error: string | null;
+  notes?: string[];
+}
+export type Health = Record<string, ReaderHealth | Record<string, HostHealth> | string | number | null> & {
+  hosts: Record<string, HostHealth>;
   recommend: string | null;
   importer: ReaderHealth;
 };

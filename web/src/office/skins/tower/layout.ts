@@ -34,7 +34,7 @@ export function layoutTower(scene: Scene, viewport: { width: number; height: num
   });
   const rooms = floors.map(({ room, y: floorY, height }) => ({
     id: room.id,
-    label: harnessLabel(room.harness ?? 'break'),
+    label: room.id.startsWith('host:') ? room.label : harnessLabel(room.harness ?? 'break'),
     labelAt: point(75, floorY + 16),
     shape: [
       point(0, floorY),

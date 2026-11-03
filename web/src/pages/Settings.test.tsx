@@ -105,3 +105,12 @@ it('run mode card is read-only and links config files', async () => {
   expect(screen.getByText('Projects: example')).toBeInTheDocument();
   expect(screen.getByText('Profiles: profile (codex)')).toBeInTheDocument();
 });
+
+it('settings hosts card shows error', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockImplementation(async (path: string) => ({ ok: true, json: async () => path === '/api/settings' ? settings : path === '/api/health' ? { ...health, hosts: { box: { state: 'partial', last_pass: 100, bytes: 42, catching_up: true, error: 'unreachable', notes: [] } } } : kpis })));
+  vi.stubGlobal('EventSource', class { addEventListener() {} close() {} });
+  render(<Settings />);
+  expect(await screen.findByText('unreachable')).toBeInTheDocument();
+  expect(screen.getByText(/catching up/i)).toBeInTheDocument();
+  expect(screen.getByText(/Hosts are listed in config\/hosts.json/)).toBeInTheDocument();
+});

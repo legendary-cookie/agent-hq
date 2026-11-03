@@ -43,3 +43,14 @@ it('Agents title has no stray dot', () => {
   expect(dot).toHaveClass('agents-status-dot');
   expect(within(row).getByRole('button', { name: 'Parent' })).toHaveTextContent(/^Parent$/);
 });
+
+it('host filter narrows sessions', () => {
+  state.sessions = [{ ...sessions[0], host: null }, { ...sessions[1], host: 'box' }];
+  render(<Agents />);
+  fireEvent.change(screen.getByLabelText('Host'), { target: { value: 'host:box' } });
+  expect(screen.queryByText('Parent')).not.toBeInTheDocument();
+  expect(screen.getByText('Child')).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Host'), { target: { value: 'local' } });
+  expect(screen.getByText('Parent')).toBeInTheDocument();
+  expect(screen.queryByText('Child')).not.toBeInTheDocument();
+});

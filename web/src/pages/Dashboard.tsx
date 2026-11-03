@@ -12,7 +12,7 @@ import {
   YAxis,
 } from 'recharts';
 import { useApi } from '../api/client';
-import type { KpiBlock, Kpis, Overview, SeriesRow, SessionRow, Tokens } from '../api/types';
+import type { Health, KpiBlock, Kpis, Overview, SeriesRow, SessionRow, Tokens } from '../api/types';
 import { EmptyState } from '../components/EmptyState';
 import { Inspector } from '../components/Inspector';
 import { KpiTile } from '../components/KpiTile';
@@ -34,6 +34,7 @@ const valueLabel = (block: KpiBlock) =>
   });
 
 export function Dashboard() {
+  const [host, setHost] = useState('all');
   const [range, setRange] = useState<Range>('today');
   const [group, setGroup] = useState<Group>('harness');
   const [selected, setSelected] = useState<string | null>(null);
@@ -43,6 +44,13 @@ export function Dashboard() {
     `/api/series?range=${range}&bucket=${range === 'today' ? 'hour' : 'day'}&by=${group}`,
   );
   const { data: sessions } = useApi<SessionRow[]>('/api/sessions');
+  const { data: health } = useApi<Health>('/api/health');
+  const hosts = [...new Set([...Object.keys(health?.hosts ?? {}), ...(sessions ?? []).flatMap((row) => row.host ? [row.host] : [])])].sort();
+  const topSessions = (kpis?.top_sessions ?? []).filter((item) => {
+    if (host === 'all') return true;
+    const session = sessions?.find((row) => row.id === item.session_id);
+    return session && (host === 'local' ? !session.host : session.host === host.slice(5));
+  });
   const unpriced =
     !!series?.length && series.some((row) => row.unpriced_tokens !== 0 || row.value_usd === null);
   const keys = [...new Set((series ?? []).map((row) => row.key))];
@@ -133,6 +141,13 @@ export function Dashboard() {
         <div className="dashboard-header">
           <h1>Dashboard</h1>
           <div className="dashboard-controls">
+            <label>Host{' '}
+              <select value={host} onChange={(event) => setHost(event.target.value)}>
+                <option value="all">All hosts</option>
+                <option value="local">This PC</option>
+                {hosts.map((name) => <option key={name} value={`host:${name}`}>{name}</option>)}
+              </select>
+            </label>
             <Segmented
               value={range}
               onChange={setRange}
@@ -154,6 +169,7 @@ export function Dashboard() {
             />
           </div>
         </div>
+        {host !== 'all' && <p>Host filter applies to top sessions. Other metrics cover all hosts.</p>}
         {overview && <StatusPills overview={overview} />}
         {error && !kpis && <p>Unable to load dashboard.</p>}
         {kpis && (
@@ -264,7 +280,7 @@ export function Dashboard() {
             <div className="dashboard-tables">
               <section className="dashboard-card">
                 <h2>Top sessions</h2>
-                {kpis.top_sessions.length ? (
+                {topSessions.length ? (
                   <table>
                     <thead>
                       <tr>
@@ -275,7 +291,7 @@ export function Dashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {kpis.top_sessions.map((item) => {
+                      {topSessions.map((item) => {
                         const session = sessions?.find((row) => row.id === item.session_id);
                         return (
                           <tr key={item.session_id} onClick={() => setSelected(item.session_id)}>

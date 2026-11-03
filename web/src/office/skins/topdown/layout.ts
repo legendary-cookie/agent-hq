@@ -48,7 +48,7 @@ export function layoutTopdown(
     const origin = point(index, 0, 0);
     return {
       id: room.id,
-      label: harnessLabel(room.harness ?? 'break'),
+      label: room.id.startsWith('host:') ? room.label : harnessLabel(room.harness ?? 'break'),
       labelAt: point(index, side / 2, 22),
       shape: [
         origin,

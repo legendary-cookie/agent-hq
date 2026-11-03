@@ -37,19 +37,21 @@ export function buildScene(
   const ids = new Set(included.map((s) => s.id));
   for (const id of memory.keys()) if (!ids.has(id)) memory.delete(id);
   const harnessOf = (s: SessionRow) => s.harness || 'unknown';
+  const roomOf = (s: SessionRow) => s.host ? `host:${s.host}` : harnessOf(s);
   const used = new Set<string>();
   for (const s of included) {
     const desk = memory.get(s.id);
-    if (desk && desk.startsWith(`${harnessOf(s)}:`) && !used.has(desk)) used.add(desk);
+    if (desk && desk.startsWith(`${roomOf(s)}:`) && !used.has(desk)) used.add(desk);
     else memory.delete(s.id);
   }
   const npcs: Npc[] = included.map((s) => {
     const harness = harnessOf(s);
+    const room = roomOf(s);
     let desk = memory.get(s.id);
     if (!desk) {
       let index = 0;
-      while (used.has(`${harness}:${index}`)) index++;
-      desk = `${harness}:${index}`;
+      while (used.has(`${room}:${index}`)) index++;
+      desk = `${room}:${index}`;
       memory.set(s.id, desk);
       used.add(desk);
     }
@@ -71,24 +73,24 @@ export function buildScene(
       launchedRunId: s.launched_run_id,
       color: HARNESS_COLORS[harness] ?? HARNESS_COLORS.unknown,
       deskId: desk,
-      targetRoomId: state === 'idle' ? 'break' : harness,
+      targetRoomId: state === 'idle' && !s.host ? 'break' : room,
       parentId: s.parent_id,
     };
   });
-  const harnesses = [...new Set(npcs.map((n) => n.harness))].sort();
+  const roomIds = [...new Set(included.map(roomOf))].sort();
   const desks: Desk[] = npcs.map((n) => ({
     id: n.deskId!,
-    roomId: n.harness,
+    roomId: n.deskId!.slice(0, n.deskId!.lastIndexOf(':')),
     index: Number(n.deskId!.slice(n.deskId!.lastIndexOf(':') + 1)),
   }));
-  const rooms: Room[] = harnesses.map((harness) => ({
-    id: harness,
-    harness,
-    label: harness,
+  const rooms: Room[] = roomIds.map((room) => ({
+    id: room,
+    harness: room.startsWith('host:') ? null : room,
+    label: room.startsWith('host:') ? room.slice(5) : room,
     capacity: Math.max(
       ROOM_SIZE_STEP,
       Math.ceil(
-        (Math.max(...desks.filter((d) => d.roomId === harness).map((d) => d.index)) + 1) /
+        (Math.max(...desks.filter((d) => d.roomId === room).map((d) => d.index)) + 1) /
           ROOM_SIZE_STEP,
       ) * ROOM_SIZE_STEP,
     ),
@@ -102,14 +104,14 @@ export function buildScene(
     if (prev && !previousIds.has(npc.id) && parent)
       walks.push({
         npcId: npc.id,
-        fromRoomId: parent.harness,
-        toRoomId: npc.harness,
+        fromRoomId: parent.deskId!.slice(0, parent.deskId!.lastIndexOf(':')),
+        toRoomId: npc.deskId!.slice(0, npc.deskId!.lastIndexOf(':')),
         startedAt: now,
       });
   }
   const latest = prev ? (newestDelegations.get(prev) ?? -Infinity) : -Infinity;
   const source = included
-    .filter((s) => harnessOf(s) === 'claude_code')
+    .filter((s) => !s.host && harnessOf(s) === 'claude_code')
     .sort((a, b) => (b.last_event_at ?? 0) - (a.last_event_at ?? 0))[0];
   // A delegation is new if it is newer than anything the previous scene saw, however
   // old it is by the time it reaches the page; its walk starts now and lasts 3 s.
@@ -119,7 +121,7 @@ export function buildScene(
       d.ts > latest &&
       source &&
       ['codex', 'antigravity', 'hermes', 'opencode'].includes(d.provider) &&
-      harnesses.includes(d.provider)
+      roomIds.includes(d.provider)
     )
       walks.push({
         npcId: source.id,

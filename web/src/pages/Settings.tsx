@@ -317,6 +317,20 @@ export function Settings() {
             </label>
           </section>
           <section className="settings-card">
+            <h2>Hosts</h2>
+            <p>Hosts are listed in config/hosts.json.</p>
+            {Object.entries(health?.hosts ?? {}).map(([name, host]) => (
+              <div className="settings-source" key={name}>
+                <strong>{name}</strong> · {host.state}
+                <div>Last pass: {host.last_pass == null ? 'Never' : new Date(host.last_pass * 1000).toLocaleString()}</div>
+                <div>Bytes read: {host.bytes.toLocaleString()}</div>
+                {host.catching_up && <div>Catching up</div>}
+                {host.error && <div>{host.error}</div>}
+                {host.notes?.map((note, index) => <div key={index}>{note}</div>)}
+              </div>
+            ))}
+          </section>
+          <section className="settings-card">
             <h2>Sources</h2>
             <p className="settings-hint">Edit config/sources.json and restart to change sources.</p>
             <label className="settings-toggle">
