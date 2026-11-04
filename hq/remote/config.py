@@ -22,6 +22,8 @@ class Host:
     container: str | None
     interval_s: int
     sources: tuple[str, ...]
+    run: bool = False
+    projects: tuple[dict, ...] = ()
 
 
 def _host(entry):
@@ -43,7 +45,21 @@ def _host(entry):
         raise ValueError('invalid interval')
     if not isinstance(sources, list) or any(not isinstance(s, str) or s not in SOURCES for s in sources):
         raise ValueError('invalid sources')
-    return Host(name, ssh, os_name, container, interval, tuple(sources))
+    run = entry.get('run', False)
+    projects = entry.get('projects', [])
+    if type(run) is not bool or not isinstance(projects, list):
+        raise ValueError('invalid run or projects')
+    names = set()
+    for project in projects:
+        if not isinstance(project, dict) or set(project) != {'name', 'path'}:
+            raise ValueError('invalid project')
+        pname, path = project['name'], project['path']
+        if (not isinstance(pname, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,63}', pname)
+                or pname in names or not isinstance(path, str) or not path.startswith('/')
+                or '..' in path.split('/') or '\0' in path):
+            raise ValueError('invalid project')
+        names.add(pname)
+    return Host(name, ssh, os_name, container, interval, tuple(sources), run, tuple(projects))
 
 
 def load_hosts(config_dir: Path) -> tuple[list[Host], list[str]]:

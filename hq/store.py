@@ -56,7 +56,7 @@ class Store:
         if 'git_dir' not in run_columns:
             self._writer.execute('ALTER TABLE runs ADD COLUMN git_dir TEXT')
             self._writer.commit()
-        for name in ('goal_id', 'step_id'):
+        for name in ('goal_id', 'step_id', 'host'):
             if name not in run_columns:
                 self._writer.execute(f'ALTER TABLE runs ADD COLUMN {name} TEXT')
         self._writer.commit()
