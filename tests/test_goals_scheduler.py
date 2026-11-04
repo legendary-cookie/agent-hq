@@ -133,3 +133,17 @@ class SchedulerTests(unittest.TestCase):
         service._goal_scheduler = restored; service._project = lambda goal: self.project
         self.assertEqual(service.goal_list()[0]['status'], 'done')
         self.assertIn('+change', service.goal_diff(self.goal['id'])['diff'])
+
+
+class PlannerStreamTests(SchedulerTests):
+    def test_plan_read_from_stream_json_output(self):
+        # Found in the real goal check: the planner's output is stream JSON, with the fenced plan
+        # inside an earlier assistant message (escaped), so parsing raw lines found nothing.
+        plan = {'steps': [{'id': 's1', 'title': 'Add mul', 'prompt': 'Add mul', 'kind': 'code', 'depends_on': [], 'tool': 'codex'}]}
+        lines = [json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message',
+                 'text': 'Plan:\n```json\n' + json.dumps(plan) + '\n```'}})]
+        self.runner.output = lambda rid: lines
+        planner = self.goal['planner_id']
+        self.store.update_run(planner, status='done')
+        self.scheduler.on_run_finished(planner)
+        self.assertEqual(self.scheduler.get(self.goal['id'])['status'], 'review')

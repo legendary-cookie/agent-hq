@@ -6,6 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from hq.run import workspace
+from hq.run.transcript import text_of
 from hq.run.plan import parse_plan, plan_hash, planner_prompt
 from hq.run.request import RunRequest
 
@@ -184,7 +185,9 @@ class GoalScheduler:
                 if goal['status'] != 'planning': return
                 try:
                     if run['status'] != 'done': raise ValueError('Planner failed')
-                    plan = parse_plan('\n'.join(self.runner.output(run_id)), goal['step_limit'], goal['max_level'], self._tools())
+                    # The agent's own words only (assistant text), never raw stream, hooks or stderr.
+                    text = text_of(run['tool'], self.runner.output(run_id) or [])
+                    plan = parse_plan(text, goal['step_limit'], goal['max_level'], self._tools())
                     self.set_plan(goal['id'], json.dumps(asdict(plan)))
                 except (ValueError, TypeError):
                     goal['status'] = 'failed'; goal['ended_at'] = self.clock(); self._save(goal)
