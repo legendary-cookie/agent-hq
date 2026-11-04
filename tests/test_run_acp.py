@@ -137,3 +137,31 @@ class AcpRunnerTests(unittest.TestCase):
             runner.send(rid, 'again')
             wait(lambda: store.get_run(rid)['status'] == 'idle')
             self.assertTrue(any('again' in line for line in runner.output(rid)))
+
+
+class AcpRealShapeTests(unittest.TestCase):
+    # Real opencode 1.18 permission shapes (2026-11-04): edit requests carry the path as filePath /
+    # locations, and commands come as kind "execute". Ids and paths invented.
+    def driver(self):
+        from hq.run.acp import AcpDriver
+        return AcpDriver(Path('.').resolve())
+
+    def request(self, d, call):
+        events, _ = d.on_line(json.dumps({'jsonrpc': '2.0', 'id': 7, 'method': 'session/request_permission',
+                                          'params': {'toolCall': call, 'options': []}}))
+        return events[0].request
+
+    def test_edit_request_shows_the_file(self):
+        from hq.run.approvals import summarize
+        req = self.request(self.driver(), {'title': 'C:/w/oc.txt', 'kind': 'edit', 'locations': [{'path': 'C:/w/oc.txt'}],
+                                           'rawInput': {'filePath': 'C:/w/oc.txt', 'content': 'hi'}})
+        self.assertEqual(req['tool_name'], 'Write')
+        self.assertEqual(req['input']['file_path'], 'C:/w/oc.txt')
+        self.assertEqual(summarize(req['tool_name'], req['input']), 'C:/w/oc.txt')
+
+    def test_execute_request_is_a_command_under_never_auto(self):
+        from hq.run.approvals import never_auto
+        req = self.request(self.driver(), {'title': 'rm calc.py', 'kind': 'execute', 'rawInput': {'command': 'rm calc.py'}})
+        self.assertEqual(req['tool_name'], 'Bash')
+        self.assertEqual(req['input']['command'], 'rm calc.py')
+        self.assertTrue(never_auto(req['tool_name'], req['input']))

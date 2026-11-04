@@ -85,9 +85,8 @@ class AcpDriver:
         if key in self.permissions:
             return [StreamEvent('warning')], []
         self.permissions[key] = (ident, options)
-        raw = call.get('rawInput')
-        request = {'request_id': key, 'tool_name': call.get('kind') or 'edit',
-                   'input': raw if isinstance(raw, dict) and raw else {'file_path': call.get('title')}}
+        tool_name, tool_input = _normalize(call)
+        request = {'request_id': key, 'tool_name': tool_name, 'input': tool_input}
         return [StreamEvent('permission', request=request)], []
 
     def answer(self, request_id, decision, note):
@@ -102,3 +101,25 @@ class AcpDriver:
                        and o.get('kind') == kind and isinstance(o.get('optionId'), str)), None)
         outcome = {'outcome': 'selected', 'optionId': option} if option is not None else {'outcome': 'cancelled'}
         return [self._line({'id': ident, 'result': {'outcome': outcome}})]
+
+
+def _normalize(call):
+    """Map an ACP tool call onto Agent HQ's approval vocabulary (real opencode 1.18 shapes).
+
+    `edit` becomes Write with a file_path, so the Inbox shows the file and file rules stay inside
+    the worktree; `execute` becomes Bash with a command, so never-auto and the read-only rule
+    allowlist apply. Anything else keeps its kind and always asks (it gets no rule key).
+    """
+    raw = call.get('rawInput') if isinstance(call.get('rawInput'), dict) else {}
+    kind = call.get('kind') if isinstance(call.get('kind'), str) else 'other'
+    title = call.get('title') if isinstance(call.get('title'), str) else ''
+    if kind == 'edit':
+        locations = call.get('locations') if isinstance(call.get('locations'), list) else []
+        first = locations[0].get('path') if locations and isinstance(locations[0], dict) else None
+        path = next((v for v in (raw.get('file_path'), raw.get('filePath'), raw.get('path'), first, title)
+                     if isinstance(v, str) and v), '')
+        return 'Write', {'file_path': path}
+    if kind == 'execute':
+        command = raw.get('command') if isinstance(raw.get('command'), str) else title
+        return 'Bash', {'command': command}
+    return kind, {k: v for k, v in raw.items() if isinstance(v, (str, int, float, bool))} or {'title': title}
