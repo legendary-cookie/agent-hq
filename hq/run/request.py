@@ -53,8 +53,11 @@ def parse_request(data: dict, run_cfg: RunConfig, projects: list[Project], tools
     if type(limit) is not int or not 1 <= limit <= min(240, run_cfg.max_time_limit_min):
         raise ValueError('Invalid time limit')
     host = data.get('host')
-    if host is not None:
-        raise ValueError('Remote runs are not yet available')
+    if remote:
+        if not isinstance(host, str) or not host:
+            raise ValueError('Invalid host')
+    elif host is not None:
+        raise ValueError('Invalid host')
     return RunRequest(tool, model, name, prompt, level, guard, profile, limit, host)
 
 

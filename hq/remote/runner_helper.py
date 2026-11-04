@@ -88,13 +88,13 @@ def kill_group(pid):
 def start(request, rid, project):
     argv = request.get('argv')
     if (not isinstance(argv, list) or not argv or argv[0] not in TOOLS
-            or any(not isinstance(a, str) or '\0' in a for a in argv)):
+            or any(not isinstance(a, str) or '\0' in a or ('{workdir}' in a and a != '{workdir}') for a in argv)):
         raise ValueError('Invalid tool argv')
     executable = shutil.which(argv[0])
     if not executable:
         raise ValueError('Tool unavailable')
     level = request.get('level')
-    if level not in ('read_only', 'ask', 'edit', 'full_auto'):
+    if level not in ('read_only', 'ask', 'edit') or (level == 'ask' and argv[0] != 'claude') or argv[0] not in ('claude', 'codex'):
         raise ValueError('Invalid level')
     extra = request.get('env', {})
     if not isinstance(extra, dict) or any(k not in EXTRA_ENV or not isinstance(v, str) or '\0' in v for k, v in extra.items()):
@@ -103,14 +103,28 @@ def start(request, rid, project):
     meta.parent.mkdir(parents=True, exist_ok=True)
     workdir.parent.mkdir(parents=True, exist_ok=True)
     branch = 'hq/run-' + rid
-    base = git(project, 'rev-parse', '--verify', 'HEAD^{commit}').stdout.decode().strip()
-    git(project, 'worktree', 'add', '-b', branch, str(workdir), base)
-    meta.write_text(json.dumps(dict(project=str(project), workdir=str(workdir), branch=branch, base=base)))
+    if request.get('resume') is True:
+        data, workdir, _ = load(rid, project)
+        if data['branch'] != branch:
+            raise ValueError('Invalid run metadata')
+    else:
+        base = git(project, 'rev-parse', '--verify', 'HEAD^{commit}').stdout.decode().strip()
+        git(project, 'worktree', 'add', '-b', branch, str(workdir), base)
+        meta.write_text(json.dumps(dict(project=str(project), workdir=str(workdir), branch=branch, base=base)))
+    argv = [str(workdir) if arg == '{workdir}' else arg for arg in argv]
     read_fd, write_fd = os.pipe()
+    ready_read, ready_write = os.pipe()
+    started_read, started_write = os.pipe()
     pid = os.fork()
     if pid == 0:
         try:
+            os.close(started_read)
             os.setsid()
+            os.write(started_write, b'1')
+            os.close(started_write)
+            os.close(ready_write)
+            os.read(ready_read, 1)
+            os.close(ready_read)
             os.close(write_fd)
             os.dup2(read_fd, 0)
             os.close(read_fd)
@@ -121,24 +135,36 @@ def start(request, rid, project):
         except BaseException:
             os._exit(127)
     os.close(read_fd)
+    os.close(ready_read)
+    os.close(started_write)
+    if not os.read(started_read, 1):
+        raise ValueError('Could not start process group')
+    os.close(started_read)
     pidfile.write_text(str(pid))
+    print(json.dumps({'hq_workdir': str(workdir)}), flush=True)
+    os.write(ready_write, b'1')
+    os.close(ready_write)
     initial = request.get('stdin_text')
     dropped = threading.Event()
     def forward():
         try:
             if initial:
                 os.write(write_fd, initial.encode('utf-8'))
+            if request.get('stdin_eof'):
+                os.close(write_fd)
             while True:
                 chunk = os.read(0, 65536)
                 if not chunk:
                     dropped.set()
                     kill_group(pid)
                     return
-                os.write(write_fd, chunk)
+                if not request.get('stdin_eof'):
+                    os.write(write_fd, chunk)
         except (BrokenPipeError, OSError):
             pass
         finally:
-            os.close(write_fd)
+            if not request.get('stdin_eof'):
+                os.close(write_fd)
     thread = threading.Thread(target=forward, daemon=True)
     thread.start()
     _, status = os.waitpid(pid, 0)
