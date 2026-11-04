@@ -39,6 +39,16 @@ def validate_settings(data, sources, relabel=None):
         raise ValueError('invalid source settings')
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
+def timeline_events(conn, start=None, end=None):
+    end = time.time() if end is None else float(end)
+    start = end - 86400 if start is None else float(start)
+    if not math.isfinite(start) or not math.isfinite(end) or end < start or end - start > 7 * 86400:
+        raise ValueError('invalid timeline range')
+    events = _rows(conn, """select e.session_id, e.ts, e.kind, e.tool, s.harness
+        from events e left join sessions s on s.id=e.session_id
+        where e.ts>=? and e.ts<=? order by e.ts, e.id limit 20001""", (start, end))
+    return {'events': events[:20000], 'truncated': len(events) > 20000}
+
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None):
     run_key = secrets.token_urlsafe(32)
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
@@ -126,6 +136,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     result=recommend(param('task_kind',cfg.recommend_task_kind))
                     return self.send_json(200,result)
                 with closing(store.conn()) as conn:
+                    if path=='/api/timeline': return self.send_json(200, timeline_events(conn, param('from'), param('to')))
                     if path=='/api/delegations': return self.send_json(200,_rows(conn,'select ext_id as id, ts, provider, model, task_kind, outcome from delegations order by ts desc, id desc limit ?', (min(200,max(1,int(param('limit','20')))),)))
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
                     if path=='/api/series':

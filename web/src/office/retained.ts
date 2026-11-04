@@ -3,6 +3,11 @@ import { Application, Container, Graphics, Text } from 'pixi.js';
 import { HARNESS_COLORS, STATUS_COLORS, harnessLabel } from './colors';
 import { drawDesk, drawLabel } from './draw';
 import { approach, bob } from './motion';
+import { bubbleText } from './bubbles';
+import { emote } from './emotes';
+import { followOffset } from './follow';
+import { loadLayout, saveLayout } from './layout-editor';
+import type { LayoutEdits } from './layout-editor';
 import { pickNpc } from './pick';
 import { reconcile, staticKey } from './render-cache';
 import type { Npc, Scene } from './scene';
@@ -27,6 +32,8 @@ type Person = {
   puff: Graphics;
   signature: string;
   at?: Point;
+  target?: Point;
+  fadeAt?: number;
 };
 function alongPath(path: Point[], progress: number): Point {
   const lengths = path
@@ -73,8 +80,39 @@ export class RetainedSkin implements Skin {
   }[] = [];
   private hovered: string | null = null;
   private selected: string | null = null;
+  private followed: string | null = null;
+  private editing = false;
+  private edits: LayoutEdits;
+  private dragging: { kind: 'rooms' | 'desks'; id: string; x: number; y: number } | null = null;
+  private editToggle = () => { this.editing = !this.editing; };
+  private resetEdits = () => { this.edits = loadLayout(this.kind); this.key = ''; };
+  private down = (event: MouseEvent) => {
+    if (!this.editing || this.kind === 'tower' || !this.layout) return;
+    const rect = this.host!.getBoundingClientRect();
+    const x = event.clientX - rect.left - this.app.stage.x, y = event.clientY - rect.top - this.app.stage.y;
+    const desk = this.layout.desks.find(d => Math.hypot(d.at.x - x, d.at.y - y) < 25);
+    const room = this.layout.rooms.find(r => Math.hypot(r.labelAt.x - x, r.labelAt.y - y) < 40);
+    const item = desk ? { kind: 'desks' as const, id: desk.id } : room ? { kind: 'rooms' as const, id: room.id } : null;
+    if (item) { this.dragging = { ...item, x: event.clientX, y: event.clientY }; event.stopImmediatePropagation(); }
+  };
+  private up = (event: MouseEvent) => {
+    if (!this.dragging) return;
+    const { kind, id, x, y } = this.dragging;
+    const old = this.edits[kind][id] ?? { x: 0, y: 0 };
+    this.edits[kind][id] = { ...old, x: old.x + event.clientX - x, y: old.y + event.clientY - y };
+    saveLayout(this.kind, this.edits); this.dragging = null; this.key = '';
+  };
+  private rename = (event: MouseEvent) => {
+    if (!this.editing || !this.layout || this.kind === 'tower') return;
+    const rect = this.host!.getBoundingClientRect();
+    const x = event.clientX - rect.left - this.app.stage.x, y = event.clientY - rect.top - this.app.stage.y;
+    const room = this.layout.rooms.find(r => Math.hypot(r.labelAt.x - x, r.labelAt.y - y) < 40);
+    if (!room) return;
+    const label = window.prompt('Zone name', room.label);
+    if (label !== null) { const old = this.edits.rooms[room.id] ?? { x: 0, y: 0 }; this.edits.rooms[room.id] = { ...old, label }; saveLayout(this.kind, this.edits); this.key = ''; }
+  };
   private hoverSignature = '';
-  constructor(private kind: Kind) {}
+  constructor(private kind: Kind) { this.edits = loadLayout(kind); }
   private move = (event: MouseEvent) => {
     const rect = this.host!.getBoundingClientRect();
     this.hovered = this.pick(event.clientX - rect.left, event.clientY - rect.top);
@@ -90,6 +128,11 @@ export class RetainedSkin implements Skin {
     this.objects.sortableChildren = true;
     this.hover.addChild(this.hoverBackground, this.hoverText);
     this.app.stage.addChild(this.floor, this.paths, this.objects, this.labels, this.hover);
+    host.addEventListener('mousedown', this.down, true);
+    host.addEventListener('mouseup', this.up);
+    host.addEventListener('dblclick', this.rename);
+    window.addEventListener('hq-layout-edit', this.editToggle);
+    window.addEventListener('hq-layout-reset', this.resetEdits);
     host.addEventListener('mousemove', this.move);
     host.addEventListener('mouseleave', this.leave);
   }
@@ -101,8 +144,9 @@ export class RetainedSkin implements Skin {
   setSelected(id: string | null) {
     this.selected = id;
   }
+  setFollow(id: string | null) { this.followed = id; }
   pick(x: number, y: number) {
-    return pickNpc(this.targets, x, y);
+    return pickNpc(this.targets, x - this.app.stage.x, y - this.app.stage.y);
   }
   private rebuild(scene: Scene, theme: Theme) {
     this.floor.removeChildren().forEach((child) => child.destroy({ children: true }));
@@ -119,6 +163,20 @@ export class RetainedSkin implements Skin {
         : this.kind === 'topdown'
           ? layoutTopdown(scene, size)
           : layoutTower(scene, size);
+    for (const room of layout.rooms) {
+      const edit = this.edits.rooms[room.id];
+      if (!edit) continue;
+      room.labelAt.x += edit.x; room.labelAt.y += edit.y;
+      for (const point of room.shape) { point.x += edit.x; point.y += edit.y; }
+      if (edit.label !== undefined) room.label = edit.label;
+    }
+    for (const desk of layout.desks) {
+      const roomId = scene.desks.find(d => d.id === desk.id)?.roomId ?? '';
+      const room = this.edits.rooms[roomId], edit = this.edits.desks[desk.id];
+      const dx = (room?.x ?? 0) + (edit?.x ?? 0), dy = (room?.y ?? 0) + (edit?.y ?? 0);
+      desk.at.x += dx; desk.at.y += dy; desk.depth += dy;
+      const seat = layout.seats.get(desk.id); if (seat) { seat.x += dx; seat.y += dy; }
+    }
     this.layout = layout;
     const floor = new Graphics();
     if ('tiles' in layout) {
@@ -217,6 +275,10 @@ export class RetainedSkin implements Skin {
       addObject(table, layout.coffeeTable, layout.scale);
     }
     for (const room of layout.rooms) {
+      if (room.id.startsWith('team:')) {
+        const table = new Graphics(); table.ellipse(0, 0, 24, 10).fill(theme.wall).stroke({ color: theme.text, width: 1 });
+        addObject(table, { x: room.labelAt.x, y: room.labelAt.y + 30 }, 1);
+      }
       const label = new Container();
       const count = scene.npcs.filter((npc) => npc.targetRoomId === room.id).length;
       const labelTheme = theme as Theme & {
@@ -281,11 +343,12 @@ export class RetainedSkin implements Skin {
         person.body.ellipse(0, 0, 14, 6).stroke({ color: '#0071e3', width: 2 });
       person.signature = signature;
     }
-    person.bubble.visible = npc.state === 'waiting';
-    person.puff.visible = npc.state === 'error';
+    person.bubble.visible = false;
+    person.puff.visible = false;
   }
   render(scene: Scene, dt: number, theme: Theme) {
     this.time += dt;
+    if (!this.key) this.previousScene = null;
     const inputs = JSON.stringify([this.width, this.height, theme]);
     if (scene !== this.previousScene || inputs !== this.previousInputs) {
       const key = staticKey(scene, { width: this.width, height: this.height }, theme);
@@ -346,6 +409,9 @@ export class RetainedSkin implements Skin {
           at = alongPath(path, (now - walk.startedAt) / 3);
         }
       } else if (!theme.reducedMotion && target) at = approach(person.at ?? at, at, 120, dt);
+      if (theme.reducedMotion && target && person.target && (person.target.x !== target.x || person.target.y !== target.y)) person.fadeAt = this.time;
+      person.target = target ? { ...target } : undefined;
+      person.container.alpha = theme.reducedMotion && person.fadeAt !== undefined ? Math.min(1, (this.time - person.fadeAt) * 2) : 1;
       person.at = at;
       const displayAt = this.kind === 'topdown' ? { x: Math.round(at.x), y: Math.round(at.y) } : at;
       person.container.position.set(displayAt.x, displayAt.y);
@@ -354,6 +420,10 @@ export class RetainedSkin implements Skin {
         (this.kind === 'tower' ? layout.scale : 1) * (this.hovered === npc.id ? 1.1 : 1),
       );
       this.updatePerson(person, npc);
+      const badgeText = emote(npc.lastKind ?? (npc.state === 'error' ? 'error' : npc.state === 'waiting' ? 'approval' : null), npc.eventAt ?? 0, now);
+      let badge = person.container.getChildByLabel('emote') as Text | undefined;
+      if (!badge) { badge = new Text({ text: '', style: { fontSize: 16 } }); badge.label = 'emote'; badge.position.set(12, -50); person.container.addChild(badge); }
+      badge.text = badgeText ?? (npc.state === 'idle' && now - (npc.eventAt ?? now) >= 600 && now - (npc.eventAt ?? now) < 602 ? '💤' : '');
       const offset = !theme.reducedMotion && npc.state === 'working' ? bob(this.time, 0) : 0;
       person.body.y = offset;
       person.bubble.y = offset;
@@ -387,13 +457,17 @@ export class RetainedSkin implements Skin {
             });
         }
       }
-    const npc = scene.npcs.find((item) => item.id === this.hovered);
+    const followed = this.targets.find((item) => item.id === this.followed);
+    const shift = followed ? followOffset(followed.at, { x: this.width / 2, y: this.height / 2 }) : { x: 0, y: 0 };
+    this.app.stage.position.set(shift.x, shift.y);
+    const npc = scene.npcs.find((item) => item.id === (this.hovered ?? this.selected)) ?? scene.npcs.find(item => bubbleText(item.bubble ?? null, item.eventAt ?? 0, now, false));
     const person = npc && this.people.get(npc.id);
     this.hover.visible = !!(npc && person?.container.visible);
     if (npc && person?.at && this.hover.visible) {
-      const signature = JSON.stringify([npc.title, npc.harness, theme.floorAlt, theme.text]);
+      const text = bubbleText(npc.bubble ?? npc.title, npc.eventAt ?? 0, now, this.hovered === npc.id || this.selected === npc.id) ?? npc.title;
+      const signature = JSON.stringify([text, npc.harness, theme.floorAlt, theme.text]);
       if (signature !== this.hoverSignature) {
-        this.hoverText.text = `${harnessLabel(npc.harness)} · ${hoverTitle(npc.title)}`;
+        this.hoverText.text = `${harnessLabel(npc.harness)} · ${hoverTitle(text)}`;
         this.hoverText.style.fill = theme.text;
         this.hoverText.position.set(-this.hoverText.width / 2, -this.hoverText.height / 2);
         this.hoverBackground
@@ -415,6 +489,11 @@ export class RetainedSkin implements Skin {
     }
   }
   destroy() {
+    this.host?.removeEventListener('mousedown', this.down, true);
+    this.host?.removeEventListener('mouseup', this.up);
+    this.host?.removeEventListener('dblclick', this.rename);
+    window.removeEventListener('hq-layout-edit', this.editToggle);
+    window.removeEventListener('hq-layout-reset', this.resetEdits);
     this.host?.removeEventListener('mousemove', this.move);
     this.host?.removeEventListener('mouseleave', this.leave);
     if (this.initialized) {

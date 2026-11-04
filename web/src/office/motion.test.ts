@@ -23,3 +23,8 @@ it('readTheme reads office variables', () => {
   });
   el.remove();
 });
+
+it('reduced motion uses fades', async () => {
+  const { motionFrame } = await import('./motion');
+  expect(motionFrame({x: 0,y: 0}, {x: 10,y: 0}, 0.25, true)).toEqual({at:{x:10,y:0}, alpha:0.5});
+});
