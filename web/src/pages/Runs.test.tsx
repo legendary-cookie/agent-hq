@@ -49,3 +49,9 @@ it('live run event refreshes row', async () => {
   listener?.();
   expect(await screen.findByRole('button', { name: 'done' }, { timeout: 2500 })).toBeInTheDocument();
 });
+it('runs page opens the run from the query', async () => {
+  location.hash = '#/runs?run=run_1';
+  setupRun();
+  expect(await screen.findByRole('heading', { name: 'codex · done' })).toBeInTheDocument();
+  location.hash = '';
+});
