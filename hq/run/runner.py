@@ -63,7 +63,7 @@ class Runner:
             self.store.update_run(rid, status=status, **fields)
         self.on_event({'type': 'run', 'id': rid, 'status': status})
 
-    def start(self, req, profile):
+    def start(self, req, profile, *, base_ref=None, goal_id=None, step_id=None):
         if req.project not in self.projects:
             raise ValueError('Project is not allowlisted')
         project = self.projects[req.project]
@@ -75,7 +75,7 @@ class Runner:
         rec = dict(id=rid, tool=req.tool, model=req.model, account=profile.id if profile else None,
                    project=req.project, workdir=str(project), level=req.level, guard_mode=req.guard_mode,
                    status='starting', prompt_preview=req.prompt[:200], started_at=now,
-                   time_limit_s=req.time_limit_min * self.minute_s)
+                   time_limit_s=req.time_limit_min * self.minute_s, goal_id=goal_id, step_id=step_id)
         with self._lock:
             if self._shutting_down or sum(not r['finished'] for r in self._runs.values()) >= self.run_cfg.max_concurrent:
                 raise Busy('Maximum concurrent runs reached')
@@ -86,7 +86,7 @@ class Runner:
                          write_lock=threading.Lock(), idle_timer=None, raw_session_id=None,
                          req=copy.deepcopy(req), profile=copy.deepcopy(profile), launcher=launcher,
                          pass_names=list(self.run_cfg.pass_env.get(req.tool, [])),
-                         env_base=dict(os.environ), turns=1)
+                         env_base=dict(os.environ), turns=1, base_ref=base_ref)
             self._runs[rid] = state
             thread = threading.Thread(target=self._run, args=(rid, state['req'], state['profile'], launcher, project), daemon=True)
             state['thread'] = thread
@@ -108,8 +108,8 @@ class Runner:
             state = self._runs[rid]
             if resume_text is None:
                 workdir, branch, base_commit, git_dir = project, None, None, None
-                if req.level != 'read_only':
-                    workdir, branch, base_commit, git_dir = workspace.create(project, rid, self.worktrees_root)
+                if req.level != 'read_only' or state['base_ref'] is not None:
+                    workdir, branch, base_commit, git_dir = workspace.create_from(project, rid, self.worktrees_root, state['base_ref'])
                 state['workdir'] = workdir
                 self.store.update_run(rid, workdir=str(workdir), branch=branch, base_commit=base_commit, git_dir=git_dir)
                 self._start_linker(rid, launcher, workdir, self.store.get_run(rid)['started_at'])
