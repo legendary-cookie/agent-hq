@@ -106,3 +106,30 @@ class SchedulerTests(unittest.TestCase):
     def test_start_requires_nonce_bound_to_plan(self):
         nonce = self.plan(); self.plan(names=['different'])
         with self.assertRaises(ValueError): self.scheduler.start(self.goal['id'], nonce)
+
+    def test_restart_stops_running_goal_with_reason(self):
+        self.start()
+        restored = GoalScheduler(self.store, self.runner, lambda req: (req, None), lambda: self.now)
+        goal = restored.get(self.goal['id'])
+        self.assertEqual((goal['status'], goal['stop_reason']), ('stopped', 'interrupted by restart'))
+        self.assertEqual(self.store._writer.execute('SELECT status, stop_reason FROM goals WHERE id=?', (goal['id'],)).fetchone(), ('stopped', 'interrupted by restart'))
+
+    def test_restart_restores_review_goal_and_it_can_start(self):
+        self.plan()
+        restored = GoalScheduler(self.store, self.runner, lambda req: (req, None), lambda: self.now)
+        gid = self.goal['id']
+        self.assertEqual(restored.get(gid)['steps']['s1']['status'], 'pending')
+        self.assertEqual(restored.get(gid)['max_concurrent'], 2)
+        restored.set_plan(gid, restored.get(gid)['plan_json'])
+        self.assertEqual(restored.start(gid, restored.prepare_start(gid))['status'], 'running')
+
+    def test_restart_lists_finished_goals_and_diff_works(self):
+        from hq.run.service import RunService
+        import threading
+        self.start(); self.finish(self.runner.started[-1], filename='result')
+        restored = GoalScheduler(self.store, self.runner, lambda req: (req, None), lambda: self.now)
+        service = RunService.__new__(RunService)
+        service._lock = threading.RLock(); service._viewed = {}; service._enabled = lambda: None
+        service._goal_scheduler = restored; service._project = lambda goal: self.project
+        self.assertEqual(service.goal_list()[0]['status'], 'done')
+        self.assertIn('+change', service.goal_diff(self.goal['id'])['diff'])

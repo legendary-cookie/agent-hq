@@ -305,14 +305,45 @@ class RunService:
         self._goal_call('stop', gid)
         return self.goal_get(gid)
 
+    def _goal_workspace(self, goal):
+        import re
+        gid = goal['id']
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', gid) or goal.get('branch') != 'hq/goal-' + gid:
+            raise ValueError('Invalid goal branch')
+        project = workspace._path(self._project(goal))
+        workdir = workspace._path(Path(goal['workdir']))
+        admin = Path(goal['git_dir'])
+        workspace._validate(workdir, admin, project)
+        return project, workdir, admin
+
+    def _goal_snapshot(self, goal):
+        project, workdir, admin = self._goal_workspace(goal)
+        workspace.snapshot(workdir, 'goal-' + goal['id'], project=project, git_dir=admin)
+        return project, workdir, admin
+
     def goal_diff(self, gid):
+        import re
         goal = self.goal_get(gid)
         if goal['status'] not in ('done', 'stopped', 'needs_you', 'failed') or not goal.get('branch'): raise RunError(409, 'goal has no finished branch')
         try:
-            project = self._project(goal)
             with workspace._lock:
-                text, truncated = workspace.diff(project, goal['branch'], goal['base_commit'], workdir=Path(goal['workdir']), git_dir=goal['git_dir'])
-                commit = workspace.revision(project, goal['branch'])
+                project, _, _ = self._goal_snapshot(goal)
+                base, branch = goal['base_commit'], goal['branch']
+                if not isinstance(base, str) or not re.fullmatch(r'[0-9a-fA-F]{40,64}', base): raise ValueError('Invalid base commit')
+                repo = workspace._repo(project)
+                commit = workspace._git(repo, 'rev-parse', '--verify', branch + '^{commit}').stdout.decode('ascii').strip()
+                stat = workspace._git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', base, commit, '--').stdout.decode()
+                if sum(int(n) for n in re.findall(r'(\d+) (?:insertion|deletion)', stat)) > 50000: raise ValueError('diff exceeds 50,000 changed lines')
+                proc = subprocess.Popen(workspace._command(repo, 'diff', '--no-ext-diff', '--no-textconv', base, commit, '--'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                try:
+                    output = proc.stdout.read(2_000_001)
+                    if len(output) > 2_000_000: proc.kill()
+                    proc.wait(timeout=60)
+                    if len(output) <= 2_000_000 and proc.returncode: raise subprocess.CalledProcessError(proc.returncode, proc.args)
+                finally:
+                    if proc.poll() is None: proc.kill(); proc.wait()
+                    proc.stdout.close()
+                text, truncated = output[:2_000_000].decode('utf-8', errors='replace'), len(output) > 2_000_000
         except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
         with self._lock: self._viewed['goal:' + gid] = commit
         return {'diff': text, 'truncated': truncated, 'branch': goal['branch'], 'commit': commit}
@@ -323,7 +354,19 @@ class RunService:
         with self._lock:
             commit = data.get('commit')
             if not commit or self._viewed.get('goal:' + gid) != commit: raise RunError(409, 'view the current diff first')
-            try: state = workspace.merge(self._project(goal), goal['branch'], workdir=Path(goal['workdir']), git_dir=goal['git_dir'], commit=commit)
+            try:
+                with workspace._lock:
+                    project, _, _ = self._goal_snapshot(goal)
+                    repo = workspace._repo(project)
+                    current = workspace._git(repo, 'rev-parse', '--verify', goal['branch'] + '^{commit}').stdout.decode('ascii').strip()
+                    if current != commit: raise ValueError('the goal changed after you viewed the diff; view it again')
+                    if workspace._git(repo, 'status', '--porcelain', '--untracked-files=normal').stdout: state = 'dirty'
+                    else:
+                        result = workspace._git(repo, 'merge', '--no-edit', commit, check=False)
+                        if result.returncode == 0: state = 'merged'
+                        elif workspace._git(repo, 'diff', '--name-only', '--diff-filter=U').stdout:
+                            workspace._git(repo, 'merge', '--abort'); state = 'conflict'
+                        else: result.check_returncode()
             except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
             self._viewed.pop('goal:' + gid, None)
         return {'merge_state': state}
@@ -331,6 +374,10 @@ class RunService:
     def goal_discard(self, gid):
         goal = self.goal_get(gid)
         if goal['status'] not in ('done', 'stopped', 'failed') or not goal.get('branch'): raise RunError(409, 'goal is not finished')
-        try: workspace.discard(self._project(goal), Path(goal['workdir']), goal['branch'])
+        try:
+            with workspace._lock:
+                project, workdir, _ = self._goal_workspace(goal)
+                workspace._git(workspace._repo(project), 'worktree', 'remove', '--force', str(workdir))
+                workspace._git(workspace._repo(project), 'branch', '-D', goal['branch'])
         except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
         return {'merge_state': 'discarded'}
