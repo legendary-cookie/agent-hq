@@ -113,13 +113,22 @@ class Runner:
                 state['workdir'] = workdir
                 self.store.update_run(rid, workdir=str(workdir), branch=branch, base_commit=base_commit, git_dir=git_dir)
                 self._start_linker(rid, launcher, workdir, self.store.get_run(rid)['started_at'])
+            workdir = state['workdir']
+            make_driver = getattr(launcher, 'make_driver', None)
+            driver = make_driver(replace(req, project=str(workdir)),
+                                 state['raw_session_id'] if resume_text is not None else None) if make_driver else None
+            state['driver'] = driver
+            if driver:
                 launch = launcher.build(req, profile, workdir, rid, state['env_base'], state['pass_names'])
+                launch = replace(launch, stdin_text=''.join(driver.start(resume_text if resume_text is not None else req.prompt)))
+            elif resume_text is None:
+                launch = launcher.build(req, profile, workdir, rid, state['env_base'], state['pass_names'])
+                if getattr(launcher, 'steer_mode', None) == 'live':
+                    launch = replace(launch, stdin_text=launcher.first_input(req.prompt))
             else:
-                launch = followup.resume_launch(launcher, req, profile, state['workdir'], rid,
+                launch = followup.resume_launch(launcher, req, profile, workdir, rid,
                                                 state['raw_session_id'], resume_text,
                                                 state['env_base'], state['pass_names'])
-            if getattr(launcher, 'steer_mode', None) == 'live' and resume_text is None:
-                launch = replace(launch, stdin_text=launcher.first_input(req.prompt))
             executable = self.executables.get(req.tool)
             if executable is None: raise FileNotFoundError('Executable unavailable')
             argv = winexe.final_argv(launch, executable)
@@ -181,33 +190,40 @@ class Runner:
                     line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
                 line = line.rstrip('\r\n')
                 with self._lock: self._runs[rid]['output'].append(line)
-                event = parse_line(req.tool, line, launcher)
-                if event is None or event.kind == 'warning':
-                    with self._lock: self._runs[rid]['warnings'] += 1
-                    continue
-                if event.session_id:
-                    with self._lock:
-                        raw_id = event.session_id[len(launcher.harness) + 1:]
-                        previous = self._runs[rid]['raw_session_id']
-                        if previous and previous != raw_id:
-                            self._runs[rid]['warnings'] += 1
-                        elif not previous:
-                            self._runs[rid]['raw_session_id'] = raw_id
-                        if not self._runs[rid].get('session_id'):
-                            self._runs[rid]['session_id'] = event.session_id
-                            self._runs[rid]['link_stop'].set()
-                            self.store.update_run(rid, session_id=event.session_id)
-                if event.kind in ('permission', 'control_unknown') and not launcher.can_ask:
-                    with self._lock: self._runs[rid]['warnings'] += 1
-                elif event.kind == 'permission' and self.approvals:
-                    self._permission(rid, launcher, event.request)
-                elif event.kind == 'control_unknown':
-                    with self._lock: self._runs[rid]['warnings'] += 1
-                    self._reply(rid, launcher, event.request, 'deny', 'Unknown control request')
-                elif event.kind == 'turn_end' and getattr(launcher, 'steer_mode', None) == 'live':
-                    self._idle(rid)
-                if event.rate_limited:
-                    self._rate_limit(rid, req, profile, launcher)
+                if driver:
+                    events, replies = driver.on_line(line)
+                    for reply in replies: self._write(rid, reply)
+                    events = [replace(event, session_id=f'{launcher.harness}:{event.session_id}')
+                              if event.session_id else event for event in events]
+                else:
+                    events = [parse_line(req.tool, line, launcher)]
+                for event in events:
+                    if event is None or event.kind == 'warning':
+                        with self._lock: self._runs[rid]['warnings'] += 1
+                        continue
+                    if event.session_id:
+                        with self._lock:
+                            raw_id = event.session_id[len(launcher.harness) + 1:]
+                            previous = self._runs[rid]['raw_session_id']
+                            if previous and previous != raw_id:
+                                self._runs[rid]['warnings'] += 1
+                            elif not previous:
+                                self._runs[rid]['raw_session_id'] = raw_id
+                            if not self._runs[rid].get('session_id'):
+                                self._runs[rid]['session_id'] = event.session_id
+                                self._runs[rid]['link_stop'].set()
+                                self.store.update_run(rid, session_id=event.session_id)
+                    if event.kind in ('permission', 'control_unknown') and not launcher.can_ask:
+                        with self._lock: self._runs[rid]['warnings'] += 1
+                    elif event.kind == 'permission' and self.approvals:
+                        self._permission(rid, launcher, event.request)
+                    elif event.kind == 'control_unknown':
+                        with self._lock: self._runs[rid]['warnings'] += 1
+                        self._reply(rid, launcher, event.request, 'deny', 'Unknown control request')
+                    elif event.kind == 'turn_end' and getattr(launcher, 'steer_mode', None) == 'live':
+                        self._idle(rid)
+                    if event.rate_limited:
+                        self._rate_limit(rid, req, profile, launcher)
             exit_code = child.wait()
             if stderr_thread: stderr_thread.join(timeout=5)
         except Exception as exc:
@@ -253,8 +269,13 @@ class Runner:
                 pass
 
     def _reply(self, rid, launcher, request, decision, note):
-        self._write(rid, launcher.control_reply(request.get('request_id'), decision, note,
-                                                 request.get('input') if isinstance(request.get('input'), dict) else {}))
+        driver = self._runs[rid].get('driver')
+        if driver:
+            for line in driver.answer(request.get('request_id'), decision, note):
+                self._write(rid, line)
+        else:
+            self._write(rid, launcher.control_reply(request.get('request_id'), decision, note,
+                                                     request.get('input') if isinstance(request.get('input'), dict) else {}))
         if self.approvals and not self.approvals.has_waiting(rid):
             self._status(rid, 'running')
 
@@ -326,7 +347,9 @@ class Runner:
                 self.store.update_run(rid, status='running', turns=state['turns'])
                 state['output'].append(f'[agent-hq] turn {state["turns"]}')
                 self._start_limit(rid, state['req'])
-                self._write(rid, launcher.user_message(text))
+                driver = state.get('driver')
+                lines = driver.follow_up(text) if driver else [launcher.user_message(text)]
+                for line in lines: self._write(rid, line)
                 self.on_event({'type': 'run', 'id': rid, 'status': 'running'})
                 return
             if mode not in ('live', 'resume') or not state['finished'] or state['status'] not in _RESUMABLE:

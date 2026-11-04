@@ -56,12 +56,12 @@ class LauncherTests(unittest.TestCase):
     def test_agy_levels(self):
         self.assertEqual(REGISTRY['agy'].levels(), {'edit', 'full_auto'})
         launch = self.build('agy')
-        self.assertEqual(launch.argv[-1], '-p=hello')
+        self.assertIn('--input-format', launch.argv)
         self.assertIsNone(launch.stdin_text)
 
     def test_opencode_levels_no_full_auto(self):
-        self.assertEqual(REGISTRY['opencode'].levels(), {'edit'})
-        self.assertEqual(self.build('opencode').argv, ['opencode', 'run', '--format', 'json', '-m', 'model', '--', 'hello'])
+        self.assertEqual(REGISTRY['opencode'].levels(), {'ask', 'edit'})
+        self.assertEqual(self.build('opencode').argv, ['opencode', 'acp', '--cwd', str(self.workdir)])
 
     def test_kimi_yolo_only_in_worktree(self):
         with self.assertRaises(ValueError): self.build('kimi', 'full_auto', self.root)
@@ -94,13 +94,13 @@ class LauncherTests(unittest.TestCase):
                 level = 'edit' if 'edit' in launcher.levels() else 'read_only'
                 launch = self.build(tool, level, prompt=prompt)
                 occurrences = [arg for arg in launch.argv if prompt in arg]
-                if tool in {'kimi', 'gemini', 'agy'}:
+                if tool in {'kimi', 'gemini'}:
                     flag = '-p=' if tool == 'agy' else '--prompt='
                     self.assertEqual(occurrences, [flag + prompt])
                     self.assertIsNone(launch.stdin_text)
-                elif tool == 'opencode':
-                    self.assertEqual(occurrences, [prompt])
-                    self.assertEqual(launch.argv[launch.argv.index(prompt) - 1], '--')
+                elif tool in {'opencode', 'agy'}:
+                    self.assertEqual(occurrences, [])
+                    self.assertIsNone(launch.stdin_text)
                 elif tool == 'claude':
                     import json as _json
                     self.assertEqual(occurrences, [])
@@ -133,7 +133,7 @@ class LauncherTests(unittest.TestCase):
         prompt = 'hello & world\n-x'
         launch = self.build('opencode', prompt=prompt)
         self.assertEqual(final_argv(launch, shim), [str(target), *launch.argv[1:]])
-        self.assertEqual(final_argv(launch, shim)[-1], prompt)
+        self.assertEqual(final_argv(launch, shim)[-1], str(self.workdir))
 
     def test_node_shim(self):
         from hq.run.winexe import resolve_command
