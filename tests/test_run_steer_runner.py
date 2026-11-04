@@ -162,6 +162,14 @@ class SteerRunnerTests(unittest.TestCase):
         time.sleep(.6)  # idle for twice the limit
         self.assertEqual(self.store.get_run(rid)['status'], 'idle')
 
+    def test_goal_run_ends_after_its_turn_instead_of_idling(self):
+        # Found in the real goal check: a live planner went idle, so the goal waited in
+        # 'planning' until the 30-minute idle close.
+        self.runner.idle_close_s = 60  # only the one-shot rule can end it within the wait
+        req = RunRequest('claude', None, 'p', 'live', 'read_only', 'warn', None, 1)
+        rid = self.runner.start(req, None, goal_id='g1')['id']
+        self.status(rid, 'done')
+
     def test_followup_after_restart_refused_when_project_gone(self):
         self.finished_row('gone')
         with self.assertRaisesRegex(ValueError, 'Project'):

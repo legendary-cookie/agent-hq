@@ -333,6 +333,14 @@ class Runner:
             if state['stop']: return
             if state.get('limit_timer'): state['limit_timer'].cancel()
             if state['idle_timer']: state['idle_timer'].cancel()
+            if (self.store.get_run(rid) or {}).get('goal_id'):
+                # Goal runs (planner and steps) are one-shot: end after their turn so the
+                # scheduler sees them finish, instead of idling until the idle close.
+                state['status'] = 'closing'
+                with state['write_lock']:
+                    try: state['child'].stdin.close()
+                    except (OSError, ValueError, AttributeError): pass
+                return
             timer = threading.Timer(self.idle_close_s, self._close_idle, args=(rid,))
             timer.daemon = True
             state['idle_timer'] = timer
