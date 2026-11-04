@@ -239,6 +239,8 @@ class Runner:
                         self._reply(rid, launcher, event.request, 'deny', 'Unknown control request')
                     elif event.kind == 'turn_end' and getattr(launcher, 'steer_mode', None) == 'live':
                         self._idle(rid)
+                    elif event.kind == 'failed':
+                        self._agent_failed(rid, event.text)
                     if event.rate_limited:
                         self._rate_limit(rid, req, profile, launcher)
             exit_code = child.wait()
@@ -260,7 +262,7 @@ class Runner:
                 except (BrokenPipeError, OSError): pass
             with self._lock:
                 state = self._runs[rid]
-                status = state['stop'] or ('rate_limited' if state.get('limited') else ('done' if exit_code == 0 else ('interrupted' if req.host and exit_code == 255 else 'failed')))
+                status = state['stop'] or ('rate_limited' if state.get('limited') else ('failed' if state.get('agent_failed') else 'done' if exit_code == 0 else ('interrupted' if req.host and exit_code == 255 else 'failed')))
             outcome = {'done': 'ok', 'failed': 'error', 'timed_out': 'error', 'interrupted': 'error',
                        'rate_limited': 'rate_limited', 'stopped': 'cancelled'}[status]
             try:
@@ -346,6 +348,17 @@ class Runner:
             state['idle_timer'] = timer
             self._status(rid, 'idle')
             timer.start()
+
+    def _agent_failed(self, rid, message):
+        """The agent answered with an error but stays alive (opencode ACP): fail the run and end it."""
+        with self._lock:
+            state = self._runs[rid]
+            state['output'].append(f'[agent-hq] agent reported an error: {message}')
+            if state['stop']: return
+            state['agent_failed'] = True
+            with state['write_lock']:
+                try: state['child'].stdin.close()
+                except (OSError, ValueError, AttributeError): pass
 
     def _close_idle(self, rid):
         with self._lock:

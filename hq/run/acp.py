@@ -57,7 +57,12 @@ class AcpDriver:
             pending = self.pending.pop(ident, None)
         except TypeError:
             return [StreamEvent('warning')], []
-        if not pending or 'error' in data or not isinstance(data.get('result'), dict):
+        if pending and 'error' in data:
+            # opencode stays alive after an error reply, so the turn has to fail here or it hangs.
+            error = data['error'] if isinstance(data['error'], dict) else {}
+            message = error.get('message') if isinstance(error.get('message'), str) else 'error'
+            return [StreamEvent('failed', text=message[:500])], []
+        if not pending or not isinstance(data.get('result'), dict):
             return [StreamEvent('warning')], []
         if pending == 'initialize':
             params = {'cwd': self.workdir, 'mcpServers': []}

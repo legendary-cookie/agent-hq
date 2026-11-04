@@ -97,6 +97,52 @@ class AcpTests(unittest.TestCase):
             self.assertEqual(json.loads(line), {'event': 'user', 'message': {'role': 'user', 'content': 'hello'}})
 
 class AcpRunnerTests(unittest.TestCase):
+    def test_error_reply_fails_the_run_instead_of_hanging(self):
+        # Found in the real goal check: opencode answered session/prompt with an API error and
+        # stayed alive, so the run (and its goal) sat in 'running' until the time limit.
+        import sys
+        import tempfile
+        import time
+        from unittest.mock import patch
+        from hq.run.config import Project, RunConfig
+        from hq.run.launchers.base import Launch
+        from hq.run.runner import Runner
+        from hq.store import Store
+
+        fixture = Path(__file__).parent / 'fixtures' / 'run' / 'fake_acp.py'
+        class FakeAcp(OpencodeLauncher):
+            exe = sys.executable
+            def build(self, req, profile, workdir, run_id, env_base, pass_names):
+                return Launch([sys.executable, str(fixture)], dict(env_base), workdir)
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name).resolve()
+        store = Store(root / 'db')
+        self.addCleanup(store.close)
+        runner = Runner(store, RunConfig(), {'opencode': FakeAcp()}, root / 'worktrees',
+                        lambda *args: None, lambda event: None,
+                        projects=[Project('p', str(root))], idle_close_s=60)
+        self.addCleanup(runner.shutdown)
+        req = RunRequest('opencode', None, 'p', 'fail', 'edit', 'block', None, 1)
+        with patch('hq.run.runner.workspace.create', return_value=(root, None, None, None)):
+            rid = runner.start(req, None)['id']
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and store.get_run(rid)['status'] not in ('failed', 'done'):
+                time.sleep(.02)
+        self.assertEqual(store.get_run(rid)['status'], 'failed', runner.output(rid))
+        self.assertTrue(any('Cannot connect to API' in line and line.startswith('[agent-hq]') for line in runner.output(rid)))
+
+    def test_driver_reports_error_reply_as_failed(self):
+        driver = AcpDriver(Path('.').resolve())
+        driver.start('hi')
+        driver.on_line(json.dumps({'jsonrpc': '2.0', 'id': 1, 'result': {}}))
+        driver.on_line(json.dumps({'jsonrpc': '2.0', 'id': 2, 'result': {'sessionId': 's1'}}))
+        events, _ = driver.on_line(json.dumps({'jsonrpc': '2.0', 'id': 3, 'error': {'code': -32603, 'message': 'boom'}}))
+        self.assertEqual([(e.kind, e.text) for e in events], [('failed', 'boom')])
+        events, _ = driver.on_line(json.dumps({'jsonrpc': '2.0', 'id': 99, 'error': {'message': 'stray'}}))
+        self.assertEqual([e.kind for e in events], ['warning'])  # no pending request: not a failure
+
     def test_fake_acp_runner_approval_and_follow_up(self):
         import sys
         import tempfile

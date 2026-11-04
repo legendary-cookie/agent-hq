@@ -18,6 +18,9 @@ for line in sys.stdin:
         emit({'id': message['id'], 'result': {}})
     elif method == 'session/prompt':
         text = message['params']['prompt'][0]['text']
+        if text == 'fail':  # real opencode 1.18: an error reply, and the process stays alive
+            emit({'id': message['id'], 'error': {'code': -32603, 'message': 'Internal error: Cannot connect to API'}})
+            continue
         emit({'method': 'session/update', 'params': {'sessionId': 'fake-session',
               'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': text}}}})
         if text == 'ask':
