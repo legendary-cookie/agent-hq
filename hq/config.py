@@ -80,6 +80,10 @@ def load_config(config_dir: Path) -> Config:
     def read(name):
         return json.loads((config_dir / name).read_text(encoding='utf-8'))
     sources = read('sources.json')
+    # accounts.json is personal (plans, prices) and gitignored; a fresh clone starts from the example.
+    accounts_path, example_path = config_dir / 'accounts.json', config_dir / 'accounts.example.json'
+    if not accounts_path.exists() and example_path.exists():
+        accounts_path.write_text(example_path.read_text(encoding='utf-8'), encoding='utf-8')
     accounts = read('accounts.json')
     prices = read('prices.json')
     cfg = Config({k: SourceCfg(v['enabled'], [_path(p) for p in v['paths']]) for k, v in sources['sources'].items()},
