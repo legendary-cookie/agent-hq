@@ -10,7 +10,7 @@ export const isLiveRun = (status: string) => ['queued', 'starting', 'running', '
 export function Runs() {
   const { data: runs, error, reload } = useApi<Run[]>('/api/runs');
   const { data: approvals } = useApi<Approval[]>('/api/approvals?state=waiting');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.hash.split('?')[1] ?? '').get('run'));
   const { data: run, reload: reloadRun } = useApi<Run>(selected ? `/api/runs/${encodeURIComponent(selected)}` : null);
   const [output, setOutput] = useState<string[]>([]);
   const [outputError, setOutputError] = useState('');

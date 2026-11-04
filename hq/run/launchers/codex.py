@@ -19,6 +19,8 @@ class CodexLauncher(BaseLauncher):
 
     def build(self, req: RunRequest, profile: Profile | None, workdir: Path, run_id: str,
               env_base: Mapping[str, str], pass_names: list[str]) -> Launch:
+        if req.host and req.level == 'full_auto': raise ValueError('Full auto is unavailable remotely')
+        if req.host: workdir = Path('{workdir}')
         env = self.prepare(req, profile, workdir, env_base, pass_names)
         if not re.fullmatch(r'run_[A-Za-z0-9_-]+', run_id):
             raise ValueError('Invalid run id')

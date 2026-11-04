@@ -15,6 +15,7 @@ class GoalScheduler:
         self.store, self.runner, self.guard, self.clock = store, runner, service_guard, clock
         self._lock = threading.RLock()
         self._goals, self._nonces, self._timers = {}, {}, {}
+        self._restore()
         if hasattr(runner, 'on_event'):
             previous = runner.on_event
             def event(value):
@@ -26,9 +27,48 @@ class GoalScheduler:
 
     def _save(self, goal):
         fields = ('id', 'project', 'text_preview', 'max_level', 'status', 'branch', 'base_commit',
-                  'plan_json', 'step_limit', 'time_limit_s', 'created_at', 'ended_at')
+                  'plan_json', 'step_limit', 'time_limit_s', 'created_at', 'ended_at', 'stop_reason')
         with self.store._lock, self.store._writer:
             self.store._writer.execute('INSERT OR REPLACE INTO goals (' + ','.join(fields) + ') VALUES (' + ','.join('?' for _ in fields) + ')', tuple(goal.get(k) for k in fields))
+
+    def _restore(self):
+        with self.store._lock:
+            cursor = self.store._writer.execute('SELECT * FROM goals')
+            names = [col[0] for col in cursor.description]
+            rows = [dict(zip(names, row)) for row in cursor.fetchall()]
+            cursor = self.store._writer.execute('SELECT id, goal_id, step_id, status FROM runs WHERE goal_id IS NOT NULL ORDER BY rowid')
+            runs = cursor.fetchall()
+        for goal in rows:
+            gid = goal['id']
+            goal.update(max_concurrent=1, steps={}, planner_id=None)
+            if goal['branch']:
+                goal['workdir'] = str(Path(self.runner.worktrees_root) / ('goal-' + gid))
+                project = self.runner.projects.get(goal['project'])
+                if project is not None:
+                    goal['git_dir'] = str(Path(project) / '.git' / 'worktrees' / ('goal-' + gid))
+            self._goals[gid] = goal
+            if goal['status'] in ('planning', 'running', 'needs_you'):
+                goal.update(status='stopped', stop_reason='interrupted by restart', ended_at=self.clock())
+                self._save(goal)
+            if goal['plan_json']:
+                try:
+                    stored = json.loads(goal['plan_json'])
+                    concurrent = stored.get('_max_concurrent', 1) if isinstance(stored, dict) else 1
+                    if type(concurrent) is int and concurrent > 0:
+                        goal['max_concurrent'] = concurrent
+                    if goal['status'] == 'review':
+                        self.set_plan(gid, goal['plan_json'])
+                    else:
+                        plan = self._plan(goal)
+                        goal['steps'] = {step.id: {'status': 'pending', 'run_id': None} for step in plan.steps}
+                except (ValueError, TypeError):
+                    if goal['status'] == 'review':
+                        goal.update(status='failed', ended_at=self.clock())
+                        self._save(goal)
+            if goal['status'] != 'review':
+                for rid, run_gid, sid, status in runs:
+                    if run_gid == gid and sid in goal['steps']:
+                        goal['steps'][sid] = {'status': status, 'run_id': rid}
 
     def get(self, goal_id):
         return dict(self._goals[goal_id])
@@ -80,7 +120,7 @@ class GoalScheduler:
             if goal['status'] not in ('planning', 'review'): raise ValueError('Goal is not in review')
             text = plan_json if isinstance(plan_json, str) else json.dumps(plan_json)
             plan = parse_plan('```json\n' + text + '\n```', goal['step_limit'], goal['max_level'], self._tools())
-            goal['plan_json'] = json.dumps(asdict(plan), sort_keys=True, separators=(',', ':'))
+            goal['plan_json'] = json.dumps({**asdict(plan), '_max_concurrent': goal['max_concurrent']}, sort_keys=True, separators=(',', ':'))
             goal['steps'] = {step.id: {'status': 'pending', 'run_id': None} for step in plan.steps}
             goal['status'] = 'review'; self._save(goal)
             return self.get(goal_id)

@@ -12,6 +12,7 @@ from hq.run.approvals import ApprovalBook, AnsweredError, ExpiredError
 from hq.run.config import load_projects, load_run_config
 from hq.run.launchers import REGISTRY
 from hq.run.nonce import NonceBook
+from hq.run.remote_glue import RemoteGlue
 from hq.run.runner import Busy, NotIdle, Runner
 
 
@@ -33,6 +34,7 @@ class RunService:
         self.run_cfg = load_run_config(Path(config_dir))
         self.projects = load_projects(Path(config_dir))
         self.launchers = REGISTRY if launchers is None else launchers
+        self.remote = RemoteGlue(config_dir, self.launchers)
         self.nonces = NonceBook()
         self.pu_dir = Path(pu) if pu is not None else None
         self.pu_failures = 0
@@ -43,6 +45,7 @@ class RunService:
                                       lambda event: self.on_event(event))
         self.runner = (runner_factory or Runner)(store, self.run_cfg, self.launchers, Path(data_dir)/'worktrees',
             self.pu_log, on_event=lambda event: self.on_event(event), pu_limit=self.pu_limit, projects=self.projects, approvals=self.approvals, profiles=self._profiles())
+        self.runner.remote_glue = self.remote
 
     def _pu(self, command, provider, model, *args):
         if self.pu_dir is None: return
@@ -75,12 +78,14 @@ class RunService:
         if not self.run_cfg.run_mode: raise RunError(403, 'run mode is off')
 
     def _parse(self, data):
-        try: return request.parse_request(data, self.run_cfg, self.projects, {n: l.levels() for n,l in self._tools().items()})
-        except (ValueError, TypeError, AttributeError) as exc: raise RunError(400, str(exc)) from exc
+        try:
+            if data.get("host") is not None: return self.remote.parse(data, self.run_cfg)
+            return request.parse_request(data, self.run_cfg, self.projects, {n: l.levels() for n,l in self._tools().items()})
+        except (ValueError, TypeError, AttributeError, OSError, subprocess.SubprocessError) as exc: raise RunError(400, str(exc)) from exc
 
     def _verdict(self, req):
         verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time(),
-                              offered=set(self._tools()))
+                              offered=set(self.remote.tools(self.remote.remote(req.host))) if req.host else set(self._tools()))
         if req.guard_mode == 'auto' and verdict.allowed:
             suggestion = verdict.suggestion
             candidate = asdict(req) | {'tool': suggestion['tool'], 'model': suggestion.get('model'), 'profile': suggestion.get('profile')}
@@ -95,6 +100,7 @@ class RunService:
         return {'run_mode': self.run_cfg.run_mode,
                 'tools': {n: {'levels': sorted(l.levels()), 'harness': l.harness, 'tested': getattr(l, 'tested', False), 'can_ask': getattr(l, 'can_ask', False), 'steer_mode': getattr(l, 'steer_mode', None)} for n,l in self._tools().items()},
                 'projects': [p.name for p in self.projects],
+                'hosts': self.remote.options(),
                 'profiles': [{'id': s.profile.id, 'tool': s.profile.tool, 'account_id': s.profile.account_id,
                               'max_used_percent': s.max_used_percent, 'blocked_until': s.blocked_until} for s in states],
                 'defaults': {'level':'edit', 'guard_mode':'block', 'time_limit_min':self.run_cfg.default_time_limit_min},
@@ -115,7 +121,7 @@ class RunService:
         req = resolved
         try: self._parse(asdict(req))
         except RunError as exc: raise RunError(409, str(exc)) from exc
-        verdict = (guard.check(replace(req, guard_mode='block'), self.store, self._profiles(), lambda _: [], time.time(), offered=set(self._tools()))
+        verdict = (guard.check(replace(req, guard_mode='block'), self.store, self._profiles(), lambda _: [], time.time(), offered=set(self.remote.tools(self.remote.remote(req.host))) if req.host else set(self._tools()))
                    if req.guard_mode == 'auto' else self._verdict(req))
         if not verdict.allowed: raise RunError(409, '; '.join(verdict.reasons))
         profile = next ( (p for p in self._profiles() if p.id == verdict.profile and p.tool == req.tool), None)
@@ -171,10 +177,10 @@ class RunService:
         if not self.nonces.redeem(data.get('nonce'), key): raise RunError(403, 'confirm again')
         run = self.get(rid)
         req = request.RunRequest(run['tool'], run['model'], run['project'], run['prompt_preview'],
-                                 run['level'], run['guard_mode'], run['account'], 1)
+                                 run['level'], run['guard_mode'], run['account'], 1, run.get('host'))
         # Auto was resolved at start; recheck that actual selection rather than selecting again.
         if req.guard_mode == 'auto': req = replace(req, guard_mode='block')
-        verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time(), offered=set(self._tools()))
+        verdict = guard.check(req, self.store, self._profiles(), self.recommend, time.time(), offered=set(self.remote.tools(self.remote.remote(req.host))) if req.host else set(self._tools()))
         if not verdict.allowed: raise RunError(409, '; '.join(verdict.reasons))
         try: self.runner.send(rid, data['text'])
         except (NotIdle, Busy, KeyError) as exc: raise RunError(409, str(exc)) from exc
@@ -193,6 +199,12 @@ class RunService:
     def diff(self, rid):
         run = self.get(rid)
         commit = None
+        if run.get('host'):
+            self._finished(run)
+            try: result = self.remote.action(run, 'diff')
+            except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
+            with self._lock: self._viewed[rid] = result['commit']
+            return result
         try:
             if run['branch']:
                 self._finished(run)
@@ -214,7 +226,8 @@ class RunService:
             if not run['branch']: raise RunError(409, 'run has no branch')
             if not commit or commit != self._viewed[rid]: raise RunError(409, 'the run changed after you viewed the diff; view it again')
             try:
-                state = workspace.merge(self._project(run), run['branch'], workdir=Path(run['workdir']), git_dir=run.get('git_dir'), commit=commit)
+                state = (self.remote.action(run, 'merge', commit=commit)['state'] if run.get('host') else
+                         workspace.merge(self._project(run), run['branch'], workdir=Path(run['workdir']), git_dir=run.get('git_dir'), commit=commit))
             except ValueError as exc: raise RunError(409, str(exc)) from exc
             except (OSError, subprocess.SubprocessError) as exc: raise RunError(409, f'git failed: {type(exc).__name__}') from exc
             self.store.update_run(rid, merge_state=state)
@@ -223,8 +236,10 @@ class RunService:
     def discard(self, rid):
         run = self.get(rid); self._finished(run)
         if not run['branch']: raise RunError(409, 'run has no branch')
-        try: workspace.discard(self._project(run), Path(run['workdir']), run['branch'])
-        except (OSError, subprocess.SubprocessError) as exc: raise RunError(409, f'git failed: {type(exc).__name__}') from exc
+        try:
+            if run.get('host'): self.remote.action(run, 'discard')
+            else: workspace.discard(self._project(run), Path(run['workdir']), run['branch'])
+        except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
         self.store.update_run(rid, merge_state='discarded')
         return {'merge_state':'discarded'}
 
@@ -290,14 +305,45 @@ class RunService:
         self._goal_call('stop', gid)
         return self.goal_get(gid)
 
+    def _goal_workspace(self, goal):
+        import re
+        gid = goal['id']
+        if not re.fullmatch(r'[A-Za-z0-9_-]+', gid) or goal.get('branch') != 'hq/goal-' + gid:
+            raise ValueError('Invalid goal branch')
+        project = workspace._path(self._project(goal))
+        workdir = workspace._path(Path(goal['workdir']))
+        admin = Path(goal['git_dir'])
+        workspace._validate(workdir, admin, project)
+        return project, workdir, admin
+
+    def _goal_snapshot(self, goal):
+        project, workdir, admin = self._goal_workspace(goal)
+        workspace.snapshot(workdir, 'goal-' + goal['id'], project=project, git_dir=admin)
+        return project, workdir, admin
+
     def goal_diff(self, gid):
+        import re
         goal = self.goal_get(gid)
         if goal['status'] not in ('done', 'stopped', 'needs_you', 'failed') or not goal.get('branch'): raise RunError(409, 'goal has no finished branch')
         try:
-            project = self._project(goal)
             with workspace._lock:
-                text, truncated = workspace.diff(project, goal['branch'], goal['base_commit'], workdir=Path(goal['workdir']), git_dir=goal['git_dir'])
-                commit = workspace.revision(project, goal['branch'])
+                project, _, _ = self._goal_snapshot(goal)
+                base, branch = goal['base_commit'], goal['branch']
+                if not isinstance(base, str) or not re.fullmatch(r'[0-9a-fA-F]{40,64}', base): raise ValueError('Invalid base commit')
+                repo = workspace._repo(project)
+                commit = workspace._git(repo, 'rev-parse', '--verify', branch + '^{commit}').stdout.decode('ascii').strip()
+                stat = workspace._git(repo, 'diff', '--no-ext-diff', '--no-textconv', '--shortstat', base, commit, '--').stdout.decode()
+                if sum(int(n) for n in re.findall(r'(\d+) (?:insertion|deletion)', stat)) > 50000: raise ValueError('diff exceeds 50,000 changed lines')
+                proc = subprocess.Popen(workspace._command(repo, 'diff', '--no-ext-diff', '--no-textconv', base, commit, '--'), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                try:
+                    output = proc.stdout.read(2_000_001)
+                    if len(output) > 2_000_000: proc.kill()
+                    proc.wait(timeout=60)
+                    if len(output) <= 2_000_000 and proc.returncode: raise subprocess.CalledProcessError(proc.returncode, proc.args)
+                finally:
+                    if proc.poll() is None: proc.kill(); proc.wait()
+                    proc.stdout.close()
+                text, truncated = output[:2_000_000].decode('utf-8', errors='replace'), len(output) > 2_000_000
         except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
         with self._lock: self._viewed['goal:' + gid] = commit
         return {'diff': text, 'truncated': truncated, 'branch': goal['branch'], 'commit': commit}
@@ -308,7 +354,19 @@ class RunService:
         with self._lock:
             commit = data.get('commit')
             if not commit or self._viewed.get('goal:' + gid) != commit: raise RunError(409, 'view the current diff first')
-            try: state = workspace.merge(self._project(goal), goal['branch'], workdir=Path(goal['workdir']), git_dir=goal['git_dir'], commit=commit)
+            try:
+                with workspace._lock:
+                    project, _, _ = self._goal_snapshot(goal)
+                    repo = workspace._repo(project)
+                    current = workspace._git(repo, 'rev-parse', '--verify', goal['branch'] + '^{commit}').stdout.decode('ascii').strip()
+                    if current != commit: raise ValueError('the goal changed after you viewed the diff; view it again')
+                    if workspace._git(repo, 'status', '--porcelain', '--untracked-files=normal').stdout: state = 'dirty'
+                    else:
+                        result = workspace._git(repo, 'merge', '--no-edit', commit, check=False)
+                        if result.returncode == 0: state = 'merged'
+                        elif workspace._git(repo, 'diff', '--name-only', '--diff-filter=U').stdout:
+                            workspace._git(repo, 'merge', '--abort'); state = 'conflict'
+                        else: result.check_returncode()
             except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
             self._viewed.pop('goal:' + gid, None)
         return {'merge_state': state}
@@ -316,6 +374,10 @@ class RunService:
     def goal_discard(self, gid):
         goal = self.goal_get(gid)
         if goal['status'] not in ('done', 'stopped', 'failed') or not goal.get('branch'): raise RunError(409, 'goal is not finished')
-        try: workspace.discard(self._project(goal), Path(goal['workdir']), goal['branch'])
+        try:
+            with workspace._lock:
+                project, workdir, _ = self._goal_workspace(goal)
+                workspace._git(workspace._repo(project), 'worktree', 'remove', '--force', str(workdir))
+                workspace._git(workspace._repo(project), 'branch', '-D', goal['branch'])
         except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
         return {'merge_state': 'discarded'}

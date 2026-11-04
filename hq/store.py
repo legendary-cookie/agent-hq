@@ -46,6 +46,10 @@ class Store:
         self._writer = sqlite3.connect(path, check_same_thread=False)
         self._writer.execute('PRAGMA journal_mode=WAL')
         self._writer.executescript(_SCHEMA)
+        goal_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(goals)')}
+        if 'stop_reason' not in goal_columns:
+            self._writer.execute('ALTER TABLE goals ADD COLUMN stop_reason TEXT')
+            self._writer.commit()
         run_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(runs)')}
         if 'turns' not in run_columns:
             self._writer.execute('ALTER TABLE runs ADD COLUMN turns INTEGER NOT NULL DEFAULT 1')

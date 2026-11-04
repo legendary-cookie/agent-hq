@@ -3,12 +3,12 @@ import json
 import re
 import shlex
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from hq.remote.ssh import scan_argv
 
 BOOTSTRAP = "import os\nb=b''\nwhile not b.endswith(b'\\n'):\n b+=os.read(0,1)\nn=int(b)\ns=b''\nwhile len(s)<n:\n s+=os.read(0,n-len(s))\nexec(compile(s,'<hq-helper>','exec'))"
-TOOLS = frozenset(('claude', 'codex', 'opencode', 'agy'))
+TOOLS = frozenset(('claude', 'codex'))
 
 
 class RemoteRuns:
@@ -38,12 +38,25 @@ class RemoteRuns:
         process.stdin.buffer.flush()
         return process
 
-    def start(self, rid, project, argv, env, stdin_text, level):
+    def start(self, rid, project, argv, env, stdin_text, level, *, stdin_eof=False, resume=False):
         if not isinstance(argv, list) or not argv or argv[0] not in TOOLS or any(not isinstance(a, str) or '\0' in a for a in argv):
             raise ValueError('Invalid tool argv')
-        request = self._request('start', rid, project, argv=argv, env=env, stdin_text=stdin_text, level=level)
+        if level not in ('read_only', 'ask', 'edit') or (level == 'ask' and argv[0] != 'claude') or any('{workdir}' in a and a != '{workdir}' for a in argv):
+            raise ValueError('Invalid remote launch')
+        request = self._request('start', rid, project, argv=argv, env=env, stdin_text=stdin_text, level=level, stdin_eof=stdin_eof, resume=resume)
         process = self._open(request)
-        return RemoteChild(self, process, rid, project)
+        line = process.stdout.readline(65536)
+        try:
+            workdir = json.loads(line)['hq_workdir']
+            if not isinstance(workdir, str) or not workdir.startswith('/') or str(PurePosixPath(workdir)) != workdir or '..' in workdir.split('/') or not workdir.endswith('/' + rid):
+                raise ValueError('Invalid remote workdir')
+        except (ValueError, KeyError, TypeError):
+            process.stdin.close()
+            error = process.stderr.read()
+            process.wait()
+            process.stdout.close(); process.stderr.close()
+            raise ValueError(error.strip() or 'Invalid remote workdir')
+        return RemoteChild(self, process, rid, project, workdir)
 
     def action(self, action, rid=None, project=None, **fields):
         process = self._open(self._request(action, rid, project, **fields))
@@ -54,8 +67,9 @@ class RemoteRuns:
 
 
 class RemoteChild:
-    def __init__(self, remote, process, rid, project):
+    def __init__(self, remote, process, rid, project, workdir):
         self.remote, self.process, self.rid, self.project = remote, process, rid, project
+        self.workdir = workdir
         self.stdin, self.stdout, self.stderr = process.stdin, process.stdout, process.stderr
 
     def alive(self):
