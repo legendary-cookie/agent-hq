@@ -32,6 +32,7 @@ class Runner:
                  approvals=None, idle_close_s=1800.0, profiles=()):
         self.store, self.run_cfg = store, run_cfg
         self.approvals, self.idle_close_s = approvals, idle_close_s
+        self.fail_grace_s = 5.0  # after an agent error reply, how long to wait for it to exit
         self.worktrees_root = Path(worktrees_root)
         workspace.configure(self.worktrees_root.parent)
         self.launchers = {name: copy.copy(launcher) for name, launcher in launchers.items()}
@@ -356,9 +357,14 @@ class Runner:
             state['output'].append(f'[agent-hq] agent reported an error: {message}')
             if state['stop']: return
             state['agent_failed'] = True
+            child = state['child']
             with state['write_lock']:
-                try: state['child'].stdin.close()
+                try: child.stdin.close()
                 except (OSError, ValueError, AttributeError): pass
+        # If the agent ignores the closed stdin, end it after a short grace period.
+        timer = threading.Timer(self.fail_grace_s, lambda: child.alive() and child.kill_tree())
+        timer.daemon = True
+        timer.start()
 
     def _close_idle(self, rid):
         with self._lock:

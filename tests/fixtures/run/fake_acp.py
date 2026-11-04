@@ -21,6 +21,9 @@ for line in sys.stdin:
         if text == 'fail':  # real opencode 1.18: an error reply, and the process stays alive
             emit({'id': message['id'], 'error': {'code': -32603, 'message': 'Internal error: Cannot connect to API'}})
             continue
+        if text == 'fail_hang':  # an error reply, then ignore stdin EOF
+            emit({'id': message['id'], 'error': {'code': -32603, 'message': 'Internal error: stuck'}})
+            import time; time.sleep(30)
         emit({'method': 'session/update', 'params': {'sessionId': 'fake-session',
               'update': {'sessionUpdate': 'agent_message_chunk', 'content': {'type': 'text', 'text': text}}}})
         if text == 'ask':

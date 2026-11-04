@@ -63,7 +63,8 @@ def summarize(tool_name, tool_input):
         value = tool_input.get('file_path', '')
     else:
         value = f"{tool_name}: {next(iter(tool_input.values()), '')}"
-    return str(value)[:200]
+    # A multi-file edit shows its whole file list, so nothing hides past the cut.
+    return str(value)[:4000 if name == 'edit files' else 200]
 
 
 def never_auto(tool_name, tool_input):

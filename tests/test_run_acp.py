@@ -106,7 +106,7 @@ class AcpTests(unittest.TestCase):
             self.assertEqual(json.loads(line), {'event': 'user', 'message': {'role': 'user', 'content': 'hello'}})
 
 class AcpRunnerTests(unittest.TestCase):
-    def test_error_reply_fails_the_run_instead_of_hanging(self):
+    def test_error_reply_fails_the_run_instead_of_hanging(self, prompt='fail'):
         # Found in the real goal check: opencode answered session/prompt with an API error and
         # stayed alive, so the run (and its goal) sat in 'running' until the time limit.
         import sys
@@ -133,14 +133,19 @@ class AcpRunnerTests(unittest.TestCase):
                         lambda *args: None, lambda event: None,
                         projects=[Project('p', str(root))], idle_close_s=60)
         self.addCleanup(runner.shutdown)
-        req = RunRequest('opencode', None, 'p', 'fail', 'edit', 'block', None, 1)
+        runner.fail_grace_s = .3
+        req = RunRequest('opencode', None, 'p', prompt, 'edit', 'block', None, 1)
         with patch('hq.run.runner.workspace.create', return_value=(root, None, None, None)):
             rid = runner.start(req, None)['id']
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline and store.get_run(rid)['status'] not in ('failed', 'done'):
                 time.sleep(.02)
         self.assertEqual(store.get_run(rid)['status'], 'failed', runner.output(rid))
-        self.assertTrue(any('Cannot connect to API' in line and line.startswith('[agent-hq]') for line in runner.output(rid)))
+        self.assertTrue(any('Internal error' in line and line.startswith('[agent-hq]') for line in runner.output(rid)))
+
+    def test_error_reply_then_ignored_eof_is_killed(self):
+        # Re-check of the 1.1 review: if opencode ignores stdin EOF, the run must still end.
+        self.test_error_reply_fails_the_run_instead_of_hanging('fail_hang')
 
     def test_driver_reports_error_reply_as_failed(self):
         driver = AcpDriver(Path('.').resolve())
@@ -226,6 +231,8 @@ class AcpRealShapeTests(unittest.TestCase):
         self.assertIsNone(rule_key(req['tool_name'], req['input'], Path('.').resolve()))
         self.assertIn('.github/workflows/x.yml', summarize(req['tool_name'], req['input']))
         self.assertIn('src/a.py', summarize(req['tool_name'], req['input']))
+        many = ', '.join(f'src/file{i}.py' for i in range(40))
+        self.assertIn('src/file39.py', summarize('Edit files', {'files': many}))  # the whole list shows
 
     def test_single_file_edit_with_repeated_location_is_still_one_file(self):
         req = self.request(self.driver(), {'title': 'a.py', 'kind': 'edit', 'rawInput': {'filePath': 'a.py'},
