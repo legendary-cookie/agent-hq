@@ -70,7 +70,7 @@ export function layoutIsometric(scene: Scene, viewport: { width: number; height:
   });
   const rooms = zones.map(({ room, x, y, rows }) => ({
     id: room.id,
-    label: `${room.id.startsWith('host:') ? room.label : harnessLabel(room.harness ?? 'break')} · ${
+    label: `${(room.id.startsWith('host:') || room.id.startsWith('team:')) ? room.label : harnessLabel(room.harness ?? 'break')} · ${
       room.id === 'break'
         ? idleCount
         : // Every agent of the zone, including idle ones waiting in the break room.

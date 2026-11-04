@@ -12,6 +12,9 @@ import { buildScene } from '../office/scene';
 import type { Scene } from '../office/scene';
 import type { Skin, SkinId } from '../office/skin';
 import { parseSkin, SKINS } from '../office/skins';
+import { replaySessions, replayTime } from '../office/timeline';
+import type { TimelineEvent } from '../office/timeline';
+import { resetLayout } from '../office/layout-editor';
 import './office.css';
 
 export function Office(props: { skinFactory?: (id: SkinId) => Promise<Skin> } = {}) {
@@ -37,6 +40,15 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
   const [harness, setHarness] = useState('');
   const [account, setAccount] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [following, setFollowing] = useState<string | null>(null);
+  const [replayAt, setReplayAt] = useState<number | null>(null);
+  const [speed, setSpeed] = useState(1);
+  const [playing, setPlaying] = useState(false);
+  const [replayEnd] = useState(() => Date.now() / 1000);
+  const { data: timeline } = useApi<{ events: TimelineEvent[]; truncated: boolean }>(replayAt === null ? null : `/api/timeline?from=${replayEnd - 86400}&to=${replayEnd}`, { live: false });
+  useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setFollowing(null); }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, []);
+  useEffect(() => { if (!playing || replayAt === null) return; const timer = window.setInterval(() => setReplayAt(value => value === null ? null : replayTime(value, 0.1, speed, replayEnd)), 100); return () => window.clearInterval(timer); }, [playing, replayAt === null, speed, replayEnd]);
   const [tickerId, setTickerId] = useState<string | null>(null);
   const memory = useRef(new Map<string, string>());
   const previous = useRef<Scene | undefined>(undefined);
@@ -52,8 +64,8 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
   // Dev-only performance check: `?synthetic=60` replaces live sessions with fakes.
   const synthetic = import.meta.env.DEV ? syntheticCount(location.search) : 0;
   const allSessions = useMemo(
-    () => (synthetic ? makeSyntheticSessions(synthetic, Date.now() / 1000) : (sessions ?? [])),
-    [sessions, synthetic],
+    () => { const base = synthetic ? makeSyntheticSessions(synthetic, Date.now() / 1000) : (sessions ?? []); return replayAt === null ? base : replaySessions(base, timeline?.events ?? [], replayAt); },
+    [sessions, synthetic, replayAt, timeline],
   );
   const fullScene = useMemo(() => {
     const loaded = sessions !== null && delegations !== null;
@@ -61,12 +73,12 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
       allSessions,
       delegations ?? [],
       memory.current,
-      Date.now() / 1000,
+      replayAt ?? Date.now() / 1000,
       loaded ? previous.current : undefined,
     );
     if (loaded) previous.current = next;
     return next;
-  }, [allSessions, sessions, delegations]);
+  }, [allSessions, sessions, delegations, replayAt]);
   const scene = useMemo(() => {
     const visible = new Set(
       allSessions
@@ -92,6 +104,7 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
   const selectSkin = (value: SkinId) => {
     chosen.current = true;
     setSkin(value);
+    setEditing(false);
     try {
       localStorage.setItem('hq-skin', value);
     } catch {
@@ -141,12 +154,27 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
             </select>
           </label>
         </div>
+        <div className="office-filters">
+          <button type="button" onClick={() => { setReplayAt(replayEnd - 86400); setPlaying(false); }}>Replay</button>
+          {replayAt !== null && <>
+            <input aria-label="Timeline" type="range" min={replayEnd - 86400} max={replayEnd} step="1" value={replayAt} onChange={event => setReplayAt(Number(event.target.value))} />
+            <time>{new Date(replayAt * 1000).toLocaleString()}</time>
+            <button type="button" onClick={() => setPlaying(!playing)}>{playing ? 'Pause' : 'Play'}</button>
+            <select aria-label="Replay speed" value={speed} onChange={event => setSpeed(Number(event.target.value))}><option value={1}>1×</option><option value={10}>10×</option><option value={60}>60×</option></select>
+            <button type="button" onClick={() => { setReplayAt(null); setPlaying(false); }}>Live</button>
+            {timeline?.truncated && <span>Timeline truncated</span>}
+          </>}
+          {skin !== 'tower' && <button type="button" aria-pressed={editing} onClick={() => { setEditing(!editing); window.dispatchEvent(new Event('hq-layout-edit')); }}>{editing ? 'Done editing' : 'Edit layout'}</button>}
+          {editing && <span>Drag desks or zone labels; double-click a zone label to rename it.</span>}
+          <button type="button" onClick={() => { resetLayout(skin); window.dispatchEvent(new Event('hq-layout-reset')); }}>Reset layout</button>
+        </div>
         <div className="office-stage">
           {sessions && (
             <PixiStage
               skin={skin}
               scene={scene}
               selectedId={selected}
+              followId={following}
               onPick={(id) => { const session = allSessions.find((item) => item.id === id); const approval = approvals?.find((item) => item.run_id === session?.launched_run_id); if (approval) location.hash = `/inbox?approval=${encodeURIComponent(approval.id)}`; else setSelected(id); }}
               skinFactory={skinFactory}
             />
@@ -174,6 +202,7 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
           ))}
         </ul>
       </div>
+      {selected && <button type="button" onClick={() => setFollowing(following === selected ? null : selected)}>{following === selected ? 'Stop following' : 'Follow'}</button>}
       <Inspector sessionId={selected} onClose={() => setSelected(null)} />
     </div>
   );

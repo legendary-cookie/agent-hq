@@ -17,6 +17,9 @@ export type Npc = {
   deskId: string | null;
   targetRoomId: string;
   parentId: string | null;
+  bubble?: string | null;
+  eventAt?: number;
+  lastKind?: string | null;
 };
 export type Walk = { npcId: string; fromRoomId: string; toRoomId: string; startedAt: number };
 export type Scene = { rooms: Room[]; desks: Desk[]; npcs: Npc[]; walks: Walk[] };
@@ -37,7 +40,10 @@ export function buildScene(
   const ids = new Set(included.map((s) => s.id));
   for (const id of memory.keys()) if (!ids.has(id)) memory.delete(id);
   const harnessOf = (s: SessionRow) => s.harness || 'unknown';
-  const roomOf = (s: SessionRow) => s.host ? `host:${s.host}` : harnessOf(s);
+  const roomOf = (s: SessionRow) => {
+    const goal = (s as SessionRow & { goal_id?: string | null }).goal_id;
+    return s.launched_run_id && goal ? `team:${goal}` : s.host ? `host:${s.host}` : harnessOf(s);
+  };
   const used = new Set<string>();
   for (const s of included) {
     const desk = memory.get(s.id);
@@ -73,8 +79,11 @@ export function buildScene(
       launchedRunId: s.launched_run_id,
       color: HARNESS_COLORS[harness] ?? HARNESS_COLORS.unknown,
       deskId: desk,
-      targetRoomId: state === 'idle' && !s.host ? 'break' : room,
+      targetRoomId: state === 'idle' && !s.host && !room.startsWith('team:') ? 'break' : room,
       parentId: s.parent_id,
+      bubble: s.last_tool || s.last_preview,
+      eventAt: s.last_event_at ?? 0,
+      lastKind: s.last_kind,
     };
   });
   const roomIds = [...new Set(included.map(roomOf))].sort();
@@ -85,8 +94,8 @@ export function buildScene(
   }));
   const rooms: Room[] = roomIds.map((room) => ({
     id: room,
-    harness: room.startsWith('host:') ? null : room,
-    label: room.startsWith('host:') ? room.slice(5) : room,
+    harness: room.startsWith('host:') || room.startsWith('team:') ? null : room,
+    label: room.startsWith('host:') ? room.slice(5) : room.startsWith('team:') ? `Team ${room.slice(5)}` : room,
     capacity: Math.max(
       ROOM_SIZE_STEP,
       Math.ceil(
@@ -100,6 +109,9 @@ export function buildScene(
   // Walks animate changes since the previous scene; the first scene shows no history.
   const previousIds = new Set(prev?.npcs.map((n) => n.id) ?? []);
   for (const npc of npcs) {
+    const old = prev?.npcs.find((n) => n.id === npc.id);
+    if (old && old.targetRoomId !== npc.targetRoomId)
+      walks.push({ npcId: npc.id, fromRoomId: old.targetRoomId, toRoomId: npc.targetRoomId, startedAt: now });
     const parent = npcs.find((n) => n.id === npc.parentId);
     if (prev && !previousIds.has(npc.id) && parent)
       walks.push({

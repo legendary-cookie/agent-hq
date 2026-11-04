@@ -8,14 +8,15 @@ type Props = {
   skin: SkinId;
   scene: Scene;
   selectedId: string | null;
+  followId?: string | null;
   onPick(npcId: string): void;
   skinFactory?: (id: SkinId) => Promise<Skin>;
 };
-export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Props) {
+export function PixiStage({ skin, scene, selectedId, followId, onPick, skinFactory }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
-  const current = useRef({ scene, selectedId, onPick });
-  current.current = { scene, selectedId, onPick };
+  const current = useRef({ scene, selectedId, followId, onPick });
+  current.current = { scene, selectedId, followId, onPick };
   useEffect(() => {
     const element = host.current;
     if (!element) return;
@@ -37,6 +38,7 @@ export function PixiStage({ skin, scene, selectedId, onPick, skinFactory }: Prop
       if (!active || document.visibilityState === 'hidden') return;
       const dt = previous === null ? 0 : (time - previous) / 1000;
       instance?.setSelected?.(current.current.selectedId);
+      instance?.setFollow?.(current.current.followId ?? null);
       instance?.render(current.current.scene, dt, readTheme(element));
       previous = time;
       frame = requestAnimationFrame(tick);
