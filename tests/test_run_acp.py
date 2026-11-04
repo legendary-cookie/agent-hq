@@ -85,7 +85,11 @@ class AcpTests(unittest.TestCase):
             req = RunRequest('opencode', None, 'p', 'hello', level, 'block', None, 30)
             launch = launcher.build(req, None, self.cwd, 'run', {}, [])
             self.assertEqual(launch.argv, ['opencode', 'acp', '--cwd', str(self.cwd)])
-            self.assertEqual(json.loads(launch.env['OPENCODE_CONFIG_CONTENT']), {'model': None, 'permission': {'edit': permission, 'bash': permission}})
+            # Found in the real goal check: opencode rejects "model": null ("Expected string | undefined").
+            self.assertEqual(json.loads(launch.env['OPENCODE_CONFIG_CONTENT']), {'permission': {'edit': permission, 'bash': permission}})
+        req = RunRequest('opencode', 'opencode/glm-5.3-flash-free', 'p', 'hello', 'edit', 'block', None, 30)
+        config = json.loads(launcher.build(req, None, self.cwd, 'run', {}, []).env['OPENCODE_CONFIG_CONTENT'])
+        self.assertEqual(config['model'], 'opencode/glm-5.3-flash-free')
 
     def test_agy_live_first_input_and_follow_up_shape(self):
         launcher = AgyLauncher()
