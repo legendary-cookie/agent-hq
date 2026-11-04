@@ -51,3 +51,9 @@ class RemoteGlue:
 
     def action(self, run, action, **fields):
         return self.remote(run['host']).action(action, run['id'], run['project'], **fields)
+
+
+def remote_env(env):
+    """Env passed to a host run. Local profile folders (CODEX_HOME, CLAUDE_CONFIG_DIR) mean nothing
+    on the host and would leak local paths, so only tool config content goes."""
+    return {k: v for k, v in env.items() if k == 'OPENCODE_CONFIG_CONTENT'}

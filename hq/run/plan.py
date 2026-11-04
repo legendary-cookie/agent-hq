@@ -41,9 +41,17 @@ def parse_plan(output_text, max_steps, max_level, tools):
     blocks = re.findall(r'```json\s*\n(.*?)```', output_text, re.DOTALL)
     if not blocks:
         raise PlanError('Expected a fenced JSON block')
+    return parse_plan_json(blocks[-1], max_steps, max_level, tools)
+
+
+def parse_plan_json(text, max_steps, max_level, tools):
+    """Validate a plan given as plain JSON text (a stored or edited plan, no fence)."""
+    levels = ('read_only', 'ask', 'edit')
+    if type(max_steps) is not int or not 1 <= max_steps <= 10 or max_level not in levels:
+        raise PlanError('Invalid goal limits')
     try:
-        data = json.loads(blocks[-1])
-    except (ValueError, RecursionError) as exc:
+        data = json.loads(text)
+    except (ValueError, RecursionError, TypeError) as exc:
         raise PlanError('Invalid JSON') from exc
     if not isinstance(data, dict) or not isinstance(data.get('steps'), list) or not 1 <= len(data['steps']) <= max_steps:
         raise PlanError('Invalid step count')

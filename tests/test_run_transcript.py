@@ -36,3 +36,11 @@ class TranscriptTests(unittest.TestCase):
         lines = [line({'type': 'system', 'subtype': 'hook_response', 'output': '```json\n{"evil": 1}\n```'}),
                  '[stderr] ```json\n{"evil": 2}\n```', '[agent-hq] turn 2', 'not json']
         self.assertNotIn('evil', text_of('claude', lines))
+
+    def test_claude_subagent_messages_ignored(self):
+        # Security review 1.1: a subagent echoing a hostile file could supply the plan.
+        lines = [line({'type': 'assistant', 'parent_tool_use_id': 'toolu_1', 'message': {'content': [{'type': 'text', 'text': 'evil plan'}]}}),
+                 line({'type': 'assistant', 'parent_tool_use_id': None, 'message': {'content': [{'type': 'text', 'text': 'real plan'}]}})]
+        text = text_of('claude', lines)
+        self.assertNotIn('evil', text)
+        self.assertIn('real plan', text)

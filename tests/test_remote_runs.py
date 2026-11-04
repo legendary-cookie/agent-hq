@@ -87,6 +87,15 @@ class RemoteHostTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             RemoteRuns(host)
 
+class RemoteEnvTests(unittest.TestCase):
+    def test_local_profile_folders_not_sent_to_host(self):
+        # Security review 1.1: a local profile's CLAUDE_CONFIG_DIR / CODEX_HOME went to the host as a
+        # Windows path, so the agent made a config folder inside the remote worktree.
+        from hq.run.remote_glue import remote_env
+        env = {'CLAUDE_CONFIG_DIR': 'C:/profiles/a', 'CODEX_HOME': 'C:/profiles/b', 'OPENCODE_CONFIG_CONTENT': '{}', 'PATH': 'x'}
+        self.assertEqual(remote_env(env), {'OPENCODE_CONFIG_CONTENT': '{}'})
+
+
 @unittest.skipIf(os.name == 'nt', 'POSIX helper process tests')
 class RemoteIntegrationTests(unittest.TestCase):
     start = RemoteRunTests.start

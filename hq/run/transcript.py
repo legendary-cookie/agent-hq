@@ -3,7 +3,7 @@ import json
 
 
 def _claude(data):
-    if data.get('type') == 'assistant':
+    if data.get('type') == 'assistant' and data.get('parent_tool_use_id') is None:  # subagents never supply the plan
         content = (data.get('message') or {}).get('content') or []
         return [block.get('text') for block in content if isinstance(block, dict) and block.get('type') == 'text']
     if data.get('type') == 'result' and isinstance(data.get('result'), str):

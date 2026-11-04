@@ -120,10 +120,13 @@ def _normalize(call):
     title = call.get('title') if isinstance(call.get('title'), str) else ''
     if kind == 'edit':
         locations = call.get('locations') if isinstance(call.get('locations'), list) else []
-        first = locations[0].get('path') if locations and isinstance(locations[0], dict) else None
-        path = next((v for v in (raw.get('file_path'), raw.get('filePath'), raw.get('path'), first, title)
-                     if isinstance(v, str) and v), '')
-        return 'Write', {'file_path': path}
+        named = [raw.get('file_path'), raw.get('filePath'), raw.get('path')]
+        named += [item.get('path') for item in locations if isinstance(item, dict)]
+        paths = list(dict.fromkeys(v for v in named if isinstance(v, str) and v))
+        if len(paths) > 1:
+            # Several files: list them all, and use a name with no rule key so it always asks.
+            return 'Edit files', {'files': ', '.join(paths)}
+        return 'Write', {'file_path': paths[0] if paths else title}
     if kind == 'execute':
         command = raw.get('command') if isinstance(raw.get('command'), str) else title
         return 'Bash', {'command': command}

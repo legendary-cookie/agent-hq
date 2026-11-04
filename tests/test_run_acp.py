@@ -86,7 +86,16 @@ class AcpTests(unittest.TestCase):
             launch = launcher.build(req, None, self.cwd, 'run', {}, [])
             self.assertEqual(launch.argv, ['opencode', 'acp', '--cwd', str(self.cwd)])
             # Found in the real goal check: opencode rejects "model": null ("Expected string | undefined").
-            self.assertEqual(json.loads(launch.env['OPENCODE_CONFIG_CONTENT']), {'permission': {'edit': permission, 'bash': permission}})
+            config = json.loads(launch.env['OPENCODE_CONFIG_CONTENT'])
+            self.assertNotIn('model', config)
+            if level == 'edit':
+                self.assertEqual(config['permission'], {'edit': 'allow', 'bash': 'allow'})
+            else:
+                # Security review 1.1: opencode's default is "*": "allow", so Ask me must ask for
+                # everything (web fetch, outside folders...) except local reads; .env reads still ask.
+                # Checked with `opencode debug agent build` on opencode 1.18 (2026-11-04).
+                self.assertEqual(config['permission'], {'*': 'ask', 'read': {'*': 'allow', '*.env': 'ask', '*.env.*': 'ask', '*.env.example': 'allow'},
+                                                        'glob': 'allow', 'grep': 'allow', 'list': 'allow', 'edit': 'ask', 'bash': 'ask'})
         req = RunRequest('opencode', 'opencode/glm-5.3-flash-free', 'p', 'hello', 'edit', 'block', None, 30)
         config = json.loads(launcher.build(req, None, self.cwd, 'run', {}, []).env['OPENCODE_CONFIG_CONTENT'])
         self.assertEqual(config['model'], 'opencode/glm-5.3-flash-free')
@@ -208,6 +217,20 @@ class AcpRealShapeTests(unittest.TestCase):
         self.assertEqual(req['tool_name'], 'Write')
         self.assertEqual(req['input']['file_path'], 'C:/w/oc.txt')
         self.assertEqual(summarize(req['tool_name'], req['input']), 'C:/w/oc.txt')
+
+    def test_multi_file_edit_lists_every_file_and_gets_no_rule(self):
+        # Security review 1.1: a patch touching several files was checked by its first path only.
+        from hq.run.approvals import rule_key, summarize
+        req = self.request(self.driver(), {'title': 'patch', 'kind': 'edit', 'rawInput': {'filePath': 'src/a.py'},
+                                           'locations': [{'path': 'src/a.py'}, {'path': '.github/workflows/x.yml'}]})
+        self.assertIsNone(rule_key(req['tool_name'], req['input'], Path('.').resolve()))
+        self.assertIn('.github/workflows/x.yml', summarize(req['tool_name'], req['input']))
+        self.assertIn('src/a.py', summarize(req['tool_name'], req['input']))
+
+    def test_single_file_edit_with_repeated_location_is_still_one_file(self):
+        req = self.request(self.driver(), {'title': 'a.py', 'kind': 'edit', 'rawInput': {'filePath': 'a.py'},
+                                           'locations': [{'path': 'a.py'}]})
+        self.assertEqual((req['tool_name'], req['input']), ('Write', {'file_path': 'a.py'}))
 
     def test_execute_request_is_a_command_under_never_auto(self):
         from hq.run.approvals import never_auto

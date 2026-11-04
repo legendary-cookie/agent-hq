@@ -135,7 +135,6 @@ class SchedulerTests(unittest.TestCase):
         self.assertIn('+change', service.goal_diff(self.goal['id'])['diff'])
 
 
-class PlannerStreamTests(SchedulerTests):
     def test_plan_read_from_stream_json_output(self):
         # Found in the real goal check: the planner's output is stream JSON, with the fenced plan
         # inside an earlier assistant message (escaped), so parsing raw lines found nothing.
@@ -147,3 +146,12 @@ class PlannerStreamTests(SchedulerTests):
         self.store.update_run(planner, status='done')
         self.scheduler.on_run_finished(planner)
         self.assertEqual(self.scheduler.get(self.goal['id'])['status'], 'review')
+
+
+    def test_step_prompt_with_code_fence_survives_start(self):
+        # Security review 1.1: the stored plan was re-wrapped in a ``` fence and re-parsed, so a
+        # prompt containing ``` broke the goal at start.
+        steps = [dict(id='s1', title='Fence', prompt='Write:\n```python\nprint(1)\n```\ndone', kind='code', depends_on=[], tool='codex')]
+        self.scheduler.set_plan(self.goal['id'], json.dumps({'steps': steps}))
+        self.scheduler.start(self.goal['id'], self.scheduler.prepare_start(self.goal['id']))
+        self.assertEqual(self.scheduler.get(self.goal['id'])['status'], 'running')

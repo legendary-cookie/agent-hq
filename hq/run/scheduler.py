@@ -7,7 +7,7 @@ from pathlib import Path
 
 from hq.run import workspace
 from hq.run.transcript import text_of
-from hq.run.plan import parse_plan, plan_hash, planner_prompt
+from hq.run.plan import parse_plan, parse_plan_json, plan_hash, planner_prompt
 from hq.run.request import RunRequest
 
 
@@ -120,14 +120,14 @@ class GoalScheduler:
             goal = self._goals[goal_id]
             if goal['status'] not in ('planning', 'review'): raise ValueError('Goal is not in review')
             text = plan_json if isinstance(plan_json, str) else json.dumps(plan_json)
-            plan = parse_plan('```json\n' + text + '\n```', goal['step_limit'], goal['max_level'], self._tools())
+            plan = parse_plan_json(text, goal['step_limit'], goal['max_level'], self._tools())
             goal['plan_json'] = json.dumps({**asdict(plan), '_max_concurrent': goal['max_concurrent']}, sort_keys=True, separators=(',', ':'))
             goal['steps'] = {step.id: {'status': 'pending', 'run_id': None} for step in plan.steps}
             goal['status'] = 'review'; self._save(goal)
             return self.get(goal_id)
 
     def _plan(self, goal):
-        return parse_plan('```json\n' + goal['plan_json'] + '\n```', goal['step_limit'], goal['max_level'], self._tools())
+        return parse_plan_json(goal['plan_json'], goal['step_limit'], goal['max_level'], self._tools())
 
     def prepare_start(self, goal_id):
         with self._lock:

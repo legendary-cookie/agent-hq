@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import replace
 from pathlib import Path
 
-from hq.run import env, followup, proc, workspace, winexe
+from hq.run import env, followup, proc, remote_glue, workspace, winexe
 from hq.run.stream import parse_line, valid_session_id
 from hq.run.approvals import AnsweredError
 from hq.run.link import find_session
@@ -140,7 +140,7 @@ class Runner:
                                                 state['env_base'], state['pass_names'])
             if req.host:
                 remote = self.remote_glue.remote(req.host)
-                extra = {k: v for k, v in launch.env.items() if k in ('CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'OPENCODE_CONFIG_CONTENT')}
+                extra = remote_glue.remote_env(launch.env)
                 child = remote.start(rid, req.project, launch.argv, extra, launch.stdin_text, req.level, stdin_eof=req.tool == 'codex', resume=resume_text is not None)
                 state['workdir'] = Path(child.workdir)
                 self.store.update_run(rid, workdir=child.workdir, branch='hq/run-' + rid)
