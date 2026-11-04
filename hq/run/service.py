@@ -227,3 +227,95 @@ class RunService:
         except (OSError, subprocess.SubprocessError) as exc: raise RunError(409, f'git failed: {type(exc).__name__}') from exc
         self.store.update_run(rid, merge_state='discarded')
         return {'merge_state':'discarded'}
+
+    def _goals(self):
+        from hq.run.scheduler import GoalScheduler
+        with self._lock:
+            if not hasattr(self, '_goal_scheduler'):
+                self._goal_scheduler = GoalScheduler(self.store, self.runner, self._goal_guard, time.time)
+                self._goal_tick()
+            return self._goal_scheduler
+
+    def _goal_tick(self):
+        self._goal_scheduler.check_timeouts()
+        timer = threading.Timer(30, self._goal_tick)
+        timer.daemon = True
+        timer.start()
+
+    def _goal_guard(self, req):
+        self._parse(asdict(req))
+        verdict = self._verdict(req)
+        if not verdict.allowed: raise ValueError('; '.join(verdict.reasons))
+        if req.guard_mode == 'auto':
+            req = replace(req, tool=verdict.suggestion['tool'], model=verdict.suggestion.get('model'), profile=verdict.profile)
+            self._parse(asdict(req))
+        profile = next((p for p in self._profiles() if p.id == verdict.profile and p.tool == req.tool), None)
+        return req, profile
+
+    def _goal_call(self, method, *args):
+        self._enabled()
+        try: return getattr(self._goals(), method)(*args)
+        except KeyError as exc: raise RunError(404, 'goal or step not found') from exc
+        except (ValueError, TypeError) as exc: raise RunError(400, str(exc)) from exc
+        except Busy as exc: raise RunError(409, str(exc)) from exc
+
+    def _goal_key(self, data):
+        import json
+        body = {k: v for k, v in data.items() if k != 'nonce'}
+        return MessageKey('goal', hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
+
+    def goal_prepare(self, data):
+        self._enabled()
+        nonce, expires = self.nonces.issue(self._goal_key(data))
+        return {'nonce': nonce, 'expires_at': expires}
+
+    def goal_create(self, data):
+        self._enabled()
+        if not self.nonces.redeem(data.get('nonce'), self._goal_key(data)): raise RunError(403, 'confirm again')
+        return self._goal_call('create', {k: v for k, v in data.items() if k != 'nonce'})
+
+    def goal_list(self):
+        self._enabled()
+        scheduler = self._goals()
+        with scheduler._lock: return [scheduler.get(gid) for gid in scheduler._goals]
+
+    def goal_get(self, gid): return self._goal_call('get', gid)
+    def goal_plan(self, gid, data): return self._goal_call('set_plan', gid, data)
+    def goal_start_prepare(self, gid): return {'nonce': self._goal_call('prepare_start', gid)}
+    def goal_start(self, gid, data): return self._goal_call('start', gid, data.get('nonce'))
+    def goal_step(self, gid, sid, action):
+        self._goal_call(action + '_step', gid, sid)
+        return self.goal_get(gid)
+    def goal_stop(self, gid):
+        self._goal_call('stop', gid)
+        return self.goal_get(gid)
+
+    def goal_diff(self, gid):
+        goal = self.goal_get(gid)
+        if goal['status'] not in ('done', 'stopped', 'needs_you', 'failed') or not goal.get('branch'): raise RunError(409, 'goal has no finished branch')
+        try:
+            project = self._project(goal)
+            with workspace._lock:
+                text, truncated = workspace.diff(project, goal['branch'], goal['base_commit'], workdir=Path(goal['workdir']), git_dir=goal['git_dir'])
+                commit = workspace.revision(project, goal['branch'])
+        except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
+        with self._lock: self._viewed['goal:' + gid] = commit
+        return {'diff': text, 'truncated': truncated, 'branch': goal['branch'], 'commit': commit}
+
+    def goal_merge(self, gid, data):
+        goal = self.goal_get(gid)
+        if goal['status'] != 'done' or not goal.get('branch'): raise RunError(409, 'goal is not finished')
+        with self._lock:
+            commit = data.get('commit')
+            if not commit or self._viewed.get('goal:' + gid) != commit: raise RunError(409, 'view the current diff first')
+            try: state = workspace.merge(self._project(goal), goal['branch'], workdir=Path(goal['workdir']), git_dir=goal['git_dir'], commit=commit)
+            except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
+            self._viewed.pop('goal:' + gid, None)
+        return {'merge_state': state}
+
+    def goal_discard(self, gid):
+        goal = self.goal_get(gid)
+        if goal['status'] not in ('done', 'stopped', 'failed') or not goal.get('branch'): raise RunError(409, 'goal is not finished')
+        try: workspace.discard(self._project(goal), Path(goal['workdir']), goal['branch'])
+        except (ValueError, OSError, subprocess.SubprocessError) as exc: raise RunError(409, str(exc)) from exc
+        return {'merge_state': 'discarded'}

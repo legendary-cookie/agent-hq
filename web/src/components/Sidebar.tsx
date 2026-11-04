@@ -63,7 +63,7 @@ export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r
       <div className="brand">Agent HQ</div>
       <button onClick={onRun}>Run</button>
       <nav>
-        {(['office', 'dashboard', 'agents', 'limits', 'runs'] as Route[]).map((r) => (
+        {(['office', 'dashboard', 'agents', 'limits', 'runs', 'goals'] as Route[]).map((r) => (
           <button key={r} className={route === r ? 'selected' : ''} onClick={() => navigate(r)}>
             {r[0].toUpperCase() + r.slice(1)}
           </button>
