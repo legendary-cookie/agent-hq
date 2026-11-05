@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 from .config import Config, SourceCfg, Account, Price, _path, save_config
+from .auth import Locked, Login
 from .kpis import compute_kpis, resolve_range, session_value, _rows, series
 from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
@@ -49,8 +50,11 @@ def timeline_events(conn, start=None, end=None):
         where e.ts>=? and e.ts<=? order by e.ts, e.id limit 20001""", (start, end))
     return {'events': events[:20000], 'truncated': len(events) > 20000}
 
-def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None):
+def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None,public_url=None):
     run_key = secrets.token_urlsafe(32)
+    login = Login(store.path.parent / 'login.json')
+    public_url = public_url.rstrip('/') if public_url else None
+    public_host = urlsplit(public_url).netloc if public_url else None
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
     tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
@@ -68,14 +72,23 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def log_message(self,*args): pass
         def send_json(self,status,data):
             body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
-        def host_ok(self): return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
-        def token_ok(self, value): return isinstance(value,str) and hmac.compare_digest(value.encode(),token.encode())
+        def is_public(self): return public_host is not None and self.headers.get('Host')==public_host
+        def host_ok(self): return self.is_public() or self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
+        def origin_ok(self): return self.headers.get('Origin')==(public_url if self.is_public() else f'http://{self.headers.get("Host")}')
+        def token_ok(self, value): return isinstance(value,str) and (hmac.compare_digest(value.encode(),token.encode()) or login.valid(value))
         def write_ok(self):
-            return self.token_ok(self.headers.get('X-HQ-Token')) and self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
+            return self.token_ok(self.headers.get('X-HQ-Token')) and self.origin_ok()
+        def read_raw(self):
+            # Read once, before any answer: replying while the body is still unread makes some clients
+            # (Windows in particular) see a reset connection instead of the reply.
+            if getattr(self,'_raw',None) is None:
+                try: length=int(self.headers.get('Content-Length','0'))
+                except ValueError: length=-1
+                if length<0 or length>1048576: self.close_connection=True; raise ValueError('invalid body size')
+                self._raw=self.rfile.read(length)
+            return self._raw
         def parse_body(self):
-            length=int(self.headers.get('Content-Length','0'))
-            if length<0 or length>1048576: raise ValueError('invalid body size')
-            data=json.loads(self.rfile.read(length));
+            data=json.loads(self.read_raw());
             if not isinstance(data,dict): raise ValueError('expected object')
             return data
         def run_key_ok(self):
@@ -193,11 +206,24 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def do_PUT(self): self.write_request('PUT')
         def write_request(self,method):
             path=urlsplit(self.path).path
-            exchange=method=='POST' and path=='/api/exchange'
-            origin_ok=self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
-            if not self.host_ok() or not origin_ok or (not exchange and not self.write_ok()): return self.send_json(403,{'error':'forbidden'})
+            # The start-up code hands over the permanent token, so it only works on this machine.
+            exchange=method=='POST' and path=='/api/exchange' and not self.is_public()
+            sign_in=method=='POST' and path=='/api/login'
+            self._raw=None
+            try: self.read_raw()
+            except ValueError: pass  # refused below, once it's clear what kind of request it is
+            if not self.host_ok() or not self.origin_ok() or not (exchange or sign_in or self.write_ok()): return self.send_json(403,{'error':'forbidden'})
+            if sign_in and self.is_public() and self.headers.get('X-Forwarded-Proto')!='https': return self.send_json(403,{'error':'sign-in needs HTTPS'})
             try:
                 data=self.parse_body()
+                if sign_in:
+                    if not login.configured(): return self.send_json(403,{'error':'Password sign-in is not set up yet.'})
+                    try: session=login.sign_in(data.get('password'))
+                    except Locked as exc: return self.send_json(429,{'error':'Too many attempts.','retry_after':exc.retry_after})
+                    return self.send_json(200,{'token':session,'run_key':run_key}) if session else self.send_json(401,{'error':'That password is not right.'})
+                if method=='POST' and path=='/api/logout':
+                    login.sign_out(self.headers.get('X-HQ-Token'))
+                    return self.send_json(200,{'ok':True})
                 if exchange:
                     code=data.get('code')
                     with lock:

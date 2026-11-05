@@ -53,7 +53,23 @@ This does three things:
 
 The code expires after 120 s. The token is kept in a file named `token` beside `hq.db` and reused on the next launch, so open pages keep working across restarts. `--rotate-token` replaces it.
 
-If a page shows "Open Agent HQ from the link…", restart and use the new link, or add `#token=<contents of the token file>` to the URL.
+If a page shows the sign-in page on this computer, restart and use the new link, or add `#token=<contents of the token file>` to the URL. The browser stays signed in until you press **Sign out**.
+
+### Sign in from another computer
+
+Agent HQ still listens only on `127.0.0.1`. To reach it from elsewhere, put an HTTPS proxy such as Caddy on the same machine, then:
+
+1. Set a password (12 characters or more): `python -m hq --set-password --db <path to hq.db>`. Only a salted scrypt hash is stored, in `login.json` beside `hq.db`.
+2. Start with `--public-url https://your-address`. Only that address is accepted, and the proxy must send `X-Forwarded-Proto: https`.
+
+Then open the address and sign in with the password.
+- A sign-in lasts 30 days on that browser and survives restarts. Sessions are kept as token hashes in `sessions.json` beside `hq.db`.
+- **Sign out** in the sidebar ends the session. Setting a new password signs everyone out.
+- After 5 wrong passwords, sign-in is blocked for 30 s, then for twice as long after each further wrong one, up to 15 minutes.
+- The start-up link and `#token=` still work on the machine itself, but not through the public address.
+- A signed-in browser can use run mode, like the start-up link. Keep run mode off unless you trust everyone who can sign in.
+
+Never expose Agent HQ through a plain HTTP proxy.
 
 ## Web UI
 
@@ -104,6 +120,8 @@ For UI development, run `python -m hq --no-browser`, then `npm --prefix web run 
 | `--rotate-token` | replace the reusable token file with a fresh token |
 | `--no-browser` | print the bootstrap code URL instead of opening a browser |
 | `--once` | run one collection pass, print a health table, exit (exit 1 if any reader is `partial`) |
+| `--set-password` | set the sign-in password from a prompt, then exit |
+| `--public-url https://host` | also accept requests for this address, from an HTTPS proxy |
 
 Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the WSL Codex logs: `\\wsl.localhost\Debian\...` is only visible to normal Windows processes.
 
@@ -308,10 +326,10 @@ They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` he
 
 ## Privacy and safety
 
-- Binds `127.0.0.1` only; requests with any other `Host` get 403 (blocks DNS rebinding).
+- Binds `127.0.0.1` only; requests with any other `Host` get 403 (blocks DNS rebinding). With `--public-url`, that one address is also accepted, with its own `Origin`.
 - Read-only on every source: SQLite sources open with `mode=ro`; nothing is written to `usage.db` or any harness file.
 - Source paths are checked at load and before access against `secrets`, `auth.json`, `oauth_creds.json`, `credentials`, `google_accounts.json`, `.env` and `.credentials.json`, including resolved paths and normalized segments. Directory walks skip forbidden directories.
-- The browser stores the token in session storage. The launch URL contains a single-use code, not the token; a manually supplied `#token=` fragment is also supported.
+- The browser stores the token in local storage, so it stays signed in until **Sign out**. The launch URL contains a single-use code, not the token; a manually supplied `#token=` fragment is also supported.
 - Static files contain no injected token or collected data. Recommendations use a temporary snapshot of the read-only source database.
 - Previews are cut to 200 characters; full transcripts are not copied. Zylos chat text is not stored unless you turn on "Show Zylos message previews".
 - **Network:** the only outbound request is the optional DeepSeek balance check.

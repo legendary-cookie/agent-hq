@@ -1,3 +1,13 @@
+/** The sign-in lives in lasting storage so this browser stays signed in (the server ends a password
+ *  session after 30 days). A sign-in left in tab storage by an older version is moved across once. */
+export function keepSignIn(from: Storage, to: Storage) {
+  for (const key of ['hq-token', 'hq-run-key']) {
+    const value = from.getItem(key);
+    if (value && !to.getItem(key)) to.setItem(key, value);
+    from.removeItem(key);
+  }
+}
+
 export function bootstrapToken(
   loc: Location,
   storage: Storage,
