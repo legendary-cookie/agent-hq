@@ -12,6 +12,7 @@ import { Overview } from '../pages/Overview';
 import { Usage } from '../pages/Usage';
 import { Insights } from '../pages/Insights';
 import { Office } from '../pages/Office';
+import { HqOffice } from '../pages/HqOffice';
 import { Dashboard } from '../pages/Dashboard';
 import { Agents as Sessions } from '../pages/Agents';
 import { Limits } from '../pages/Limits';
@@ -28,6 +29,7 @@ const PAGES: Record<Route, () => JSX.Element> = {
   insights: Insights,
   sessions: Sessions,
   office: Office,
+  'office-3d': HqOffice,
   dashboard: Dashboard,
   limits: Limits,
   settings: Settings,

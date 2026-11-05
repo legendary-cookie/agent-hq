@@ -91,6 +91,15 @@ To show friendly names, add `config/fleet.json` (copy `config/fleet.json.example
 
 `brand` names the app in the sidebar and on the sign-in page. The keys under `agents` are host names from `hosts.json`. The Office uses the labels too.
 
+**3D office** shows the remote agents as figures in a small office building, drawn with three.js. A flat view is offered too, and used when the browser has no WebGL.
+- Rooms: Management, a Meeting room, a Lounge, Archives, Systems, a Staff room and one room per department. An agent's `group` in `fleet.json` picks its room: `Management`, `Department` (a room named after its `department` or label), or anything else for the Staff room. Staff can also sit with their `department`.
+- A working agent sits at its desk, with a plain description of its newest tool, such as "Reading files". Agents active in the last hour but not working now take a break in the Lounge, agents using a Drive tool go to the Archives, and an unreachable agent is marked as needing help.
+- Agent-to-agent talk is inferred: a send on one agent and a receive on another within a few seconds count as one exchange, and three exchanges in 10 minutes make a meeting. Zylos does not record who a message is for, so this is a best guess.
+- A feed lists the latest activity. Clicking an agent shows what it is doing and opens the same details as the Agents page.
+- Look, camera, figures, speech bubbles and names can be changed. Choices are saved in this browser and change nothing on the server.
+
+It reads `GET /api/office`, which is cached for 5 seconds. It needs the `claude_code` and `zylos_metrics` sources for the most detail.
+
 **Office** shows every agent from the last 24 hours as a small figure in an office:
 - One zone per harness, tinted in that harness's colour and labelled with its agent count, plus a break room.
 - Figures are coloured by harness. Their state shows as a ring and marker:
@@ -354,7 +363,7 @@ Run mode routes:
 
 They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` header from `/api/exchange`. Starting a run also needs a single-use confirm code from `prepare`, bound to that exact request.
 
-`GET /api/fleet?range=today|week|month` and `/api/insights?range=…` power the fleet pages; `/api/fleet` includes `series` and `/api/insights` includes `trend`, in the same cells as the activity grid. `GET /api/alerts` returns only the limit alerts. `GET /api/brand` needs no token and returns only `brand` from `fleet.json`.
+`GET /api/fleet?range=today|week|month` and `/api/insights?range=…` power the fleet pages; `/api/fleet` includes `series` and `/api/insights` includes `trend`, in the same cells as the activity grid. `GET /api/office` feeds the 3D office. `GET /api/alerts` returns only the limit alerts. `GET /api/brand` needs no token and returns only `brand` from `fleet.json`.
 
 `GET /api/overview`, `/api/sessions`, `/api/sessions/{id}`, `/api/kpis?range=today|week|month|custom&group_by=harness|provider|model|account`, `/api/limits`, `/api/recommend`, `/api/settings`, `/api/health`, `/api/stream` (Server-Sent Events). `POST /api/exchange` exchanges a valid bootstrap code for the token and requires a same-origin `Origin`. Other `/api/*` requests require the token in `X-HQ-Token`. `GET /api/stream` also accepts `?token=` for EventSource. POST and PUT require a same-origin `Origin`. `PUT /api/settings` validates settings and cannot change sources; edit `config/sources.json` and restart to change them.
 

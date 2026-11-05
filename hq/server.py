@@ -15,6 +15,7 @@ from .config import Config, SourceCfg, Account, Price, _path, save_config
 from .auth import Locked, Login
 from .fleet import fleet_overview, load_fleet, rolling_window
 from .insights import insights
+from .office import office_snapshot
 from .kpis import compute_kpis, resolve_range, session_value, _rows, series
 from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
@@ -54,6 +55,7 @@ def timeline_events(conn, start=None, end=None):
 
 FLEET_CACHE_S = 15
 INSIGHTS_CACHE_S = 60
+OFFICE_CACHE_S = 5
 
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None,public_url=None):
     run_key = secrets.token_urlsafe(32)
@@ -182,6 +184,13 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                             if cached and now-cached[0]<INSIGHTS_CACHE_S: return self.send_json(200,cached[1])
                             answer=insights(conn,rolling_window(name,now),now)
                             fleet_cache['insights:'+name]=(now,answer)
+                        return self.send_json(200,answer)
+                    if path=='/api/office':
+                        with fleet_lock:
+                            cached=fleet_cache.get('office')
+                            if cached and now-cached[0]<OFFICE_CACHE_S: return self.send_json(200,cached[1])
+                            answer=office_snapshot(conn,now,remote_collector.health() if remote_collector else {},load_fleet(config_dir))
+                            fleet_cache['office']=(now,answer)
                         return self.send_json(200,answer)
                     if path=='/api/alerts': return self.send_json(200,{'alerts':alerts(limit_cards(conn,cfg,now),cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))

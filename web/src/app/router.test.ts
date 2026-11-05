@@ -5,7 +5,7 @@ it('unknown route is overview', () => {
   expect(parseRoute('')).toBe('overview');
 });
 it('every page has an address', () => {
-  for (const route of ['agents', 'usage', 'insights', 'sessions', 'office', 'dashboard', 'limits', 'runs', 'goals', 'settings']) {
+  for (const route of ['agents', 'usage', 'insights', 'sessions', 'office', 'office-3d', 'dashboard', 'limits', 'runs', 'goals', 'settings']) {
     expect(parseRoute(`#/${route}`)).toBe(route);
   }
 });

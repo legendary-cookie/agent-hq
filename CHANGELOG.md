@@ -3,6 +3,7 @@
 ## Unreleased
 
 Added
+- **3D office** for remote agents (`#/office-3d`), drawn with three.js, with a flat view as fallback. Agents sit in rooms by their `fleet.json` group, show what they are doing in plain words, take breaks when idle and meet when they exchange messages. Look and camera are saved in the browser. New route: `GET /api/office`.
 - **Fleet pages: Overview, Agents, Usage and Insights.** Overview opens with a one-sentence status and a grid of every remote agent's activity over 24 hours, 7 days or 30 days. Agents is a filterable table with details per agent. Usage ranks agents and models, with projected 30 days, spending with no messages, top-tier share, cost per task, cache share and error rate. Insights shows reply times, problems, task times, top tools and busy hours. New routes: `GET /api/fleet`, `/api/insights`, `/api/alerts` and `/api/brand`.
 - **Graphs** on Overview, Usage and Insights, each with a "Graphs on/off" switch that this browser remembers per page.
 - **Optional `config/fleet.json`** sets the app name and each agent's display name, owner and group. The Office uses those names too.

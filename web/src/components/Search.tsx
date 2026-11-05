@@ -12,6 +12,7 @@ const PAGES: Item[] = [
   { label: 'Usage', note: 'Page', go: go('usage') },
   { label: 'Insights', note: 'Page', go: go('insights') },
   { label: 'Office', note: 'Page', go: go('office') },
+  { label: '3D office', note: 'Page', go: go('office-3d') },
   { label: 'Settings', note: 'Page', go: go('settings') },
   { label: 'Sessions', note: 'Every session', go: go('sessions') },
   { label: 'Dashboard', note: 'Detailed charts', go: go('dashboard') },

@@ -44,7 +44,7 @@ export function selectSidebarLimits(cards: LimitCard[], n = 4) {
     .slice(0, n);
 }
 
-const MAIN: [Route, string][] = [['overview', 'Overview'], ['agents', 'Agents'], ['usage', 'Usage'], ['insights', 'Insights'], ['office', 'Office']];
+const MAIN: [Route, string][] = [['overview', 'Overview'], ['agents', 'Agents'], ['usage', 'Usage'], ['insights', 'Insights'], ['office', 'Office'], ['office-3d', '3D office']];
 
 export function Sidebar({ route, navigate, onRun, onSearch }: { route: Route; navigate: (r: Route) => void; onRun?: () => void; onSearch?: () => void }) {
   const { data: options } = useApi<{ run_mode: boolean; run_key_ok?: boolean }>('/api/runs/options', { live: false });

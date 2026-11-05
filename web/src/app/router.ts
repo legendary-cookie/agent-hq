@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-export type Route = 'overview' | 'agents' | 'usage' | 'insights' | 'sessions' | 'office' | 'dashboard' | 'limits' | 'runs' | 'settings' | 'goals';
-const ROUTES: string[] = ['overview', 'agents', 'usage', 'insights', 'sessions', 'office', 'dashboard', 'limits', 'runs', 'settings', 'goals'];
+export type Route = 'overview' | 'agents' | 'usage' | 'insights' | 'sessions' | 'office' | 'office-3d' | 'dashboard' | 'limits' | 'runs' | 'settings' | 'goals';
+const ROUTES: string[] = ['overview', 'agents', 'usage', 'insights', 'sessions', 'office', 'office-3d', 'dashboard', 'limits', 'runs', 'settings', 'goals'];
 export function parseRoute(hash: string): Route {
   const route = hash.replace(/^#\/?/, '').split('?')[0];
   if (route === 'inbox') return 'office'; // The Office page shows the Inbox on this address.

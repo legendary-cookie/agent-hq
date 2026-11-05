@@ -160,7 +160,7 @@ class LoginServerTests(unittest.TestCase):
 
     def test_fleet_pages_open_with_a_session(self):
         token = self.sign_in()
-        for path in ('/api/fleet?range=today', '/api/fleet?range=month', '/api/insights?range=week', '/api/alerts'):
+        for path in ('/api/fleet?range=today', '/api/fleet?range=month', '/api/insights?range=week', '/api/office', '/api/alerts'):
             self.assertEqual(self.call('GET', path, token=token)[0], 200, path)
         self.assertEqual(self.call('GET', '/api/fleet?range=year', token=token)[0], 400)
 

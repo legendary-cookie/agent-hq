@@ -1,0 +1,81 @@
+/* A toy-like building fills the page, with one calm panel beside it for everything you can change. */
+main:has(> .hqo) { display: flex; flex-direction: column; overflow: hidden; }
+.hq-page.hqo { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: none; min-height: 0; margin: 0; padding: 0; }
+.hqo-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.hqo-head h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.02em; }
+.hqo-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.hqo-seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 8px; background: var(--hover); }
+.hqo-seg button { height: 27px; padding: 0 10px; border: 0; border-radius: 6px; background: none; color: var(--muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.hqo-seg button:hover { color: var(--text); }
+.hqo-seg button[aria-pressed="true"] { background: var(--bg); color: var(--text); font-weight: 500; box-shadow: 0 0 0 1px var(--line); }
+.hqo-body { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
+.hqo-stage { position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 420px; user-select: none; }
+.hqo-gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.hqo-gl.dragging { cursor: grabbing; }
+.hqo-gl.pointing { cursor: pointer; }
+.hqo-flat { display: block; }
+.hqo-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.hqo-gl[hidden], .hqo-flat[hidden], .hqo-overlay[hidden] { display: none; }
+.hqo-tag, .hqo-say, .hqo-room-tag { position: absolute; left: 0; top: 0; will-change: transform; white-space: nowrap; }
+.hqo-tag[hidden], .hqo-say[hidden], .hqo-room-tag[hidden] { display: none; }
+.hqo-tag { padding: 0 6px; border-radius: 7px; font-size: 11px; font-weight: 500; line-height: 15px; }
+.hqo-room-tag { padding: 1px 8px; border-radius: 8px; font-size: 12.5px; font-weight: 600; line-height: 19px; }
+.hqo-say { max-width: 230px; overflow: hidden; padding: 4px 10px; border-radius: 13px; font-size: 12.5px; font-weight: 500; line-height: 17px; text-overflow: ellipsis; box-shadow: 0 2px 10px rgba(30, 20, 50, .16); animation: hqo-pop .16s cubic-bezier(.2, 1.4, .4, 1); }
+@keyframes hqo-pop { from { opacity: 0; scale: .8; } }
+.hqo-hint { position: absolute; left: 14px; top: 12px; padding: 5px 10px; border-radius: 9px; background: rgba(255, 255, 255, .86); color: #4d4d55; font-size: 12px; pointer-events: none; }
+.hqo-empty { position: absolute; left: 50%; top: 50%; translate: -50% -50%; padding: 8px 14px; border-radius: 10px; background: var(--bg); color: var(--muted); font-size: 13px; box-shadow: 0 0 0 1px var(--line); }
+.hqo-toast { position: absolute; left: 50%; bottom: 14px; translate: -50% 0; padding: 7px 13px; border-radius: 10px; background: #141416; color: #fff; font-size: 13px; pointer-events: none; }
+.hqo-camera { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: rgba(255, 255, 255, .9); box-shadow: 0 1px 6px rgba(0, 0, 0, .12); }
+.hqo-camera button { height: 27px; padding: 0 9px; border: 0; border-radius: 7px; background: none; color: #141416; font: inherit; font-size: 12.5px; cursor: pointer; }
+.hqo-camera button:hover { background: rgba(0, 0, 0, .07); }
+.hqo-side { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); }
+.hqo-tabs { display: flex; gap: 2px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.hqo-tabs button { height: 28px; padding: 0 10px; border: 0; border-radius: 7px; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; }
+.hqo-tabs button[aria-selected="true"] { background: var(--hover); color: var(--text); font-weight: 500; }
+.hqo-tab { flex: 1; overflow-y: auto; padding: 14px 14px 26px; }
+.hqo .hqo-tab h2 { margin: 18px 0 8px; font-size: 13px; font-weight: 500; }
+.hqo .hqo-tab h2:first-child { margin-top: 0; }
+.hqo .hqo-tab h3 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.018em; }
+.hqo-tally { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); border-radius: 10px; }
+.hqo-tally div { padding: 9px 11px; border-left: 1px solid var(--line); }
+.hqo-tally div:nth-child(3n + 1) { border-left: 0; }
+.hqo-tally div:nth-child(n + 4) { border-top: 1px solid var(--line); }
+.hqo-tally b { display: block; font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.hqo-tally small { color: var(--muted); font-size: 11.5px; }
+.hqo-feed { margin: 0; padding: 0; list-style: none; }
+.hqo-feed li { display: flex; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.hqo-feed span { min-width: 0; overflow-wrap: anywhere; }
+.hqo-feed time { flex: none; color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.hqo-themes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.hqo-theme { padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: none; color: inherit; font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; }
+.hqo-theme:hover { border-color: var(--faint); }
+.hqo-theme[aria-pressed="true"] { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
+.hqo-swatches { display: flex; gap: 3px; margin-bottom: 5px; }
+.hqo-swatches i { width: 100%; height: 16px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .08); }
+.hqo-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; font-size: 13px; }
+.hqo-row > span:first-child { color: var(--muted); }
+.hqo-earlier { align-items: flex-start; padding: 4px 0; }
+.hqo-earlier > span:first-child { color: inherit; overflow-wrap: anywhere; }
+.hqo-earlier > span:last-child { flex: none; font-size: 12px; }
+.hqo-field { display: block; margin-bottom: 10px; font-size: 13px; }
+.hqo-field > span { display: block; margin-bottom: 4px; color: var(--muted); }
+.hqo-field input, .hqo-field select { width: 100%; height: 32px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: inherit; font: inherit; font-size: 13px; }
+.hqo-row input[type="color"] { width: 38px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 6px; background: none; cursor: pointer; }
+.hqo-note { margin: 10px 0 0; color: var(--muted); font-size: 12.5px; }
+.hqo-link { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; }
+.hqo-plain { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.hqo-plain:hover { background: var(--hover); }
+.hqo-wide { width: 100%; margin-top: 12px; }
+.hqo-status { display: flex; align-items: center; gap: 7px; margin-top: 6px; font-size: 13px; }
+.hqo-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; }
+.hqo-dot.on { background: var(--working); }
+.hqo-dot.bad { background: var(--error); }
+.hqo-now { margin: 12px 0; padding: 11px 0; border-block: 1px solid var(--line); font-size: 13px; overflow-wrap: anywhere; }
+.hqo-now small { display: block; margin-bottom: 2px; color: var(--muted); font-size: 12px; }
+@media (max-width: 960px) {
+  main:has(> .hqo) { overflow-y: auto; }
+  .hqo-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: 60vh auto; }
+  .hqo-side { border-left: 0; border-top: 1px solid var(--line); }
+  .hqo-tab { overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { .hqo-say { animation: none; } }
