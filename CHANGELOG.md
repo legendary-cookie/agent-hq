@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+Added
+- **Zylos message metrics for remote hosts.** A new `zylos_metrics` source in `hosts.json` counts messages on remote Zylos agents. The scanner sends only message metadata (id, direction, channel, failed, time), never the text, and no file is mirrored.
+
 ## 1.1.0 (2026-11-05): Goals, remote runs, office extras
 
 Added
