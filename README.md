@@ -16,6 +16,7 @@ Status:
 - **Milestone 5a:** run mode, Dispatch. Start one-shot agent runs, watch them live, stop them, and review the diff, then merge or discard it. Done.
 - **1.0:** Steer: follow-ups and an approvals inbox. Remote watching: agents on other machines, read over SSH. Done.
 - **1.1:** Goals (Orchestrate), remote runs, office extras, and Ask me for opencode. Done.
+- **Next:** see the [Roadmap](#roadmap).
 
 Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [Steer spec](docs/superpowers/specs/2026-11-03-agent-hq-steer-design.md), [remote watching spec](docs/superpowers/specs/2026-11-03-agent-hq-remote-watch-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [1.1 spec](docs/superpowers/specs/2026-11-04-agent-hq-1.1-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
@@ -330,6 +331,36 @@ They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` he
   - **Goals:** the planner's output is untrusted. Levels are capped and tools come from an allowlist. Only the agent's own top-level words count, never tool output, hooks or subagents. Start plan takes a confirm code bound to the exact plan.
   - **Remote runs:** every value sent is checked here and again on the host. Output, paths, diffs and session ids from the host are treated as untrusted.
 - Otherwise nothing leaves the machine.
+
+## Roadmap
+
+Planned, roughly in this order. Nothing here is built yet.
+
+**Remote machines**
+- **Tailscale and other VPNs as a first-class connection.** Today a machine on a VPN already works if `ssh <name>` works; this adds setup help and checks for it.
+- **An optional relay** for busy servers: a small Agent HQ helper on the server, streaming over an SSH tunnel, instead of one `ssh` call per pass.
+- **More tools for remote runs:** opencode and Antigravity, besides Codex and Claude Code.
+- **Remote runs on Windows hosts and in containers.** Today these can only be watched.
+- **Remote accounts in the pool:** a host's own logins and limits, used by **Pool: best** and the guard.
+
+**Running agents**
+- **More tools in run mode:** Kimi, DeepSeek Harness and Gemini CLI, each once it has been checked with real runs. Hermes, once its shell commands stay in the project folder.
+- **Ask me for Codex and Antigravity,** if their headless modes gain a way to pause for a permission.
+- **A sandbox for opencode at Edit,** so its commands are contained the way Codex's are.
+- **Scheduled runs and goals,** for example a nightly review.
+- **Approval rules you can save across runs,** opt-in and per project.
+
+**Polish and known issues**
+- A follow-up refused by the guard has to be confirmed again; it should keep your answer.
+- A process that a run leaves behind and that holds stderr open keeps one reader thread alive after the run (no hang).
+- Layouts below 1024 px wide: the Goals and Runs tables get cramped next to the detail panel.
+- A smaller web bundle, by loading the office skins on demand.
+
+**Project**
+- CI on GitHub Actions for Windows and Linux (Python and web tests), and tagged releases.
+- A contributing guide.
+
+**Not planned:** a hosted or multi-user version, reading limits by scraping provider web dashboards, and managing SSH keys or passwords. Agent HQ stays on `127.0.0.1` and uses your own logins.
 
 ## Tests
 
