@@ -11,3 +11,9 @@ export function replaySessions<T extends { id: string; status: string | null }>(
     return { ...s, status, last_event_at: event.ts, last_kind: event.kind, last_tool: event.tool };
   });
 }
+/** Where Replay opens: the first event inside the window, so it never starts on an empty office. */
+export function replayStart(events: TimelineEvent[], windowStart: number): number {
+  let first = Infinity;
+  for (const event of events) if (event.ts >= windowStart && event.ts < first) first = event.ts;
+  return Number.isFinite(first) ? first : windowStart;
+}

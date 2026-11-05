@@ -12,7 +12,7 @@ import { buildScene } from '../office/scene';
 import type { Scene } from '../office/scene';
 import type { Skin, SkinId } from '../office/skin';
 import { parseSkin, SKINS } from '../office/skins';
-import { replaySessions, replayTime } from '../office/timeline';
+import { replaySessions, replayStart, replayTime } from '../office/timeline';
 import type { TimelineEvent } from '../office/timeline';
 import { resetLayout } from '../office/layout-editor';
 import './office.css';
@@ -48,6 +48,8 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
   const [replayEnd] = useState(() => Date.now() / 1000);
   const { data: timeline } = useApi<{ events: TimelineEvent[]; truncated: boolean }>(replayAt === null ? null : `/api/timeline?from=${replayEnd - 86400}&to=${replayEnd}`, { live: false });
   useEffect(() => { const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setFollowing(null); }; window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key); }, []);
+  // Once the timeline arrives, move a just-opened replay to its first event.
+  useEffect(() => { if (timeline && replayAt === replayEnd - 86400) setReplayAt(replayStart(timeline.events, replayEnd - 86400)); }, [timeline]);
   useEffect(() => { if (!playing || replayAt === null) return; const timer = window.setInterval(() => setReplayAt(value => value === null ? null : replayTime(value, 0.1, speed, replayEnd)), 100); return () => window.clearInterval(timer); }, [playing, replayAt === null, speed, replayEnd]);
   const [tickerId, setTickerId] = useState<string | null>(null);
   const memory = useRef(new Map<string, string>());
@@ -179,7 +181,7 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
               skinFactory={skinFactory}
             />
           )}
-          {!scene.npcs.length && <div className="office-empty">No agents in the last 24 hours</div>}
+          {!scene.npcs.length && <div className="office-empty">{replayAt === null ? 'No agents in the last 24 hours' : 'No agents at this moment'}</div>}
           {showTicker && (
             <div className="office-ticker">
               {new Date(latest.ts * 1000).toLocaleTimeString(undefined, {
