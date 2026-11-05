@@ -359,7 +359,6 @@ Planned, roughly in this order. Nothing here is built yet.
 - A smaller web bundle, by loading the office skins on demand.
 
 **Project**
-- Tagged releases with notes from the changelog.
 - A contributing guide.
 
 **Not planned:** a hosted or multi-user version, reading limits by scraping provider web dashboards, and managing SSH keys or passwords. Agent HQ stays on `127.0.0.1` and uses your own logins.
