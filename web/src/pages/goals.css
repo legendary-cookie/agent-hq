@@ -1,5 +1,4 @@
 .goals-header, .goal-step-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.goal-column-heading::before { content: "Goal"; }
 .goals-page table { table-layout: fixed; }
 .goals-page th:first-child { width: 115px; }
 .goals-page th:nth-child(3), .goals-page th:nth-child(4) { width: 22%; }
@@ -21,6 +20,5 @@
   .goals-layout { flex-direction: column; }
   .goal-detail { width: 100%; }
   .goals-page { overflow-x: auto; }
-  .goal-column-heading::before { content: "Goal"; }
-.goals-page table { min-width: 500px; }
+  .goals-page table { min-width: 500px; }
 }

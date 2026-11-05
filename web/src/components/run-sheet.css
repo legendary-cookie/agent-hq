@@ -54,7 +54,7 @@
   border: 0;
   border-radius: 10px;
   background: var(--accent);
-  color: var(--surface);
+  color: #fff; /* the accent is blue in both themes; --surface is near-black in dark mode */
 }
 .run-sheet button:active, .run-popover button:active {
   transform: scale(0.97);

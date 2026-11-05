@@ -27,7 +27,7 @@ export function Goals() {
       <div className="goals-header"><h1>Goals</h1><button className="run-primary" onClick={() => setOpen(true)}>New goal</button></div>
       {error && <p role="alert">{error}</p>}
       {open && <GoalSheet projects={options.projects} tools={Object.keys(options.tools)} onClose={() => setOpen(false)} onCreate={data => void action(async () => { const prepared = await call<{nonce:string}>('/api/goals/prepare','POST',data); const g = await call<Goal>('/api/goals','POST',{...data,nonce:prepared.nonce}); setOpen(false); await select(g.id); })} />}
-      <table><thead><tr><th>Status</th><th aria-label="Goal" className="goal-column-heading" /><th>Project</th><th>Steps</th></tr></thead><tbody>
+      <table><thead><tr><th>Status</th><th>Goal</th><th>Project</th><th>Steps</th></tr></thead><tbody>
         {goals.map(g => {
           const goalSteps = Object.values(g.steps ?? {});
           const openGoal = () => { void select(g.id).catch(e => setError(e.message)); };
@@ -46,7 +46,7 @@ export function Goals() {
       <p><span className={`run-status status-run-${goal.status}`}>{goal.status}</span>{goal.stop_reason && ` · ${goal.stop_reason}`}</p>
       {goal.status === 'review' ? <PlanEditor steps={steps} onChange={setSteps} onStart={() => void action(async () => { await call(`${path}/plan`,'PUT',{steps}); const p = await call<{nonce:string}>(`${path}/start/prepare`,'POST',{}); await call(`${path}/start`,'POST',{nonce:p.nonce}); })} onSave={() => void action(() => call(`${path}/plan`,'PUT',{steps}))} /> : <>
         <h3>Steps</h3><ul className="goal-steps">{steps.map(s => <li key={s.id}>
-          <div className="goal-step-heading"><strong>{s.id} · {s.title} · {goal.steps?.[s.id]?.status}</strong><span className={`run-status status-run-${goal.steps?.[s.id]?.status}`}>{goal.steps?.[s.id]?.status}</span></div>
+          <div className="goal-step-heading"><strong>{s.id} · {s.title}</strong><span className={`run-status status-run-${goal.steps?.[s.id]?.status}`}>{goal.steps?.[s.id]?.status}</span></div>
           <p>{s.kind} · {s.tool || 'Auto'} · {s.level ?? '—'}</p>
           <div className="goal-step-actions">{goal.steps?.[s.id]?.run_id && <a href={`#/runs?run=${encodeURIComponent(goal.steps[s.id].run_id!)}`}>View run</a>}{goal.status === 'needs_you' && goal.steps?.[s.id]?.status === 'failed' && ['retry','skip'].map(a => <button key={a} onClick={() => void action(() => call(`${path}/steps/${s.id}/${a}`,'POST',{}))}>{a}</button>)}</div>
         </li>)}</ul>
