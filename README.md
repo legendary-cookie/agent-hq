@@ -1,5 +1,7 @@
 # Agent HQ
 
+[![CI](https://github.com/legendary-cookie/agent-hq/actions/workflows/ci.yml/badge.svg)](https://github.com/legendary-cookie/agent-hq/actions/workflows/ci.yml)
+
 A local dashboard for the AI coding agents you already use: Claude Code, Codex, opencode, Antigravity, Gemini CLI, Kimi, DeepSeek Harness and more.
 
 - **Watch:** it reads the logs those tools already write, on this PC and on your other machines over SSH, and stores them in one SQLite file. A web UI on `127.0.0.1` shows sessions, KPIs, value, usage limits, and an office where every agent is a small figure at a desk.
@@ -357,7 +359,7 @@ Planned, roughly in this order. Nothing here is built yet.
 - A smaller web bundle, by loading the office skins on demand.
 
 **Project**
-- CI on GitHub Actions for Windows and Linux (Python and web tests), and tagged releases.
+- Tagged releases with notes from the changelog.
 - A contributing guide.
 
 **Not planned:** a hosted or multi-user version, reading limits by scraping provider web dashboards, and managing SSH keys or passwords. Agent HQ stays on `127.0.0.1` and uses your own logins.
@@ -372,7 +374,7 @@ python -m unittest discover -s tests -t .
 npm --prefix web test
 ```
 
-The remote-run helper tests need a POSIX system, so they skip on Windows; run them on Linux or in WSL. The tests never start a real agent, never use `ssh`, and never call a network API.
+The remote-run helper tests need a POSIX system, so they skip on Windows; run them on Linux or in WSL. CI runs everything on every push and pull request: Python 3.11 and 3.14 on Linux, Python 3.14 on Windows, and the web tests and build. The tests never start a real agent, never use `ssh`, and never call a network API.
 
 ## License
 
