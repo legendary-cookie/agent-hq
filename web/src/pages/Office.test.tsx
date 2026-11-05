@@ -73,6 +73,11 @@ it('Office shows empty state', async () => {
   render(<Office skinFactory={factory} />);
   expect(await screen.findByText('No agents in the last 24 hours')).toBeInTheDocument();
 });
+it('replay empty state names the moment, not the last 24 hours', async () => {
+  render(<Office skinFactory={factory} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Replay' }));
+  expect(await screen.findByText('No agents at this moment')).toBeInTheDocument();
+});
 it('Office renders accessible npc list', async () => {
   sessions = [session];
   render(<Office skinFactory={factory} />);

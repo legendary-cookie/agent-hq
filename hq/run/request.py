@@ -18,9 +18,10 @@ class RunRequest:
     guard_mode: str
     profile: str | None
     time_limit_min: int
+    host: str | None = None
 
 
-def parse_request(data: dict, run_cfg: RunConfig, projects: list[Project], tools: dict[str, set[str]]) -> RunRequest:
+def parse_request(data: dict, run_cfg: RunConfig, projects: list[Project], tools: dict[str, set[str]], *, remote=False) -> RunRequest:
     tool = data.get('tool')
     if not isinstance(tool, str) or tool not in tools:
         raise ValueError('Unknown tool')
@@ -38,7 +39,7 @@ def parse_request(data: dict, run_cfg: RunConfig, projects: list[Project], tools
     if len(matches) != 1:
         raise ValueError('Project is not allowlisted')
     path = Path(matches[0].path)
-    if is_forbidden(path) or not path.is_dir() or path != path.resolve():
+    if not remote and (is_forbidden(path) or not path.is_dir() or path != path.resolve()):
         raise ValueError('Project path has changed or is invalid')
     guard = data.get('guard_mode', 'block')
     if guard not in ('warn', 'block', 'auto'):
@@ -51,7 +52,13 @@ def parse_request(data: dict, run_cfg: RunConfig, projects: list[Project], tools
         limit = run_cfg.default_time_limit_min
     if type(limit) is not int or not 1 <= limit <= min(240, run_cfg.max_time_limit_min):
         raise ValueError('Invalid time limit')
-    return RunRequest(tool, model, name, prompt, level, guard, profile, limit)
+    host = data.get('host')
+    if remote:
+        if not isinstance(host, str) or not host:
+            raise ValueError('Invalid host')
+    elif host is not None:
+        raise ValueError('Invalid host')
+    return RunRequest(tool, model, name, prompt, level, guard, profile, limit, host)
 
 
 def request_hash(req: RunRequest) -> str:

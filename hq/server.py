@@ -39,6 +39,16 @@ def validate_settings(data, sources, relabel=None):
         raise ValueError('invalid source settings')
     return Config(sources,[Account(**a) for a in accounts],{k:Price(**v) for k,v in prices.items()},alert,data['default_skin'],data['recommend_task_kind'], relabel or [], previews, deepseek_alert)
 
+def timeline_events(conn, start=None, end=None):
+    end = time.time() if end is None else float(end)
+    start = end - 86400 if start is None else float(start)
+    if not math.isfinite(start) or not math.isfinite(end) or end < start or end - start > 7 * 86400:
+        raise ValueError('invalid timeline range')
+    events = _rows(conn, """select e.session_id, e.ts, e.kind, e.tool, s.harness
+        from events e left join sessions s on s.id=e.session_id
+        where e.ts>=? and e.ts<=? order by e.ts, e.id limit 20001""", (start, end))
+    return {'events': events[:20000], 'truncated': len(events) > 20000}
+
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None):
     run_key = secrets.token_urlsafe(32)
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
@@ -102,6 +112,13 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     if target.is_relative_to(root) and target.is_file():
                         import mimetypes
                         data=target.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(target.name)[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(data))); self.send_header('Cache-Control','public, max-age=31536000, immutable' if target.parent.name=='assets' else 'no-cache'); self.end_headers(); self.wfile.write(data); return
+                if path == '/api/goals' or path.startswith('/api/goals/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'forbidden'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    parts = path.strip('/').split('/')
+                    if len(parts) == 2: return self.send_json(200, run_service.goal_list())
+                    if len(parts) == 3: return self.send_json(200, run_service.goal_get(unquote(parts[2])))
+                    if len(parts) == 4 and parts[3] == 'diff': return self.send_json(200, run_service.goal_diff(unquote(parts[2])))
                 if path == '/api/approvals':
                     # Reads need the token (checked above) and the run key; browsers send no Origin
                     # on same-origin GETs. Answers (POST) still require a same-origin Origin.
@@ -126,6 +143,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     result=recommend(param('task_kind',cfg.recommend_task_kind))
                     return self.send_json(200,result)
                 with closing(store.conn()) as conn:
+                    if path=='/api/timeline': return self.send_json(200, timeline_events(conn, param('from'), param('to')))
                     if path=='/api/delegations': return self.send_json(200,_rows(conn,'select ext_id as id, ts, provider, model, task_kind, outcome from delegations order by ts desc, id desc limit ?', (min(200,max(1,int(param('limit','20')))),)))
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
                     if path=='/api/series':
@@ -135,7 +153,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         name=param('range','today'); start=param('from'); end=param('to'); rng=resolve_range(name,datetime.now().astimezone(),start,end)
                         return self.send_json(200,compute_kpis(conn,cfg,rng,param('group_by'),now))
                     if path in ('/api/sessions','/api/overview'):
-                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn)
+                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id, r.goal_id as goal_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn)
                         for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now,imported=bool(s['imported']))
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
@@ -156,7 +174,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         counts={k:sum(s['status']==k for s in sessions) for k in ('working','active','waiting','idle','done','error')}; cards=limit_cards(conn,cfg,now); k=compute_kpis(conn,cfg,resolve_range('today',datetime.now().astimezone()),None,now)
                         return self.send_json(200,{'status_counts':counts,'best_now':recommend(cfg.recommend_task_kind),'value':k['value'],'tokens':k['tokens'],'alerts':alerts(cards,cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path.startswith('/api/sessions/'):
-                        sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select sessions.*, r.id as launched_run_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) where sessions.id=?',(sid,))
+                        sid=unquote(path[len('/api/sessions/'):]); rows=_rows(conn,'select sessions.*, r.id as launched_run_id, r.goal_id as goal_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) where sessions.id=?',(sid,))
                         if not rows: return self.send_json(404,{'error':'session not found'})
                         order=param('order','asc')
                         if order not in ('asc','desc'): raise ValueError('invalid order')
@@ -186,6 +204,20 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         valid=(isinstance(code,str) and self.server.bootstrap_code is not None and time.monotonic()<self.server.bootstrap_expires and hmac.compare_digest(code.encode(),self.server.bootstrap_code.encode()))
                         if valid: self.server.bootstrap_code=None
                     return self.send_json(200,{'token':token, 'run_key':run_key}) if valid else self.send_json(403,{'error':'forbidden'})
+                if path == '/api/goals' or path.startswith('/api/goals/'):
+                    if not self.run_key_ok(): return self.send_json(403, {'error':'forbidden'})
+                    if run_service is None: raise RunError(403, 'run mode is off')
+                    parts = path.strip('/').split('/')
+                    if method == 'POST' and path == '/api/goals/prepare': return self.send_json(200, run_service.goal_prepare(data))
+                    if method == 'POST' and path == '/api/goals': return self.send_json(201, run_service.goal_create(data))
+                    if len(parts) >= 3:
+                        gid = unquote(parts[2])
+                        if method == 'PUT' and len(parts) == 4 and parts[3] == 'plan': return self.send_json(200, run_service.goal_plan(gid, data))
+                        if method == 'POST' and parts[3:] == ['start', 'prepare']: return self.send_json(200, run_service.goal_start_prepare(gid))
+                        if method == 'POST' and len(parts) == 4 and parts[3] == 'start': return self.send_json(200, run_service.goal_start(gid, data))
+                        if method == 'POST' and len(parts) == 6 and parts[3] == 'steps' and parts[5] in ('retry', 'skip'): return self.send_json(200, run_service.goal_step(gid, unquote(parts[4]), parts[5]))
+                        if method == 'POST' and len(parts) == 4 and parts[3] in ('stop', 'discard'): return self.send_json(200, getattr(run_service, 'goal_' + parts[3])(gid))
+                        if method == 'POST' and len(parts) == 4 and parts[3] == 'merge': return self.send_json(200, run_service.goal_merge(gid, data))
                 if path.startswith('/api/approvals/'):
                     if not self.run_key_ok(): return self.send_json(403, {'error':'forbidden'})
                     if run_service is None: raise RunError(403, 'run mode is off')

@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.1.0 (2026-11-05): Goals, remote runs, office extras
+
+Added
+- **Goals (Orchestrate).** Give a goal. A read-only planner run writes a plan; you review and edit it, then start it.
+  - Steps run as normal runs in order of their dependencies, each in its own worktree from the goal branch `hq/goal-<id>`. Each finished step is merged into the goal branch inside Agent HQ's own worktree.
+  - You merge the whole goal once, at the end, after seeing its diff.
+  - The plan is untrusted. Levels are capped by kind and by the goal (never Full auto), tools come from an allowlist, and Start plan takes a confirm code bound to the exact plan.
+  - A failed step or a merge conflict waits for you, with retry, skip and stop.
+- **Remote runs** on Linux and macOS hosts: Codex and Claude Code, over the same SSH as remote watching, with a fixed helper script, a per-host project list, stop, diff, merge and discard.
+- **Office extras:** thought bubbles, emotes, team zones for goals, follow camera, a 24-hour replay (`GET /api/timeline`), and a layout editor saved in your browser.
+- **opencode Ask me and live follow-ups** over ACP (`opencode acp`), and **Antigravity live follow-ups**.
+- A first start creates `config/accounts.json` from `accounts.example.json`. Your own `accounts.json` is no longer tracked by git.
+- MIT `LICENSE`.
+
+Verified on this PC (2026-11-04/05)
+- **A real goal:** Claude Code planned three steps for a small Python project, and Codex carried them out: add `mul()`, write `test_calc.py`, review read-only. The goal diff held exactly those changes. After the merge the checkout was clean and `python test_calc.py` passed.
+- **A goal across a restart:** the goal showed as stopped, "interrupted by restart".
+- **opencode Ask me:** an allowed write created `oc.txt`, a denied `rm calc.py` did not run, and the checkout stayed clean.
+- **Antigravity live follow-up:** one process answered both turns, in order.
+- **Remote Codex edit run** on WSL Debian over SSH: the session id was prefixed with the host, the diff was right, and the merge landed in the host's checkout, which stayed clean.
+- **Tests:** 582 Python tests pass on Windows (19 skipped: POSIX-only remote tests, which pass in WSL) and 158 web tests pass.
+- **Independent security review** (Claude Opus, read-only; Codex wrote most of 1.1): no high-severity findings; two medium and four low, all fixed and re-checked.
+
+Fixed during the real checks
+- **Planner stuck:** a live Claude planner went idle and kept the goal in planning. Goal runs now end after their turn.
+- **Plan not found:** the planner's plan sat inside stream JSON. Plans are now read only from the agent's own words.
+- **opencode `"model": null`:** opencode refused to start without a chosen model. The model is now left out unless you pick one.
+- **opencode error replies:** an API error left the run running until its time limit. The run now fails, and the agent is ended if it ignores that.
+- **opencode Inbox:** edit requests showed no file, and commands skipped the command rules. Edits now show their path, and commands go through the same rules as Claude Code's.
+- **Replay:** it opened on an empty moment, before the first event.
+- **Goals page:** now styled like Runs. Primary buttons are readable in dark mode.
+
+Security fixes from the review
+- An opencode edit touching several files was checked by its first path only. Every file now shows, and such edits always ask.
+- opencode's default permission is allow-all, so Ask me now asks for everything except local reads (`.env` reads still ask).
+- Remote runs get no allow-for-this-run rules, because remote paths can't be checked locally.
+- Local profile folders are no longer sent to remote hosts.
+- Claude subagent messages can no longer supply a goal plan.
+- A code fence inside a step prompt no longer breaks a goal at start.
+
 ## 1.0.0 (2026-11-04): Steer and remote watching
 
 Added

@@ -7,7 +7,7 @@ from collections import deque
 from dataclasses import replace
 from pathlib import Path
 
-from hq.run import env, followup, proc, workspace, winexe
+from hq.run import env, followup, proc, remote_glue, workspace, winexe
 from hq.run.stream import parse_line, valid_session_id
 from hq.run.approvals import AnsweredError
 from hq.run.link import find_session
@@ -32,6 +32,7 @@ class Runner:
                  approvals=None, idle_close_s=1800.0, profiles=()):
         self.store, self.run_cfg = store, run_cfg
         self.approvals, self.idle_close_s = approvals, idle_close_s
+        self.fail_grace_s = 5.0  # after an agent error reply, how long to wait for it to exit
         self.worktrees_root = Path(worktrees_root)
         workspace.configure(self.worktrees_root.parent)
         self.launchers = {name: copy.copy(launcher) for name, launcher in launchers.items()}
@@ -63,19 +64,26 @@ class Runner:
             self.store.update_run(rid, status=status, **fields)
         self.on_event({'type': 'run', 'id': rid, 'status': status})
 
-    def start(self, req, profile):
-        if req.project not in self.projects:
-            raise ValueError('Project is not allowlisted')
-        project = self.projects[req.project]
-        if project != project.resolve() or not project.is_dir():
-            raise ValueError('Project path has changed or is invalid')
+    def start(self, req, profile, *, base_ref=None, goal_id=None, step_id=None):
+        if req.host:
+            remote = self.remote_glue.remote(req.host)
+            match = next((p for p in remote.host.projects if p['name'] == req.project), None)
+            if match is None: raise ValueError('Project is not allowlisted')
+            tools = self.remote_glue.tools(remote)
+            if req.tool not in tools or req.level not in tools[req.tool]:
+                raise ValueError('Level is not offered for this tool')
+            project = Path(match['path'])
+        else:
+            if req.project not in self.projects: raise ValueError('Project is not allowlisted')
+            project = self.projects[req.project]
+            if project != project.resolve() or not project.is_dir(): raise ValueError('Project path has changed or is invalid')
         launcher = self.launchers[req.tool]
         rid = 'run_' + secrets.token_urlsafe(9)
         now = self.clock()
         rec = dict(id=rid, tool=req.tool, model=req.model, account=profile.id if profile else None,
                    project=req.project, workdir=str(project), level=req.level, guard_mode=req.guard_mode,
                    status='starting', prompt_preview=req.prompt[:200], started_at=now,
-                   time_limit_s=req.time_limit_min * self.minute_s)
+                   time_limit_s=req.time_limit_min * self.minute_s, goal_id=goal_id, step_id=step_id, host=req.host)
         with self._lock:
             if self._shutting_down or sum(not r['finished'] for r in self._runs.values()) >= self.run_cfg.max_concurrent:
                 raise Busy('Maximum concurrent runs reached')
@@ -86,7 +94,7 @@ class Runner:
                          write_lock=threading.Lock(), idle_timer=None, raw_session_id=None,
                          req=copy.deepcopy(req), profile=copy.deepcopy(profile), launcher=launcher,
                          pass_names=list(self.run_cfg.pass_env.get(req.tool, [])),
-                         env_base=dict(os.environ), turns=1)
+                         env_base=dict(os.environ), turns=1, base_ref=base_ref)
             self._runs[rid] = state
             thread = threading.Thread(target=self._run, args=(rid, state['req'], state['profile'], launcher, project), daemon=True)
             state['thread'] = thread
@@ -108,27 +116,45 @@ class Runner:
             state = self._runs[rid]
             if resume_text is None:
                 workdir, branch, base_commit, git_dir = project, None, None, None
-                if req.level != 'read_only':
-                    workdir, branch, base_commit, git_dir = workspace.create(project, rid, self.worktrees_root)
+                if req.host:
+                    workdir = Path('{workdir}')
+                elif req.level != 'read_only' or state['base_ref'] is not None:
+                    workdir, branch, base_commit, git_dir = workspace.create_from(project, rid, self.worktrees_root, state['base_ref'])
                 state['workdir'] = workdir
                 self.store.update_run(rid, workdir=str(workdir), branch=branch, base_commit=base_commit, git_dir=git_dir)
-                self._start_linker(rid, launcher, workdir, self.store.get_run(rid)['started_at'])
+                if not req.host: self._start_linker(rid, launcher, workdir, self.store.get_run(rid)['started_at'])
+            workdir = Path('{workdir}') if req.host else state['workdir']
+            make_driver = getattr(launcher, 'make_driver', None)
+            driver = make_driver(replace(req, project=str(workdir)),
+                                 state['raw_session_id'] if resume_text is not None else None) if make_driver else None
+            state['driver'] = driver
+            if driver:
                 launch = launcher.build(req, profile, workdir, rid, state['env_base'], state['pass_names'])
+                launch = replace(launch, stdin_text=''.join(driver.start(resume_text if resume_text is not None else req.prompt)))
+            elif resume_text is None:
+                launch = launcher.build(req, profile, workdir, rid, state['env_base'], state['pass_names'])
+                if getattr(launcher, 'steer_mode', None) == 'live':
+                    launch = replace(launch, stdin_text=launcher.first_input(req.prompt))
             else:
-                launch = followup.resume_launch(launcher, req, profile, state['workdir'], rid,
+                launch = followup.resume_launch(launcher, req, profile, workdir, rid,
                                                 state['raw_session_id'], resume_text,
                                                 state['env_base'], state['pass_names'])
-            if getattr(launcher, 'steer_mode', None) == 'live' and resume_text is None:
-                launch = replace(launch, stdin_text=launcher.first_input(req.prompt))
-            executable = self.executables.get(req.tool)
-            if executable is None: raise FileNotFoundError('Executable unavailable')
-            argv = winexe.final_argv(launch, executable)
-            if launch.argv[0] == 'wsl': argv[0] = str(executable)
-            launch = replace(launch, argv=argv)
-            with self._lock:
-                stopped = self._runs[rid]['stop']
-            if stopped: return
-            child = proc.spawn(launch, lambda: self._stopped(rid))
+            if req.host:
+                remote = self.remote_glue.remote(req.host)
+                extra = remote_glue.remote_env(launch.env)
+                child = remote.start(rid, req.project, launch.argv, extra, launch.stdin_text, req.level, stdin_eof=req.tool == 'codex', resume=resume_text is not None)
+                state['workdir'] = Path(child.workdir)
+                self.store.update_run(rid, workdir=child.workdir, branch='hq/run-' + rid)
+            else:
+                executable = self.executables.get(req.tool)
+                if executable is None: raise FileNotFoundError('Executable unavailable')
+                argv = winexe.final_argv(launch, executable)
+                if launch.argv[0] == 'wsl': argv[0] = str(executable)
+                launch = replace(launch, argv=argv)
+                with self._lock:
+                    stopped = self._runs[rid]['stop']
+                if stopped: return
+                child = proc.spawn(launch, lambda: self._stopped(rid))
             def read_stderr():
                 try:
                     while True:
@@ -163,12 +189,12 @@ class Runner:
                 else:
                     self.on_event({'type': 'run', 'id': rid, 'status': 'running'})
                 timer = self._start_limit(rid, req)
-                if launch.stdin_text is not None:
+                if launch.stdin_text is not None and not req.host:
                     try:
                         with self._runs[rid]['write_lock']:
                             child.stdin.write(launch.stdin_text)
                             child.stdin.flush()
-                            if getattr(launcher, 'steer_mode', None) != 'live':
+                            if not req.host and getattr(launcher, 'steer_mode', None) != 'live':
                                 child.stdin.close()
                     except (BrokenPipeError, OSError): pass
             while True:
@@ -181,33 +207,43 @@ class Runner:
                     line = line[:65536 - len(' …[truncated]')] + ' …[truncated]'
                 line = line.rstrip('\r\n')
                 with self._lock: self._runs[rid]['output'].append(line)
-                event = parse_line(req.tool, line, launcher)
-                if event is None or event.kind == 'warning':
-                    with self._lock: self._runs[rid]['warnings'] += 1
-                    continue
-                if event.session_id:
-                    with self._lock:
-                        raw_id = event.session_id[len(launcher.harness) + 1:]
-                        previous = self._runs[rid]['raw_session_id']
-                        if previous and previous != raw_id:
-                            self._runs[rid]['warnings'] += 1
-                        elif not previous:
-                            self._runs[rid]['raw_session_id'] = raw_id
-                        if not self._runs[rid].get('session_id'):
-                            self._runs[rid]['session_id'] = event.session_id
-                            self._runs[rid]['link_stop'].set()
-                            self.store.update_run(rid, session_id=event.session_id)
-                if event.kind in ('permission', 'control_unknown') and not launcher.can_ask:
-                    with self._lock: self._runs[rid]['warnings'] += 1
-                elif event.kind == 'permission' and self.approvals:
-                    self._permission(rid, launcher, event.request)
-                elif event.kind == 'control_unknown':
-                    with self._lock: self._runs[rid]['warnings'] += 1
-                    self._reply(rid, launcher, event.request, 'deny', 'Unknown control request')
-                elif event.kind == 'turn_end' and getattr(launcher, 'steer_mode', None) == 'live':
-                    self._idle(rid)
-                if event.rate_limited:
-                    self._rate_limit(rid, req, profile, launcher)
+                if driver:
+                    events, replies = driver.on_line(line)
+                    for reply in replies: self._write(rid, reply)
+                    events = [replace(event, session_id=f'{launcher.harness}:{event.session_id}')
+                              if event.session_id else event for event in events]
+                else:
+                    events = [parse_line(req.tool, line, launcher)]
+                for event in events:
+                    if event is None or event.kind == 'warning':
+                        with self._lock: self._runs[rid]['warnings'] += 1
+                        continue
+                    if event.session_id:
+                        with self._lock:
+                            raw_id = event.session_id[len(launcher.harness) + 1:]
+                            previous = self._runs[rid]['raw_session_id']
+                            if previous and previous != raw_id:
+                                self._runs[rid]['warnings'] += 1
+                            elif not previous:
+                                self._runs[rid]['raw_session_id'] = raw_id
+                            if not self._runs[rid].get('session_id'):
+                                session_id = f'{req.host}/{event.session_id}' if req.host else event.session_id
+                                self._runs[rid]['session_id'] = session_id
+                                self._runs[rid]['link_stop'].set()
+                                self.store.update_run(rid, session_id=session_id)
+                    if event.kind in ('permission', 'control_unknown') and not launcher.can_ask:
+                        with self._lock: self._runs[rid]['warnings'] += 1
+                    elif event.kind == 'permission' and self.approvals:
+                        self._permission(rid, launcher, event.request)
+                    elif event.kind == 'control_unknown':
+                        with self._lock: self._runs[rid]['warnings'] += 1
+                        self._reply(rid, launcher, event.request, 'deny', 'Unknown control request')
+                    elif event.kind == 'turn_end' and getattr(launcher, 'steer_mode', None) == 'live':
+                        self._idle(rid)
+                    elif event.kind == 'failed':
+                        self._agent_failed(rid, event.text)
+                    if event.rate_limited:
+                        self._rate_limit(rid, req, profile, launcher)
             exit_code = child.wait()
             if stderr_thread: stderr_thread.join(timeout=5)
         except Exception as exc:
@@ -227,7 +263,7 @@ class Runner:
                 except (BrokenPipeError, OSError): pass
             with self._lock:
                 state = self._runs[rid]
-                status = state['stop'] or ('rate_limited' if state.get('limited') else ('done' if exit_code == 0 else 'failed'))
+                status = state['stop'] or ('rate_limited' if state.get('limited') else ('failed' if state.get('agent_failed') else 'done' if exit_code == 0 else ('interrupted' if req.host and exit_code == 255 else 'failed')))
             outcome = {'done': 'ok', 'failed': 'error', 'timed_out': 'error', 'interrupted': 'error',
                        'rate_limited': 'rate_limited', 'stopped': 'cancelled'}[status]
             try:
@@ -253,8 +289,13 @@ class Runner:
                 pass
 
     def _reply(self, rid, launcher, request, decision, note):
-        self._write(rid, launcher.control_reply(request.get('request_id'), decision, note,
-                                                 request.get('input') if isinstance(request.get('input'), dict) else {}))
+        driver = self._runs[rid].get('driver')
+        if driver:
+            for line in driver.answer(request.get('request_id'), decision, note):
+                self._write(rid, line)
+        else:
+            self._write(rid, launcher.control_reply(request.get('request_id'), decision, note,
+                                                     request.get('input') if isinstance(request.get('input'), dict) else {}))
         if self.approvals and not self.approvals.has_waiting(rid):
             self._status(rid, 'running')
 
@@ -295,11 +336,35 @@ class Runner:
             if state['stop']: return
             if state.get('limit_timer'): state['limit_timer'].cancel()
             if state['idle_timer']: state['idle_timer'].cancel()
+            if (self.store.get_run(rid) or {}).get('goal_id'):
+                # Goal runs (planner and steps) are one-shot: end after their turn so the
+                # scheduler sees them finish, instead of idling until the idle close.
+                state['status'] = 'closing'
+                with state['write_lock']:
+                    try: state['child'].stdin.close()
+                    except (OSError, ValueError, AttributeError): pass
+                return
             timer = threading.Timer(self.idle_close_s, self._close_idle, args=(rid,))
             timer.daemon = True
             state['idle_timer'] = timer
             self._status(rid, 'idle')
             timer.start()
+
+    def _agent_failed(self, rid, message):
+        """The agent answered with an error but stays alive (opencode ACP): fail the run and end it."""
+        with self._lock:
+            state = self._runs[rid]
+            state['output'].append(f'[agent-hq] agent reported an error: {message}')
+            if state['stop']: return
+            state['agent_failed'] = True
+            child = state['child']
+            with state['write_lock']:
+                try: child.stdin.close()
+                except (OSError, ValueError, AttributeError): pass
+        # If the agent ignores the closed stdin, end it after a short grace period.
+        timer = threading.Timer(self.fail_grace_s, lambda: child.alive() and child.kill_tree())
+        timer.daemon = True
+        timer.start()
 
     def _close_idle(self, rid):
         with self._lock:
@@ -326,7 +391,9 @@ class Runner:
                 self.store.update_run(rid, status='running', turns=state['turns'])
                 state['output'].append(f'[agent-hq] turn {state["turns"]}')
                 self._start_limit(rid, state['req'])
-                self._write(rid, launcher.user_message(text))
+                driver = state.get('driver')
+                lines = driver.follow_up(text) if driver else [launcher.user_message(text)]
+                for line in lines: self._write(rid, line)
                 self.on_event({'type': 'run', 'id': rid, 'status': 'running'})
                 return
             if mode not in ('live', 'resume') or not state['finished'] or state['status'] not in _RESUMABLE:
@@ -334,6 +401,7 @@ class Runner:
             if not state['raw_session_id']:
                 session_id = state.get('session_id') or self.store.get_run(rid).get('session_id')
                 prefix = f'{launcher.harness}:'
+                if session_id and state['req'].host: session_id = session_id.removeprefix(state['req'].host + '/')
                 state['raw_session_id'] = session_id.removeprefix(prefix) if session_id else None
             if not state['raw_session_id']:
                 raise NotIdle('No session is available to resume')
@@ -349,7 +417,7 @@ class Runner:
             state['output'].append(f'[agent-hq] turn {state["turns"]}')
             self.store.update_run(rid, status='starting', turns=state['turns'], ended_at=None, exit_code=None)
             thread = threading.Thread(target=self._run, args=(rid, state['req'], state['profile'], launcher,
-                                                              self.projects[state['req'].project], text), daemon=True)
+                                                              (Path('{workdir}') if state['req'].host else self.projects[state['req'].project]), text), daemon=True)
             state['thread'] = thread
             thread.start()
         self.on_event({'type': 'run', 'id': rid, 'status': 'starting'})
@@ -361,19 +429,25 @@ class Runner:
         launcher = self.launchers.get(row['tool'])
         if not launcher or getattr(launcher, 'steer_mode', None) not in ('live', 'resume') or row['status'] not in _RESUMABLE:
             raise NotIdle('The run cannot be resumed')
-        project = self.projects.get(row['project'])
-        if project is None or project != project.resolve() or not project.is_dir():
-            raise ValueError('Project is no longer allowlisted or available')
+        if row.get('host'):
+            remote = self.remote_glue.remote(row['host'])
+            if row['project'] not in {p['name'] for p in remote.host.projects}:
+                raise ValueError('Project is no longer allowlisted')
+        else:
+            project = self.projects.get(row['project'])
+            if project is None or project != project.resolve() or not project.is_dir():
+                raise ValueError('Project is no longer allowlisted or available')
         workdir = Path(row['workdir'])
-        if not workdir.is_dir():
+        if not row.get('host') and not workdir.is_dir():
             raise ValueError('Run workdir no longer exists')
         profile = next((p for p in self.profiles if p.id == row['account'] and p.tool == row['tool']), None)
         if row['account'] and profile is None:
             raise ValueError('Run profile is no longer available')
         req = RunRequest(row['tool'], row['model'], row['project'], row['prompt_preview'] or '',
-                         row['level'], row['guard_mode'], row['account'], int(row['time_limit_s'] // 60) or 1)
+                         row['level'], row['guard_mode'], row['account'], int(row['time_limit_s'] // 60) or 1, row.get('host'))
         session_id = row['session_id']
-        raw_id = session_id.removeprefix(f'{launcher.harness}:') if session_id else None
+        raw_id = session_id.removeprefix(row['host'] + '/') if session_id and row.get('host') else session_id
+        raw_id = raw_id.removeprefix(f'{launcher.harness}:') if raw_id else None
         if raw_id is not None and not valid_session_id(raw_id):
             raise ValueError('Invalid session id')
         state = dict(status=row['status'], stop=None, child=None, finished=True,

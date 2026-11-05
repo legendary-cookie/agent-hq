@@ -3,3 +3,9 @@ node_modules/
 web/dist/
 *.db
 __pycache__/
+
+# Personal: plans, prices and account rules. A fresh clone starts from accounts.example.json.
+config/accounts.json
+
+# Local Claude Code preview config (machine-specific paths)
+.claude/

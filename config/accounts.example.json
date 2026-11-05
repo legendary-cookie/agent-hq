@@ -1,0 +1,61 @@
+[
+  {
+    "id": "claude",
+    "provider": "anthropic",
+    "label": "Claude",
+    "plan": "",
+    "monthly_price_usd": null,
+    "billing_day": 1,
+    "match": [
+      {
+        "harness": "claude_code"
+      }
+    ],
+    "cap_tokens": {}
+  },
+  {
+    "id": "chatgpt",
+    "provider": "openai",
+    "label": "ChatGPT",
+    "plan": "",
+    "monthly_price_usd": null,
+    "billing_day": 1,
+    "match": [
+      {
+        "harness": "codex"
+      }
+    ],
+    "cap_tokens": {}
+  },
+  {
+    "id": "google",
+    "provider": "google",
+    "label": "Google (Antigravity / Gemini)",
+    "plan": "",
+    "monthly_price_usd": null,
+    "billing_day": 1,
+    "match": [
+      {
+        "harness": "antigravity"
+      },
+      {
+        "harness": "gemini_cli"
+      }
+    ],
+    "cap_tokens": {}
+  },
+  {
+    "id": "opencode",
+    "provider": "opencode",
+    "label": "opencode",
+    "plan": "",
+    "monthly_price_usd": null,
+    "billing_day": 1,
+    "match": [
+      {
+        "harness": "opencode"
+      }
+    ],
+    "cap_tokens": {}
+  }
+]

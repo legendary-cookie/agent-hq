@@ -57,6 +57,14 @@ class ApprovalTests(unittest.TestCase):
         self.assertIsNone(self.open(req='2', data={'command': 'grep -rn bar src'}))
         self.assertEqual(self.replies, [('allow', None), ('allow', None)])
 
+    def test_remote_run_never_gets_run_wide_rules(self):
+        # Security review 1.1: remote paths were checked with local Windows path rules, which
+        # can't see remote symlinks. Host runs always ask.
+        self.store.insert_run(dict(id='remote', tool='claude', project='p', workdir='/root/.agent-hq/worktrees/remote',
+            level='ask', guard_mode='worktree', status='running', time_limit_s=60, host='debian-test'))
+        a = self.open(rid='remote', data={'command': 'grep -n foo a.txt'}); self.book.answer(a.id, 'allow_run', None)
+        self.assertIsNotNone(self.open(rid='remote', req='2', data={'command': 'grep -n foo a.txt'}))
+
     def test_rule_does_not_cross_runs(self):
         a = self.open(); self.book.answer(a.id, 'allow_run', None)
         self.assertIsNotNone(self.open(rid='other', req='2'))

@@ -38,3 +38,23 @@ class ConfigTests(unittest.TestCase):
         self.cfg.prices = {'model': Price(3, 15, .3, 3.75)}
         save_config(self.path, self.cfg)
         self.assertEqual(load_config(self.path), self.cfg)
+
+
+class FirstRunAccountsTests(unittest.TestCase):
+    """A fresh clone has no config/accounts.json (it is personal and gitignored)."""
+    def test_missing_accounts_json_is_created_from_example(self):
+        import shutil, tempfile
+        from hq.config import load_config
+        src = Path(__file__).resolve().parent.parent / 'config'
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg_dir = Path(tmp)
+            for name in ('sources.json', 'prices.json', 'accounts.example.json'):
+                shutil.copy(src / name, cfg_dir / name)
+            cfg = load_config(cfg_dir)
+            self.assertTrue((cfg_dir / 'accounts.json').exists())
+            self.assertTrue(cfg.accounts)
+            self.assertTrue(all(a.monthly_price_usd is None for a in cfg.accounts))
+
+    def test_example_has_no_personal_plans(self):
+        example = json.loads((Path(__file__).resolve().parent.parent / 'config' / 'accounts.example.json').read_text())
+        self.assertNotIn('ninerouter', {a['id'] for a in example})

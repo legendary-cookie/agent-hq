@@ -63,7 +63,8 @@ def summarize(tool_name, tool_input):
         value = tool_input.get('file_path', '')
     else:
         value = f"{tool_name}: {next(iter(tool_input.values()), '')}"
-    return str(value)[:200]
+    # A multi-file edit shows its whole file list, so nothing hides past the cut.
+    return str(value)[:4000 if name == 'edit files' else 200]
 
 
 def never_auto(tool_name, tool_input):
@@ -128,7 +129,8 @@ class ApprovalBook:
             run = self.store.get_run(run_id)
             if run is None:
                 raise KeyError(run_id)
-            key = rule_key(tool_name, tool_input, Path(run['workdir']))
+            # Remote paths can't be checked with local path rules (remote symlinks), so host runs always ask.
+            key = None if run.get('host') else rule_key(tool_name, tool_input, Path(run['workdir']))
             if key is not None and key in self._rules.get(run_id, set()):
                 self._seen.add(aid)
                 reply('allow', None)

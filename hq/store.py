@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS runs (
   session_id TEXT, prompt_preview TEXT, started_at REAL, ended_at REAL,
   exit_code INTEGER, time_limit_s INTEGER NOT NULL, merge_state TEXT
 );
+CREATE TABLE IF NOT EXISTS goals (
+  id TEXT PRIMARY KEY, project TEXT NOT NULL, text_preview TEXT, max_level TEXT NOT NULL,
+  status TEXT NOT NULL, branch TEXT, base_commit TEXT, plan_json TEXT,
+  step_limit INTEGER NOT NULL, time_limit_s INTEGER NOT NULL, created_at REAL NOT NULL,
+  ended_at REAL
+);
 CREATE TABLE IF NOT EXISTS approvals (
   id TEXT PRIMARY KEY, run_id TEXT NOT NULL, tool_name TEXT NOT NULL,
   summary TEXT NOT NULL, requested_at REAL NOT NULL, answered_at REAL, state TEXT NOT NULL
@@ -40,6 +46,10 @@ class Store:
         self._writer = sqlite3.connect(path, check_same_thread=False)
         self._writer.execute('PRAGMA journal_mode=WAL')
         self._writer.executescript(_SCHEMA)
+        goal_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(goals)')}
+        if 'stop_reason' not in goal_columns:
+            self._writer.execute('ALTER TABLE goals ADD COLUMN stop_reason TEXT')
+            self._writer.commit()
         run_columns = {row[1] for row in self._writer.execute('PRAGMA table_info(runs)')}
         if 'turns' not in run_columns:
             self._writer.execute('ALTER TABLE runs ADD COLUMN turns INTEGER NOT NULL DEFAULT 1')
@@ -50,6 +60,10 @@ class Store:
         if 'git_dir' not in run_columns:
             self._writer.execute('ALTER TABLE runs ADD COLUMN git_dir TEXT')
             self._writer.commit()
+        for name in ('goal_id', 'step_id', 'host'):
+            if name not in run_columns:
+                self._writer.execute(f'ALTER TABLE runs ADD COLUMN {name} TEXT')
+        self._writer.commit()
         columns = {row[1] for row in self._writer.execute('PRAGMA table_info(sessions)')}
         if 'host' not in columns:
             self._writer.execute('ALTER TABLE sessions ADD COLUMN host TEXT')

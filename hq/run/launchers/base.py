@@ -40,6 +40,9 @@ class BaseLauncher:
     steer_mode: str | None = None
     can_ask = False
 
+    def make_driver(self, req, resume_session_id=None):
+        return None
+
     def first_input(self, prompt: str) -> str:
         return self.user_message(prompt)
 

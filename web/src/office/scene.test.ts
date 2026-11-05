@@ -160,3 +160,8 @@ it('office groups remote agents by host', () => {
   expect(scene.npcs.map((n) => n.targetRoomId)).toEqual(['codex', 'host:box', 'host:other']);
   expect(scene.rooms.map((r) => r.label)).toEqual(expect.arrayContaining(['box', 'other']));
 });
+
+it('team table groups goal agents', () => {
+  const scene = buildScene([session('a', { launched_run_id: 'r1', goal_id: 'g' } as Partial<SessionRow>), session('b', { launched_run_id: 'r2', goal_id: 'g' } as Partial<SessionRow>)], [], new Map(), now);
+  expect(scene.npcs.map(n => n.targetRoomId)).toEqual(['team:g', 'team:g']);
+});

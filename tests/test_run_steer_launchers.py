@@ -30,11 +30,10 @@ class SteerLauncherTests(unittest.TestCase):
         self.assertEqual(json.loads(launcher.first_input('hello')), expected)
         self.assertEqual(json.loads(launcher.user_message('hello')), expected)
         self.assertEqual(json.loads(launcher.build(self.req, None, self.root, 'run_123', {}, []).stdin_text), expected)
-        self.assertEqual(self.launcher('agy').steer_mode, 'resume')  # live unverified until the Task 6 probe
-        # Antigravity keeps the checked M5a launch: prompt attached to -p, no stream-json input.
+        self.assertEqual(self.launcher('agy').steer_mode, 'live')
         agy = self.launcher('agy').build(replace(self.req, tool='agy', level='edit'), None, self.root, 'run_123', {}, [])
-        self.assertNotIn('--input-format', agy.argv)
-        self.assertEqual(agy.argv[-1], '-p=hello')
+        self.assertIn('--input-format', agy.argv)
+        self.assertNotIn('-p=hello', agy.argv)
 
     def test_control_reply_allow_and_deny_exact_json(self):
         launcher = self.launcher('claude')
@@ -76,9 +75,11 @@ class SteerLauncherTests(unittest.TestCase):
     def test_opencode_resume_argv(self):
         launcher = self.launcher('opencode')
         req = replace(self.req, tool='opencode', level='edit')
-        launch = launcher.build_resume(req, None, self.root, 'run_123', 'session', 'follow up', {}, [])
-        self.assertEqual(launcher.steer_mode, 'resume')
-        self.assertEqual(launch.argv, ['opencode', 'run', '--format', 'json', '--session=session', '-m', 'model', '--', 'follow up'])
+        driver = launcher.make_driver(replace(req, project=str(self.root)), 'session')
+        init = json.loads(driver.start('follow up')[0])
+        _, lines = driver.on_line(json.dumps({'id': init['id'], 'result': {}}))
+        self.assertEqual(json.loads(lines[0])['method'], 'session/load')
+        self.assertEqual(launcher.steer_mode, 'live')
 
     def test_turn_end_events(self):
         for tool, line in [('claude', '{"type":"result"}'), ('agy', '{"event":"result","result":{"status":"SUCCESS"}}'), ('agy', '{"type":"result"}'), ('codex', '{"type":"turn.completed"}')]:
@@ -101,7 +102,7 @@ class SteerFixTests(unittest.TestCase):
     def test_agy_resume_uses_conversation_and_checked_prompt_flag(self):
         from hq.run.launchers import REGISTRY
         launcher = REGISTRY['agy']
-        self.assertEqual(launcher.steer_mode, 'resume')
+        self.assertEqual(launcher.steer_mode, 'live')
 
     def test_claude_deny_without_note_has_message(self):
         import json

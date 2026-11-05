@@ -50,12 +50,17 @@ def is_git_repo(path):
     return result.returncode == 0
 
 def create(project, run_id, root):
+    return create_from(project, run_id, root, None)
+
+def create_from(project, run_id, root, base_ref):
     project, root = _path(project), _path(root)
     branch = _branch('hq/run-' + run_id)
     workdir = _path(root / run_id)
     with _lock:
         if not is_git_repo(project): return project, None, None, None
-        base = _git(_repo(project), 'rev-parse', 'HEAD').stdout.decode('ascii').strip()
+        if base_ref is not None and not re.fullmatch(r'hq/goal-[A-Za-z0-9_-]+', base_ref):
+            raise ValueError('Invalid goal branch')
+        base = _git(_repo(project), 'rev-parse', '--verify', (base_ref or 'HEAD') + '^{commit}').stdout.decode('ascii').strip()
         common = Path(_git(_repo(project), 'rev-parse', '--git-common-dir').stdout.decode().strip()).resolve()
         root.mkdir(parents=True, exist_ok=True)
         _git(_repo(project), 'worktree', 'add', '-b', branch, str(workdir), base)
@@ -132,3 +137,34 @@ def discard(project, workdir, branch):
     with _lock:
         _git(_repo(project), 'worktree', 'remove', '--force', str(workdir))
         _git(_repo(project), 'branch', '-D', branch)
+
+
+def create_goal(project, goal_id, root):
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', goal_id): raise ValueError('Invalid goal id')
+    project, root = _path(project), _path(root)
+    branch = 'hq/goal-' + goal_id
+    workdir = _path(root / ('goal-' + goal_id))
+    with _lock:
+        if not is_git_repo(project): raise ValueError('Goal requires a git project')
+        base = _git(_repo(project), 'rev-parse', 'HEAD').stdout.decode('ascii').strip()
+        common = Path(_git(_repo(project), 'rev-parse', '--git-common-dir').stdout.decode().strip()).resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        _git(_repo(project), 'worktree', 'add', '-b', branch, str(workdir), base)
+        return workdir, branch, base, str(common / 'worktrees' / workdir.name)
+
+
+def merge_into_branch(project, goal_branch, step_branch, workdir, git_dir):
+    project, workdir = _path(project), _path(workdir)
+    if not re.fullmatch(r'hq/goal-[A-Za-z0-9_-]+', goal_branch): raise ValueError('Invalid goal branch')
+    _branch(step_branch)
+    admin = Path(git_dir)
+    with _lock:
+        _validate(workdir, admin, project)
+        repo = ['--git-dir', str(admin), '--work-tree', str(workdir)]
+        current = _git(repo, 'symbolic-ref', '--short', 'HEAD').stdout.decode().strip()
+        if current != goal_branch: raise ValueError('Goal worktree branch changed')
+        if _git(repo, 'status', '--porcelain', '--untracked-files=normal').stdout: raise ValueError('Goal worktree is dirty')
+        result = _git(repo, '-c', 'user.name=Agent HQ', '-c', 'user.email=agent-hq@localhost', 'merge', '--no-edit', step_branch, check=False)
+        if result.returncode == 0: return 'merged'
+        _git(repo, 'merge', '--abort', check=False)
+        return 'conflict'

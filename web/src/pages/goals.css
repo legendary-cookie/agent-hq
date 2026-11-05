@@ -1,0 +1,24 @@
+.goals-header, .goal-step-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.goals-page table { table-layout: fixed; }
+.goals-page th:first-child { width: 115px; }
+.goals-page th:nth-child(3), .goals-page th:nth-child(4) { width: 22%; }
+.goal-preview span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.goal-detail { min-width: 0; overflow-wrap: anywhere; }
+.goal-close { float: right; }
+.goal-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-right: 36px; }
+.goal-text { padding: 12px; border-radius: 8px; background: var(--surface); color: var(--muted); white-space: pre-wrap; }
+.goal-steps { padding: 0; list-style: none; }
+.goal-steps li, .plan-editor fieldset { margin: 0 0 12px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; }
+.goal-steps p { color: var(--muted); font-size: 13px; }
+.goal-step-actions, .goal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.goal-step-actions a { color: var(--accent); }
+.goal-actions { margin-top: 16px; }
+.goal-detail button:not(.run-status):not(.run-primary), .goal-sheet button:not(.run-primary) { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
+.plan-editor label { display: grid; gap: 4px; margin-bottom: 10px; font-size: 13px; }
+.plan-editor input, .plan-editor select, .plan-editor textarea { width: 100%; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+@media (max-width: 800px) {
+  .goals-layout { flex-direction: column; }
+  .goal-detail { width: 100%; }
+  .goals-page { overflow-x: auto; }
+  .goals-page table { min-width: 500px; }
+}

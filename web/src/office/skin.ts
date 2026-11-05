@@ -7,6 +7,7 @@ export interface Skin {
   pick(x: number, y: number): string | null;
   resize(width: number, height: number): void;
   setSelected?(id: string | null): void;
+  setFollow?(id: string | null): void;
   destroy(): void;
 }
 export type Theme = {

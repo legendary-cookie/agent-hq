@@ -10,6 +10,7 @@ import { Office } from '../pages/Office';
 import { Dashboard } from '../pages/Dashboard';
 import { Agents } from '../pages/Agents';
 import { Limits } from '../pages/Limits';
+import { Goals } from '../pages/Goals';
 import { Runs } from '../pages/Runs';
 import { RunSheet } from '../components/RunSheet';
 import type { RunOptions } from '../api/types';
@@ -22,6 +23,7 @@ const PAGES: Record<Route, () => JSX.Element> = {
   limits: Limits,
   settings: Settings,
   runs: Runs,
+  goals: Goals,
 };
 export function App() {
   const [route, navigate] = useRoute();

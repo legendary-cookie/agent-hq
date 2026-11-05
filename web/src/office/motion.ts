@@ -26,3 +26,8 @@ export function readTheme(el: HTMLElement): Theme & { labelBg: string; labelText
       window.matchMedia('(prefers-reduced-motion: reduce)').matches,
   };
 }
+
+export function motionFrame(current: Point, target: Point, progress: number, reduced: boolean): { at: Point; alpha: number } {
+  if (reduced) return { at: target, alpha: Math.min(1, Math.max(0, progress * 2)) };
+  return { at: approach(current, target, 120, progress), alpha: 1 };
+}

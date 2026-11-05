@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-export type Route = 'office' | 'dashboard' | 'agents' | 'limits' | 'runs' | 'settings';
+export type Route = 'office' | 'dashboard' | 'agents' | 'limits' | 'runs' | 'settings' | 'goals';
 export function parseRoute(hash: string): Route {
   const route = hash.replace(/^#\/?/, '').split('?')[0];
-  return (['office', 'dashboard', 'agents', 'limits', 'runs', 'settings'] as string[]).includes(route)
+  return (['office', 'dashboard', 'agents', 'limits', 'runs', 'settings', 'goals'] as string[]).includes(route)
     ? (route as Route)
     : 'office';
 }
