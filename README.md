@@ -244,6 +244,20 @@ Safety:
   - forbidden files (`auth.json`, `.credentials.json`, `.env`, `secrets` and so on) are skipped on both sides.
 - An unreachable or misbehaving host only affects its own health row. It backs off up to 10 minutes and retries.
 
+### Zylos message metrics (no message text)
+
+To count messages on a remote Zylos agent, add the `zylos_metrics` source:
+
+```json
+{"hosts": [{"name": "agent-1", "ssh": "zylos@agent-1", "os": "linux", "interval_s": 300, "sources": ["zylos_metrics"]}]}
+```
+
+- The scanner opens `~/zylos/comm-bridge/c4.db` read-only and sends only the id, direction, channel, failed flag and timestamp of each message. It never selects the message text, so the text can't leave the machine, and the "Show Zylos message previews" setting has no effect on this source.
+- No file is copied, so the database size limit above doesn't apply. A large backlog arrives 20,000 messages per pass, and the host shows as catching up.
+- You get message counts and activity, not tokens or costs. Those come from the `claude_code` source, which copies full transcripts into the mirror.
+- The messages are stored as one ended session per host, `<host>/zylos:comm`. The Agents page leaves it out, as it is a log and not a session to open.
+- If the database is replaced by one with a lower highest id, Agent HQ reads the new one from the start and keeps the old counts. A replacement that already has a higher id than the last one read isn't detected, so its earlier messages are skipped.
+
 Checked on this PC, 2026-11-03: WSL Debian, reached over SSH as a stand-in server.
 - 90 Codex sessions, with 68,712,888 tokens.
 - They match exactly what the local reader reports for the same files.

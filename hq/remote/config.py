@@ -12,6 +12,8 @@ SOURCES = {
     'kimi': ('.kimi-code/sessions', '.kimi/sessions'),
     'dsh': ('.dsh/sessions',),
 }
+# Sources the scanner answers with computed rows. No file is ever copied for these.
+METRIC_SOURCES = ('zylos_metrics',)
 
 
 @dataclass(frozen=True)
@@ -43,7 +45,7 @@ def _host(entry):
         raise ValueError('invalid os')
     if type(interval) is not int or not 30 <= interval <= 3600:
         raise ValueError('invalid interval')
-    if not isinstance(sources, list) or any(not isinstance(s, str) or s not in SOURCES for s in sources):
+    if not isinstance(sources, list) or any(not isinstance(s, str) or (s not in SOURCES and s not in METRIC_SOURCES) for s in sources):
         raise ValueError('invalid sources')
     run = entry.get('run', False)
     projects = entry.get('projects', [])
