@@ -44,14 +44,17 @@ export function selectSidebarLimits(cards: LimitCard[], n = 4) {
     .slice(0, n);
 }
 
-const MAIN: [Route, string][] = [['office', 'Office'], ['dashboard', 'Dashboard'], ['agents', 'Agents'], ['limits', 'Limits']];
+const MAIN: [Route, string][] = [['overview', 'Overview'], ['agents', 'Agents'], ['usage', 'Usage'], ['insights', 'Insights'], ['office', 'Office']];
 
-export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r: Route) => void; onRun?: () => void }) {
+export function Sidebar({ route, navigate, onRun, onSearch }: { route: Route; navigate: (r: Route) => void; onRun?: () => void; onSearch?: () => void }) {
   const { data: options } = useApi<{ run_mode: boolean; run_key_ok?: boolean }>('/api/runs/options', { live: false });
   const { data: approvals } = useApi<Approval[]>(options?.run_mode && options.run_key_ok ? '/api/approvals?state=waiting' : null);
+  const { data: branding } = useApi<{ brand: string | null }>('/api/brand', { live: false });
+  const brand = branding?.brand || 'Agent HQ';
   const [notifications, setNotifications] = useState(false);
   const [dark, setDark] = useState(() => isDark());
   const seen = useRef(new Set<string>());
+  useEffect(() => { document.title = brand; }, [brand]);
   useEffect(() => { const enable = () => setNotifications(true); window.addEventListener('hq-notifications-enabled', enable); return () => window.removeEventListener('hq-notifications-enabled', enable); }, []);
   useEffect(() => {
     if (!approvals) return;
@@ -68,7 +71,8 @@ export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r
   );
   return (
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true" />Agent HQ</div>
+      <div className="brand"><span className="brand-mark" aria-hidden="true" />{brand}</div>
+      <button type="button" className="side-find" onClick={onSearch}><span>Search</span><kbd>Ctrl K</kbd></button>
       <nav aria-label="Main">{MAIN.map(([target, label]) => link(target, label))}</nav>
       {options?.run_mode && (
         <nav aria-label="Work">

@@ -73,7 +73,25 @@ Never expose Agent HQ through a plain HTTP proxy.
 
 ## Web UI
 
-**Office** (the start page) shows every agent from the last 24 hours as a small figure in an office:
+**Overview, Agents, Usage and Insights** open first. They show one row per remote host (see [Remote hosts](#remote-hosts)), so they suit a fleet of agents on other machines. On a single PC they stay empty; use Office and Sessions.
+- **Overview:** a one-sentence status, then a grid of every agent's activity (messages, plus its own replies and tool use) over 24 hours, 7 days or 30 days. Messages with people and messages between agents are counted apart. Unreachable agents are flagged, and cells with no data are marked.
+- **Agents:** a table you can filter by name, owner or status. Clicking an agent opens its details and recent sessions.
+- **Usage:** usage value, tokens and errors by agent and by model, with projected 30 days, spending with no messages, top-tier model share, cost per task, cache share and error rate. It is usage value at API prices, not your bill.
+- **Insights:** typical reply time to people, by channel; problems (limit messages, API errors and failed tools); task times; the top tools; and the busy hours of the week.
+- **Graphs:** Overview, Usage and Insights have graphs over time, with a **Graphs on/off** switch that this browser remembers per page.
+- **Search:** press **Ctrl K** (or **Search** in the sidebar) to jump to an agent, a person or a page.
+
+Message counts need the `zylos_metrics` source, and tokens and costs need `claude_code`. Fleet answers are cached for 15 seconds (Insights for 60).
+
+To show friendly names, add `config/fleet.json` (copy `config/fleet.json.example`). Everything in it is optional, and the file is not tracked by git:
+
+```json
+{"brand": "My HQ", "agents": {"agent-1": {"label": "Sales bot", "owner": "Sam", "group": "Sales"}}}
+```
+
+`brand` names the app in the sidebar and on the sign-in page. The keys under `agents` are host names from `hosts.json`. The Office uses the labels too.
+
+**Office** shows every agent from the last 24 hours as a small figure in an office:
 - One zone per harness, tinted in that harness's colour and labelled with its agent count, plus a break room.
 - Figures are coloured by harness. Their state shows as a ring and marker:
   - **Working:** green ring and a gentle typing bob.
@@ -98,7 +116,7 @@ Never expose Agent HQ through a plain HTTP proxy.
   - KPI tiles with change against the previous period.
   - Charts: tokens or value over time, tokens by model, tasks against errors.
   - Tables: top sessions, plan ROI, routing.
-- **Agents:** every session with status filters. Clicking a row opens the inspector:
+- **Sessions:** every session with status filters. Clicking a row opens the inspector:
   - the current step;
   - project, duration, tokens and value;
   - the account's limit bars;
@@ -335,6 +353,8 @@ Run mode routes:
 - `POST /api/runs/{id}/stop`, `/merge` and `/discard`
 
 They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` header from `/api/exchange`. Starting a run also needs a single-use confirm code from `prepare`, bound to that exact request.
+
+`GET /api/fleet?range=today|week|month` and `/api/insights?range=…` power the fleet pages; `/api/fleet` includes `series` and `/api/insights` includes `trend`, in the same cells as the activity grid. `GET /api/alerts` returns only the limit alerts. `GET /api/brand` needs no token and returns only `brand` from `fleet.json`.
 
 `GET /api/overview`, `/api/sessions`, `/api/sessions/{id}`, `/api/kpis?range=today|week|month|custom&group_by=harness|provider|model|account`, `/api/limits`, `/api/recommend`, `/api/settings`, `/api/health`, `/api/stream` (Server-Sent Events). `POST /api/exchange` exchanges a valid bootstrap code for the token and requires a same-origin `Origin`. Other `/api/*` requests require the token in `X-HQ-Token`. `GET /api/stream` also accepts `?token=` for EventSource. POST and PUT require a same-origin `Origin`. `PUT /api/settings` validates settings and cannot change sources; edit `config/sources.json` and restart to change them.
 

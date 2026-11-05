@@ -3,7 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { SignIn } from './SignIn';
 
 function respond(login: { status: number; body: object }) {
-  const fetchMock = vi.fn(async () => ({ ok: login.status === 200, status: login.status, json: async () => login.body }));
+  const fetchMock = vi.fn(async (path: string) =>
+    path === '/api/brand'
+      ? { ok: true, status: 200, json: async () => ({ brand: 'Example Co HQ' }) }
+      : { ok: login.status === 200, status: login.status, json: async () => login.body },
+  );
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
@@ -23,15 +27,20 @@ afterEach(() => {
 it('still explains the start-up link for this computer', () => {
   respond({ status: 401, body: {} });
   render(<SignIn />);
-  expect(screen.getByRole('heading', { name: 'Sign in to Agent HQ' })).toBeInTheDocument();
   expect(screen.getByText(/open it from the link printed when it starts/)).toBeInTheDocument();
+});
+
+it('shows the app name from fleet.json', async () => {
+  respond({ status: 401, body: {} });
+  render(<SignIn />);
+  expect(await screen.findByRole('heading', { name: 'Sign in to Example Co HQ' })).toBeInTheDocument();
 });
 
 it('cannot submit an empty password', () => {
   const fetchMock = respond({ status: 200, body: {} });
   render(<SignIn />);
   expect(screen.getByRole('button', { name: 'Sign in' })).toBeDisabled();
-  expect(fetchMock).not.toHaveBeenCalled();
+  expect(fetchMock).not.toHaveBeenCalledWith('/api/login', expect.anything());
 });
 
 it('wrong password shows the message, clears the field and stores nothing', async () => {

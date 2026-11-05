@@ -27,7 +27,7 @@ class RemoteCollector:
         self._stop = threading.Event()
         self._threads = []
         self._callbacks = []
-        self._health = {h.name: dict(state='pending', last_pass=None, bytes=0, catching_up=False, error=None) for h in hosts}
+        self._health = {h.name: dict(state='pending', last_pass=None, last_ok=None, bytes=0, catching_up=False, error=None) for h in hosts}
         self._backoff = {h.name: h.interval_s for h in hosts}
         self._adapters = {h.name: [a for a in adapter_factory(cfg, Path(data_dir)) if a.name in h.sources and a.name in SOURCES] for h in hosts}
         prune_hosts(self.remote_root, {h.name for h in hosts})
@@ -83,7 +83,8 @@ class RemoteCollector:
                                             self.cfg.relabel, host=host.name)
             with self._lock:
                 self._backoff[host.name] = host.interval_s
-                self._health[host.name] = dict(state='partial' if result.errors else 'ok', last_pass=self.clock(), bytes=result.bytes,
+                self._health[host.name] = dict(state='partial' if result.errors else 'ok', last_pass=self.clock(),
+                                               last_ok=self._health[host.name].get('last_ok') if result.errors else self.clock(), bytes=result.bytes,
                                                catching_up=result.more or bool(result.resets) or metrics_more,
                                                error='; '.join(result.errors)[:500] or None,
                                                notes=(result.notes + metrics_notes)[:10])

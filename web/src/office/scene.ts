@@ -33,6 +33,7 @@ export function buildScene(
   memory: SeatMemory,
   now: number,
   prev?: Scene,
+  hostLabels: Record<string, string> = {},
 ): Scene {
   const included = sessions.filter(
     (s) => s.status !== 'done' && s.last_event_at !== null && s.last_event_at >= now - 86400,
@@ -95,7 +96,7 @@ export function buildScene(
   const rooms: Room[] = roomIds.map((room) => ({
     id: room,
     harness: room.startsWith('host:') || room.startsWith('team:') ? null : room,
-    label: room.startsWith('host:') ? room.slice(5) : room.startsWith('team:') ? `Team ${room.slice(5)}` : room,
+    label: room.startsWith('host:') ? (hostLabels[room.slice(5)] ?? room.slice(5)) : room.startsWith('team:') ? `Team ${room.slice(5)}` : room,
     capacity: Math.max(
       ROOM_SIZE_STEP,
       Math.ceil(

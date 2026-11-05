@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import './sign-in.css';
 
 export function signOut() {
@@ -17,9 +17,21 @@ export function signOut() {
 }
 
 export function SignIn() {
+  const [brand, setBrand] = useState('Agent HQ');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void fetch('/api/brand')
+      .then((response) => response.json() as Promise<{ brand?: string | null }>)
+      .then((body) => {
+        if (body.brand) {
+          setBrand(body.brand);
+          document.title = body.brand;
+        }
+      })
+      .catch(() => {});
+  }, []);
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!password || busy) return;
@@ -53,7 +65,7 @@ export function SignIn() {
     <div className="sign-in">
       <form className="sign-in-card" onSubmit={(event) => void submit(event)}>
         <span className="sign-in-mark" aria-hidden="true" />
-        <h1>Sign in to Agent HQ</h1>
+        <h1>Sign in to {brand}</h1>
         <p>Enter your password to continue.</p>
         <label htmlFor="sign-in-password">Password</label>
         <input

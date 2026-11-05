@@ -56,7 +56,7 @@ export function Agents() {
   return (
     <div className="agents-layout">
       <div className="agents-page">
-        <h1>Agents</h1>
+        <h1>Sessions</h1>
         <div className="agents-filters">
           <div className="agents-statuses" aria-label="Status filters">
             {statuses.map(([key, label]) => (

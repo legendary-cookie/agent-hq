@@ -1,0 +1,66 @@
+.search-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 14vh 16px 16px;
+  background: var(--scrim);
+}
+.search-box {
+  width: min(540px, 100%);
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--overlay-shadow);
+}
+.search-box input {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--text);
+  outline: 0;
+  font: inherit;
+  font-size: 15px;
+}
+.search-box ul {
+  max-height: 320px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+.search-box li button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.search-box li button.current {
+  background: var(--hover);
+}
+.search-box em {
+  color: var(--faint);
+  font-size: 12.5px;
+  font-style: normal;
+}
+.search-box p {
+  margin: 0;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}

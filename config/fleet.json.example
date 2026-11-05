@@ -1,0 +1,7 @@
+{
+  "brand": "Example Co HQ",
+  "agents": {
+    "agent-1": {"label": "Sales bot", "owner": "Ada", "group": "Sales"},
+    "agent-2": {"label": "Support bot", "owner": "Ben", "group": "Support"}
+  }
+}

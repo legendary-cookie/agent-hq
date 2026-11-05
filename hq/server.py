@@ -13,6 +13,8 @@ from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 from .config import Config, SourceCfg, Account, Price, _path, save_config
 from .auth import Locked, Login
+from .fleet import fleet_overview, load_fleet, rolling_window
+from .insights import insights
 from .kpis import compute_kpis, resolve_range, session_value, _rows, series
 from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
@@ -50,9 +52,13 @@ def timeline_events(conn, start=None, end=None):
         where e.ts>=? and e.ts<=? order by e.ts, e.id limit 20001""", (start, end))
     return {'events': events[:20000], 'truncated': len(events) > 20000}
 
+FLEET_CACHE_S = 15
+INSIGHTS_CACHE_S = 60
+
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None,public_url=None):
     run_key = secrets.token_urlsafe(32)
     login = Login(store.path.parent / 'login.json')
+    fleet_cache = {}; fleet_lock = threading.Lock()
     public_url = public_url.rstrip('/') if public_url else None
     public_host = urlsplit(public_url).netloc if public_url else None
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
@@ -98,6 +104,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def do_GET(self):
             if not self.host_ok(): return self.send_json(403,{'error':'forbidden host'})
             parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query,keep_blank_values=True); now=time.time()
+            # The app's name is shown on the sign-in page, before anyone has signed in.
+            if path=='/api/brand': return self.send_json(200,{'brand':load_fleet(config_dir)['brand']})
             if path.startswith('/api/') and not (self.token_ok(self.headers.get('X-HQ-Token')) or (path=='/api/stream' and self.token_ok(query.get('token',[None])[0]))): return self.send_json(403,{'error':'forbidden'})
             def param(k,default=None): return query.get(k,[default])[0]
             try:
@@ -158,6 +166,24 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                 with closing(store.conn()) as conn:
                     if path=='/api/timeline': return self.send_json(200, timeline_events(conn, param('from'), param('to')))
                     if path=='/api/delegations': return self.send_json(200,_rows(conn,'select ext_id as id, ts, provider, model, task_kind, outcome from delegations order by ts desc, id desc limit ?', (min(200,max(1,int(param('limit','20')))),)))
+                    if path=='/api/fleet':
+                        name=param('range','today')
+                        # Updates arrive every few seconds, so one answer serves them all for a short while.
+                        with fleet_lock:
+                            cached=fleet_cache.get(name)
+                            if cached and now-cached[0]<FLEET_CACHE_S: return self.send_json(200,cached[1])
+                            answer=fleet_overview(conn,cfg,rolling_window(name,now),now,remote_collector.health() if remote_collector else {},load_fleet(config_dir))
+                            fleet_cache[name]=(now,answer)
+                        return self.send_json(200,answer)
+                    if path=='/api/insights':
+                        name=param('range','today')
+                        with fleet_lock:
+                            cached=fleet_cache.get('insights:'+name)
+                            if cached and now-cached[0]<INSIGHTS_CACHE_S: return self.send_json(200,cached[1])
+                            answer=insights(conn,rolling_window(name,now),now)
+                            fleet_cache['insights:'+name]=(now,answer)
+                        return self.send_json(200,answer)
+                    if path=='/api/alerts': return self.send_json(200,{'alerts':alerts(limit_cards(conn,cfg,now),cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
                     if path=='/api/series':
                         rng=resolve_range(param('range','today'),datetime.now().astimezone(),param('from'),param('to'))
@@ -166,7 +192,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         name=param('range','today'); start=param('from'); end=param('to'); rng=resolve_range(name,datetime.now().astimezone(),start,end)
                         return self.send_json(200,compute_kpis(conn,cfg,rng,param('group_by'),now))
                     if path in ('/api/sessions','/api/overview'):
-                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id, r.goal_id as goal_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn)
+                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id, r.goal_id as goal_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn,since=now-86400)
                         for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now,imported=bool(s['imported']))
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
@@ -191,7 +217,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         if not rows: return self.send_json(404,{'error':'session not found'})
                         order=param('order','asc')
                         if order not in ('asc','desc'): raise ValueError('invalid order')
-                        s=rows[0]; s['status']=session_status(s['last_event_at'],last_kinds(conn).get(sid),s['ended_at'],now,imported=bool(s['imported'])); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
+                        s=rows[0]; kind=conn.execute('select kind from events where session_id=? order by ts desc, id desc limit 1',(sid,)).fetchone(); s['status']=session_status(s['last_event_at'],kind[0] if kind else None,s['ended_at'],now,imported=bool(s['imported'])); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})

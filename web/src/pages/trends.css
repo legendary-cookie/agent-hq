@@ -1,0 +1,31 @@
+.graphs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.graphs-toggle svg { width: 14px; height: 14px; }
+.graphs-toggle[aria-pressed='true'] { color: var(--text); border-color: var(--line-strong); }
+.graphs-toggle:hover { background: var(--hover); }
+.graphs-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.head-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+.trends { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px 28px; margin: 4px 0 28px; }
+.hq-trend { margin: 0; min-width: 0; }
+.hq-trend-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.hq-trend-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.hq-trend-legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+.hq-trend-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.hq-trend-legend i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+.hq-trend-plot { width: 100%; }
+.hq-trend-empty { margin: 24px 0; }
+.hq-trend .note { margin-top: 6px; }

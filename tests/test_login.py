@@ -114,6 +114,7 @@ class LoginServerTests(unittest.TestCase):
         store = Store(self.root / 'hq.db')
         self.addCleanup(store.close)
         cfg = load_config(ROOT / 'config')
+        (self.root / 'fleet.json').write_text(json.dumps({'brand': 'Example Co HQ'}), encoding='utf-8')
         self.server, self.master = make_server(store, Collector(store, cfg, []), cfg, self.root, port=0, public_url=PUBLIC)
         thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         thread.start()
@@ -152,6 +153,16 @@ class LoginServerTests(unittest.TestCase):
             self.assertEqual(self.call('GET', '/api/limits', token=token)[0], 403)
             self.assertEqual(self.call('GET', '/api/sessions', token=token)[0], 403)
             self.assertEqual(self.call('PUT', '/api/settings', {}, token=token)[0], 403)
+
+    def test_only_the_brand_is_public(self):
+        self.assertEqual(self.call('GET', '/api/brand'), (200, {'brand': 'Example Co HQ'}))
+        self.assertEqual(self.call('GET', '/api/fleet?range=today')[0], 403)
+
+    def test_fleet_pages_open_with_a_session(self):
+        token = self.sign_in()
+        for path in ('/api/fleet?range=today', '/api/fleet?range=month', '/api/insights?range=week', '/api/alerts'):
+            self.assertEqual(self.call('GET', path, token=token)[0], 200, path)
+        self.assertEqual(self.call('GET', '/api/fleet?range=year', token=token)[0], 400)
 
     def test_wrong_password(self):
         self.assertEqual(self.call('POST', '/api/login', {'password': 'nope nope nope'})[0], 401)
