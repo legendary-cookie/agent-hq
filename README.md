@@ -1,6 +1,12 @@
 # Agent HQ
 
-A local dashboard for watching AI coding agents across harnesses: Claude Code, Codex, opencode, Antigravity, Gemini CLI and Hermes (through the provider-usage tracker). It reads the logs those tools already write, stores them in one SQLite file, and shows sessions, KPIs, value and usage limits in a web UI on `127.0.0.1`. With run mode turned on, it can also start, watch and stop agents itself.
+A local dashboard for the AI coding agents you already use: Claude Code, Codex, opencode, Antigravity, Gemini CLI, Kimi, DeepSeek Harness and more.
+
+- **Watch:** it reads the logs those tools already write, on this PC and on your other machines over SSH, and stores them in one SQLite file. A web UI on `127.0.0.1` shows sessions, KPIs, value, usage limits, and an office where every agent is a small figure at a desk.
+- **Run** (off until you turn it on): start agents in their own git worktrees, watch them live, talk to them, approve their edits and commands from an Inbox, and merge or discard what they did.
+- **Orchestrate:** give a goal, review the plan a planner agent writes, and let a team of agents carry it out step by step on one branch.
+
+It runs on your machine only, needs no account or cloud service, and uses no third-party Python packages. Windows 11 comes first; Linux and macOS work too.
 
 Status:
 - **Milestone 1:** backend. Done.
@@ -9,9 +15,9 @@ Status:
 - **Milestone 4:** more sources (Kimi, DeepSeek Harness, Zylos, Antigravity tokens, a long-tail importer), DeepSeek balance and LiteLLM prices. Done.
 - **Milestone 5a:** run mode, Dispatch. Start one-shot agent runs, watch them live, stop them, and review the diff, then merge or discard it. Done.
 - **1.0:** Steer: follow-ups and an approvals inbox. Remote watching: agents on other machines, read over SSH. Done.
-- **Next:** Orchestrate (M5c), remote runs, and the office extras.
+- **1.1:** Goals (Orchestrate), remote runs, office extras, and Ask me for opencode. Done.
 
-Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [Steer spec](docs/superpowers/specs/2026-11-03-agent-hq-steer-design.md), [remote watching spec](docs/superpowers/specs/2026-11-03-agent-hq-remote-watch-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
+Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [Steer spec](docs/superpowers/specs/2026-11-03-agent-hq-steer-design.md), [remote watching spec](docs/superpowers/specs/2026-11-03-agent-hq-remote-watch-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [1.1 spec](docs/superpowers/specs/2026-11-04-agent-hq-1.1-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
 ## Requirements
 
@@ -60,7 +66,13 @@ If a page shows "Open Agent HQ from the link…", restart and use the new link, 
 - Hover shows the agent's title. Click opens the same inspector as the Agents page.
 - Skins: **Isometric** (default), **Top-down** and **Tower**, one floor per harness with a lift. Your choice is remembered; the default is set in Settings.
 - Harness and account filters. A hidden list of agents is available to screen readers.
-- With reduced motion on, figures move without walking.
+- With reduced motion on, figures move without walking, and emotes become still badges.
+- **Thought bubbles:** a figure shows its current step, such as "Edit app.py", on hover, when selected and on new events. The bubble fades after 6 s.
+- **Emotes:** ✓ when a turn ends, a red puff on an error, "!" on a new approval, and 💤 after 10 minutes idle.
+- **Teams:** the agents of a goal share a team zone with a table.
+- **Follow:** select a figure and press **Follow** to keep it centred, also through walks and floor changes. Esc stops.
+- **Replay:** scrub through the last 24 hours at 1×, 10× or 60×, and press **Live** to come back. It opens at the first event in that window.
+- **Edit layout:** drag zones and desks, and double-click a zone label to rename it. The layout is saved in your browser for each skin; **Reset layout** undoes it. Nothing is written on the server.
 
 - **Dashboard:**
   - Range: today, week or month. Group by harness, provider, model or account.
@@ -145,8 +157,31 @@ How a run works:
 
   Unanswered requests are denied after 15 minutes. You can change that with `approval_timeout_min` in `run.json`.
 - **Always asks**, even with an allow-for-this-run rule: `rm`, `del`, `rmdir`, `git push`, `git reset`, `curl`, `wget`, `ssh`, `scp`, `nc`, `powershell`, `pwsh`, `sudo`, and any command containing `|`, `;`, `&`, `>`, `<`, `` ` ``, `$(` or a newline.
-- **Where Ask me works:** only for Claude Code, so far. Antigravity and opencode headless haven't been checked for permission requests, and Codex headless can't pause.
+- **Where Ask me works:** Claude Code and opencode.
+  - opencode runs over its ACP protocol (`opencode acp`). Each edit or command it asks about becomes an Inbox item. An edit that touches several files lists them all and always asks.
+  - At Ask me, opencode asks for everything except reading, searching and listing files in its worktree. Reading `.env` files still asks.
+  - Codex headless can't pause, and Antigravity headless turns permission requests down by itself, so neither offers Ask me.
+- **Live follow-ups:** Claude Code, opencode and Antigravity keep the run's process open between turns. Codex resumes its session.
+- **opencode at Edit** can run commands in its worktree without asking, and without a sandbox. Codex's Edit level uses its own sandbox, and Claude Code's Edit level can't run commands. Pick Ask me if you want to see opencode's commands first.
 - **Time limit:** it counts each turn's working time, and pauses while a run is idle. An idle live run closes after 30 minutes; a follow-up resumes it.
+
+### Goals: a team of agents on one branch
+
+Open **Goals** and press **New goal**. Choose:
+- the goal text and a project;
+- the **highest level** steps may use: Read-only, Ask me or Edit (default Edit). Full auto is never used for planned steps;
+- a step limit (default 6, at most 10), a total time limit (default 90 min, at most 4 h) and how many steps may run at once;
+- the planner tool (default Claude Code).
+
+What happens:
+1. **Planning:** a read-only planner run reads the project and answers with a plan, a JSON list of steps. Each step has a title, a prompt, a kind (`code`, `review` or `research`), its dependencies and, if it wants, a tool.
+2. **Review:** Agent HQ treats the plan as untrusted data. It checks ids, dependencies, cycles, sizes and tools, and sets each step's level itself: `code` steps get the goal's highest level, `review` and `research` steps are read-only. You can edit or delete any step. Nothing runs until you press **Start plan**.
+3. **Steps:** a step starts when its dependencies are done, up to the parallel limit. Each step is a normal run in its own worktree, started from the goal branch `hq/goal-<id>`. When it finishes, its commit is merged into the goal branch, in Agent HQ's own worktree and never in your checkout.
+4. **Finish:** the goal page shows the whole diff. **Merge into project** merges exactly the commit you saw; **Discard goal** removes the branch.
+
+If a step fails or its merge conflicts, the goal waits for you: **retry**, **skip**, or **Stop goal**. The time limit stops everything. Goals that were planning or running when Agent HQ quit show as stopped, "interrupted by restart". Goals waiting for review survive a restart.
+
+Checked on this PC, 2026-11-05: Claude Code planned a three-step goal on a small Python project. Codex added `mul()`, then wrote `test_calc.py`, then reviewed both at read-only. The goal diff showed exactly those two changes. After **Merge into project**, the project's checkout was clean and `python test_calc.py` passed.
 
 **Tools on this PC**, checked with real runs on 2026-11-03:
 
@@ -193,6 +228,25 @@ Checked on this PC, 2026-11-03: WSL Debian, reached over SSH as a stand-in serve
 - They match exactly what the local reader reports for the same files.
 - The mirror is byte-identical to the remote files (SHA-256).
 
+### Remote runs
+
+You can also start runs on a Linux or macOS host:
+1. In `hosts.json`, give the host `"run": true` and a list of projects it may use: `"projects": [{"name": "myapp", "path": "/srv/myapp"}]`.
+2. In **Run**, pick the host, then one of its projects.
+
+How it works:
+- Agent HQ builds the launch locally, with the same launchers as local runs, and sends one fixed helper script over `ssh` (`python3 -`).
+- On the host, the helper checks the project against that host's list, creates a worktree with the same git rules, starts the tool without a shell, and streams its output back.
+- Stop, diff, merge and discard work as for local runs. The worktrees live under `~/.agent-hq/worktrees` on the host. If the connection drops, the run is marked interrupted and its processes on the host are ended.
+
+Limits:
+- **Tools:** Codex and Claude Code, and only those tested on this PC.
+- **Levels:** no Full auto, and Ask me always asks: there are no allow-for-this-run rules, because remote paths can't be checked from here.
+- **Accounts:** a local account profile is not sent to the host. The tool uses the host's own login.
+- **Hosts:** Windows hosts and containers can be watched, but not used for runs.
+
+Checked on this PC, 2026-11-04: a Codex edit run on WSL Debian over SSH. Its session linked through remote watching, its diff was right, and the merge landed in the host's checkout, which stayed clean.
+
 ## What it reads
 
 | Harness | Source | Gives |
@@ -222,7 +276,7 @@ Readers that have been checked against real logs on this PC show plain health. T
 ## Config (`config/`)
 
 - `sources.json`: which readers are on and their paths.
-- `accounts.json`: your plans, monthly price, billing day, and rules mapping harness/provider/model to an account. Prices you have not filled in stay `null`, and ROI shows as unknown.
+- `accounts.json`: your plans, monthly price, billing day, and rules mapping harness/provider/model to an account. On the first start it is copied from `accounts.example.json`, and it is not tracked by git, so your plans stay private. Prices you have not filled in stay `null`, and ROI shows as unknown.
 - `prices.json`: API price per model in USD per 1M tokens (`input`, `output`, `cache_read`, `cache_write`). Empty by default. Tokens of a model without a price are reported as **unpriced**, never guessed.
 
 ## API
@@ -230,6 +284,14 @@ Readers that have been checked against real logs on this PC show plain health. T
 Steer routes:
 - `GET /api/approvals?state=waiting` and `POST /api/approvals/{id}`
 - `POST /api/runs/{id}/message/prepare` and `POST /api/runs/{id}/message`
+
+Goal routes:
+- `GET /api/goals` and `GET /api/goals/{id}`, plus `/diff`
+- `POST /api/goals/prepare` and `POST /api/goals`
+- `PUT /api/goals/{id}/plan`, then `POST /api/goals/{id}/start/prepare` and `POST /api/goals/{id}/start`
+- `POST /api/goals/{id}/steps/{step}/retry` and `/skip`, and `POST /api/goals/{id}/stop`, `/merge` and `/discard`
+
+Office replay: `GET /api/timeline?from=&to=` returns up to 20,000 events from a window of at most 7 days, with only the columns the office needs.
 
 Run mode routes:
 - `GET /api/runs/options`
@@ -265,10 +327,22 @@ They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` he
   - Starting a run needs the in-memory run key and a single-use confirm code. The run key is never written to disk, so an agent that reads Agent HQ's token file still can't start runs.
   - Git never finds a repository from inside a worktree. Agent HQ passes the repository explicitly, turns off hooks and fsmonitor, and refuses to continue if a run changed the worktree's `.git`.
   - Output is kept in memory only (last 500 lines, 64 KB per line). The database keeps the status and a 200-character prompt preview.
+  - **Goals:** the planner's output is untrusted. Levels are capped and tools come from an allowlist. Only the agent's own top-level words count, never tool output, hooks or subagents. Start plan takes a confirm code bound to the exact plan.
+  - **Remote runs:** every value sent is checked here and again on the host. Output, paths, diffs and session ids from the host are treated as untrusted.
 - Otherwise nothing leaves the machine.
 
 ## Tests
 
 ```bash
-python -m unittest discover -s tests
+python -m unittest discover -s tests -t .
 ```
+
+```bash
+npm --prefix web test
+```
+
+The remote-run helper tests need a POSIX system, so they skip on Windows; run them on Linux or in WSL. The tests never start a real agent, never use `ssh`, and never call a network API.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Bundled third-party data is listed in [NOTICE](NOTICE).
