@@ -52,6 +52,7 @@ export function SignIn() {
   return (
     <div className="sign-in">
       <form className="sign-in-card" onSubmit={(event) => void submit(event)}>
+        <span className="sign-in-mark" aria-hidden="true" />
         <h1>Sign in to Agent HQ</h1>
         <p>Enter your password to continue.</p>
         <label htmlFor="sign-in-password">Password</label>

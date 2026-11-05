@@ -3,6 +3,7 @@
 ## Unreleased
 
 Added
+- **New visual design.** Minimal and monochrome, with colour reserved for status, in light and dark, with a switch in the sidebar. Geist is bundled, so no font is fetched from the internet. The inspector opens as a sheet over the page.
 - **Zylos message metrics for remote hosts.** A new `zylos_metrics` source in `hosts.json` counts messages on remote Zylos agents. The scanner sends only message metadata (id, direction, channel, failed, time), never the text, and no file is mirrored.
 - **Password sign-in for use behind an HTTPS proxy.** `--public-url https://host` accepts that one address, and `--set-password` sets the password from a terminal. A salted scrypt hash is stored, never the password. Sessions last 30 days and survive restarts, sign-out ends one, and wrong passwords lock sign-in for a growing time. The start-up link still works on the machine itself, but not through the public address.
 - A new sign-in page replaces "Open Agent HQ from the link…", and the sidebar has **Sign out**.
@@ -11,6 +12,8 @@ Changed
 - The browser keeps its token in `localStorage` instead of `sessionStorage`, so closing the tab no longer signs you out. A token left in tab storage is moved across once.
 
 Fixed
+- The Dashboard no longer switches from dollars to tokens because a row with no tokens has no price.
+- The Run button in the inspector shows only when run mode is on.
 - The server reads a request's body before refusing it, so clients get the error rather than a reset connection.
 
 ## 1.1.0 (2026-11-05): Goals, remote runs, office extras

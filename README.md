@@ -106,9 +106,9 @@ Never expose Agent HQ through a plain HTTP proxy.
   - subagents.
 - **Limits:** one card per account with window bars, source badge (Measured, Blocked, Manual, Unknown), reset countdown, forecast and burn rate. Each card has a "Set manually" form.
 - **Settings:** plans and prices, model API prices (unpriced models first), alert thresholds, default office skin, sources with reader health.
-- **Banner and sidebar:** the most severe limit alert shows as a banner on every page, and the sidebar shows the four most constrained limits.
+- **Banner:** the most severe limit alert shows as a banner on every page. The run pages (New run, Runs, Goals, Inbox) appear in the sidebar only when run mode is on.
 
-Everything refreshes live when new log lines arrive. Light and dark mode follow the system. The layout works from 1024 px wide.
+Everything refreshes live when new log lines arrive. Light and dark mode follow the system, and the sidebar can switch them for this browser. The Geist font is bundled, so no font is fetched from the internet. The layout works from 1024 px wide.
 
 For UI development, run `python -m hq --no-browser`, then `npm --prefix web run dev`. Open the dev URL with `#token=<token>`; the dev server forwards `/api` to port 7420. In the dev build only, `?synthetic=60` replaces the office's agents with 60 fake ones, for checking performance.
 

@@ -55,6 +55,7 @@ export function Inspector({
   const { data: parent } = useApi<SessionDetail>(parentPath);
   const runId = detail?.session.launched_run_id;
   const { data: run, reload: reloadRun } = useApi<Run>(runId ? `/api/runs/${encodeURIComponent(runId)}` : null);
+  const { data: options } = useApi<{ run_mode: boolean }>(selected ? '/api/runs/options' : null, { live: false });
   if (!selected) return null;
   const session = detail?.session;
   const latest = detail?.events[0];
@@ -87,7 +88,7 @@ export function Inspector({
           <div className="inspector-subtitle">
             <span className="pill">{session.host ?? 'This PC'}</span> · {session.model ?? '—'} · {session.account_id ?? '—'}
           </div>
-          <button onClick={() => window.dispatchEvent(new Event('hq-open-run'))}>Run</button>
+          {options?.run_mode && <button onClick={() => window.dispatchEvent(new Event('hq-open-run'))}>Run</button>}
           {run && ['queued', 'starting', 'running'].includes(run.status) && <button onClick={() => void stopRun(run.id).then(reloadRun)}>Stop run</button>}
           <div className="inspector-heading">Now</div>
           <div>

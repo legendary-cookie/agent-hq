@@ -52,7 +52,7 @@ export function Dashboard() {
     return session && (host === 'local' ? !session.host : session.host === host.slice(5));
   });
   const unpriced =
-    !!series?.length && series.some((row) => row.unpriced_tokens !== 0 || row.value_usd === null);
+    !!series?.length && series.some((row) => row.unpriced_tokens !== 0 || (row.value_usd === null && row.tokens > 0));
   const keys = [...new Set((series ?? []).map((row) => row.key))];
   const dates = continuousBuckets(
     (series ?? []).map((row) => row.t),
@@ -161,7 +161,7 @@ export function Dashboard() {
               value={group}
               onChange={setGroup}
               options={[
-                { value: 'harness', label: 'Harness' },
+                { value: 'harness', label: 'Tool' },
                 { value: 'provider', label: 'Provider' },
                 { value: 'model', label: 'Model' },
                 { value: 'account', label: 'Account' },
@@ -216,7 +216,8 @@ export function Dashboard() {
                             stackId="value"
                             stroke={colors[index % colors.length]}
                             fill={colors[index % colors.length]}
-                            fillOpacity={0.35}
+                            fillOpacity={0.18}
+                            strokeWidth={2}
                           />
                         ))}
                       </AreaChart>
@@ -249,7 +250,7 @@ export function Dashboard() {
                           tick={{ fontSize: 11 }}
                         />
                         <Tooltip contentStyle={tooltip} formatter={(n: number) => fmtTokens(n)} />
-                        <Bar dataKey="tokens" fill="var(--accent)" />
+                        <Bar dataKey="tokens" fill="var(--accent)" radius={[0, 5, 5, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -267,8 +268,8 @@ export function Dashboard() {
                         <XAxis dataKey="date" stroke="var(--muted)" tick={{ fontSize: 11 }} />
                         <YAxis stroke="var(--muted)" tick={{ fontSize: 11 }} width={35} />
                         <Tooltip contentStyle={tooltip} />
-                        <Bar dataKey="tasks" fill="var(--accent)" />
-                        <Bar dataKey="errors" fill="var(--error)" />
+                        <Bar dataKey="tasks" fill="var(--accent)" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="errors" fill="var(--error)" radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
