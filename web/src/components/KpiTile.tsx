@@ -17,7 +17,7 @@ export function KpiTile({
       <div className="component-label">{label}</div>
       <div className="kpi-value">{value}</div>
       {hint && <div className="component-label">{hint}</div>}
-      {delta && delta.dir !== 'none' && <div className="component-label">{delta.text}</div>}
+      {delta && delta.dir !== 'none' && <div className={`component-label kpi-delta kpi-delta-${delta.dir}`}>{delta.text}</div>}
     </div>
   );
 }

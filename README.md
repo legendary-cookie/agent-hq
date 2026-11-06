@@ -53,11 +53,45 @@ This does three things:
 
 The code expires after 120 s. The token is kept in a file named `token` beside `hq.db` and reused on the next launch, so open pages keep working across restarts. `--rotate-token` replaces it.
 
-If a page shows "Open Agent HQ from the link…", restart and use the new link, or add `#token=<contents of the token file>` to the URL.
+If a page shows the sign-in page on this computer, restart and use the new link, or add `#token=<contents of the token file>` to the URL. The browser stays signed in until you press **Sign out**.
+
+### Sign in from another computer
+
+Agent HQ still listens only on `127.0.0.1`. To reach it from elsewhere, put an HTTPS proxy such as Caddy on the same machine, then:
+
+1. Set a password (12 characters or more): `python -m hq --set-password --db <path to hq.db>`. Only a salted scrypt hash is stored, in `login.json` beside `hq.db`.
+2. Start with `--public-url https://your-address`. Only that address is accepted, and the proxy must send `X-Forwarded-Proto: https`.
+
+Then open the address and sign in with the password.
+- A sign-in lasts 30 days on that browser and survives restarts. Sessions are kept as token hashes in `sessions.json` beside `hq.db`.
+- **Sign out** in the sidebar ends the session. Setting a new password signs everyone out.
+- After 5 wrong passwords, sign-in is blocked for 30 s, then for twice as long after each further wrong one, up to 15 minutes.
+- The start-up link and `#token=` still work on the machine itself, but not through the public address.
+- A signed-in browser can use run mode, like the start-up link. Keep run mode off unless you trust everyone who can sign in.
+
+Never expose Agent HQ through a plain HTTP proxy.
 
 ## Web UI
 
-**Office** (the start page) shows every agent from the last 24 hours as a small figure in an office:
+**Overview, Agents, Usage and Insights** open first. They show one row per remote host (see [Remote hosts](#remote-hosts)), so they suit a fleet of agents on other machines. On a single PC they stay empty; use Office and Sessions.
+- **Overview:** a one-sentence status, then a grid of every agent's activity (messages, plus its own replies and tool use) over 24 hours, 7 days or 30 days. Messages with people and messages between agents are counted apart. Unreachable agents are flagged, and cells with no data are marked.
+- **Agents:** a table you can filter by name, owner or status. Clicking an agent opens its details and recent sessions.
+- **Usage:** usage value, tokens and errors by agent and by model, with projected 30 days, spending with no messages, top-tier model share, cost per task, cache share and error rate. It is usage value at API prices, not your bill.
+- **Insights:** typical reply time to people, by channel; problems (limit messages, API errors and failed tools); task times; the top tools; and the busy hours of the week.
+- **Graphs:** Overview, Usage and Insights have graphs over time, with a **Graphs on/off** switch that this browser remembers per page.
+- **Search:** press **Ctrl K** (or **Search** in the sidebar) to jump to an agent, a person or a page.
+
+Message counts need the `zylos_metrics` source, and tokens and costs need `claude_code`. Fleet answers are cached for 15 seconds (Insights for 60).
+
+To show friendly names, add `config/fleet.json` (copy `config/fleet.json.example`). Everything in it is optional, and the file is not tracked by git:
+
+```json
+{"brand": "My HQ", "agents": {"agent-1": {"label": "Sales bot", "owner": "Sam", "group": "Sales"}}}
+```
+
+`brand` names the app in the sidebar and on the sign-in page. The keys under `agents` are host names from `hosts.json`. The Office uses the labels too.
+
+**Office** shows every agent from the last 24 hours as a small figure in an office:
 - One zone per harness, tinted in that harness's colour and labelled with its agent count, plus a break room.
 - Figures are coloured by harness. Their state shows as a ring and marker:
   - **Working:** green ring and a gentle typing bob.
@@ -82,7 +116,7 @@ If a page shows "Open Agent HQ from the link…", restart and use the new link, 
   - KPI tiles with change against the previous period.
   - Charts: tokens or value over time, tokens by model, tasks against errors.
   - Tables: top sessions, plan ROI, routing.
-- **Agents:** every session with status filters. Clicking a row opens the inspector:
+- **Sessions:** every session with status filters. Clicking a row opens the inspector:
   - the current step;
   - project, duration, tokens and value;
   - the account's limit bars;
@@ -90,9 +124,9 @@ If a page shows "Open Agent HQ from the link…", restart and use the new link, 
   - subagents.
 - **Limits:** one card per account with window bars, source badge (Measured, Blocked, Manual, Unknown), reset countdown, forecast and burn rate. Each card has a "Set manually" form.
 - **Settings:** plans and prices, model API prices (unpriced models first), alert thresholds, default office skin, sources with reader health.
-- **Banner and sidebar:** the most severe limit alert shows as a banner on every page, and the sidebar shows the four most constrained limits.
+- **Banner:** the most severe limit alert shows as a banner on every page. The run pages (New run, Runs, Goals, Inbox) appear in the sidebar only when run mode is on.
 
-Everything refreshes live when new log lines arrive. Light and dark mode follow the system. The layout works from 1024 px wide.
+Everything refreshes live when new log lines arrive. Light and dark mode follow the system, and the sidebar can switch them for this browser. The Geist font is bundled, so no font is fetched from the internet. The layout works from 1024 px wide.
 
 For UI development, run `python -m hq --no-browser`, then `npm --prefix web run dev`. Open the dev URL with `#token=<token>`; the dev server forwards `/api` to port 7420. In the dev build only, `?synthetic=60` replaces the office's agents with 60 fake ones, for checking performance.
 
@@ -104,6 +138,8 @@ For UI development, run `python -m hq --no-browser`, then `npm --prefix web run 
 | `--rotate-token` | replace the reusable token file with a fresh token |
 | `--no-browser` | print the bootstrap code URL instead of opening a browser |
 | `--once` | run one collection pass, print a health table, exit (exit 1 if any reader is `partial`) |
+| `--set-password` | set the sign-in password from a prompt, then exit |
+| `--public-url https://host` | also accept requests for this address, from an HTTPS proxy |
 
 Run `--once` from PowerShell or cmd, not from a sandboxed shell, if you want the WSL Codex logs: `\\wsl.localhost\Debian\...` is only visible to normal Windows processes.
 
@@ -226,6 +262,20 @@ Safety:
   - forbidden files (`auth.json`, `.credentials.json`, `.env`, `secrets` and so on) are skipped on both sides.
 - An unreachable or misbehaving host only affects its own health row. It backs off up to 10 minutes and retries.
 
+### Zylos message metrics (no message text)
+
+To count messages on a remote Zylos agent, add the `zylos_metrics` source:
+
+```json
+{"hosts": [{"name": "agent-1", "ssh": "zylos@agent-1", "os": "linux", "interval_s": 300, "sources": ["zylos_metrics"]}]}
+```
+
+- The scanner opens `~/zylos/comm-bridge/c4.db` read-only and sends only the id, direction, channel, failed flag and timestamp of each message. It never selects the message text, so the text can't leave the machine, and the "Show Zylos message previews" setting has no effect on this source.
+- No file is copied, so the database size limit above doesn't apply. A large backlog arrives 20,000 messages per pass, and the host shows as catching up.
+- You get message counts and activity, not tokens or costs. Those come from the `claude_code` source, which copies full transcripts into the mirror.
+- The messages are stored as one ended session per host, `<host>/zylos:comm`. The Agents page leaves it out, as it is a log and not a session to open.
+- If the database is replaced by one with a lower highest id, Agent HQ reads the new one from the start and keeps the old counts. A replacement that already has a higher id than the last one read isn't detected, so its earlier messages are skipped.
+
 Checked on this PC, 2026-11-03: WSL Debian, reached over SSH as a stand-in server.
 - 90 Codex sessions, with 68,712,888 tokens.
 - They match exactly what the local reader reports for the same files.
@@ -304,14 +354,16 @@ Run mode routes:
 
 They need the token, a same-origin `Origin`, and the in-memory `X-HQ-Run-Key` header from `/api/exchange`. Starting a run also needs a single-use confirm code from `prepare`, bound to that exact request.
 
+`GET /api/fleet?range=today|week|month` and `/api/insights?range=…` power the fleet pages; `/api/fleet` includes `series` and `/api/insights` includes `trend`, in the same cells as the activity grid. `GET /api/alerts` returns only the limit alerts. `GET /api/brand` needs no token and returns only `brand` from `fleet.json`.
+
 `GET /api/overview`, `/api/sessions`, `/api/sessions/{id}`, `/api/kpis?range=today|week|month|custom&group_by=harness|provider|model|account`, `/api/limits`, `/api/recommend`, `/api/settings`, `/api/health`, `/api/stream` (Server-Sent Events). `POST /api/exchange` exchanges a valid bootstrap code for the token and requires a same-origin `Origin`. Other `/api/*` requests require the token in `X-HQ-Token`. `GET /api/stream` also accepts `?token=` for EventSource. POST and PUT require a same-origin `Origin`. `PUT /api/settings` validates settings and cannot change sources; edit `config/sources.json` and restart to change them.
 
 ## Privacy and safety
 
-- Binds `127.0.0.1` only; requests with any other `Host` get 403 (blocks DNS rebinding).
+- Binds `127.0.0.1` only; requests with any other `Host` get 403 (blocks DNS rebinding). With `--public-url`, that one address is also accepted, with its own `Origin`.
 - Read-only on every source: SQLite sources open with `mode=ro`; nothing is written to `usage.db` or any harness file.
 - Source paths are checked at load and before access against `secrets`, `auth.json`, `oauth_creds.json`, `credentials`, `google_accounts.json`, `.env` and `.credentials.json`, including resolved paths and normalized segments. Directory walks skip forbidden directories.
-- The browser stores the token in session storage. The launch URL contains a single-use code, not the token; a manually supplied `#token=` fragment is also supported.
+- The browser stores the token in local storage, so it stays signed in until **Sign out**. The launch URL contains a single-use code, not the token; a manually supplied `#token=` fragment is also supported.
 - Static files contain no injected token or collected data. Recommendations use a temporary snapshot of the read-only source database.
 - Previews are cut to 200 characters; full transcripts are not copied. Zylos chat text is not stored unless you turn on "Show Zylos message previews".
 - **Network:** the only outbound request is the optional DeepSeek balance check.

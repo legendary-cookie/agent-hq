@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Approval } from '../api/types';
 import type { LimitCard } from '../api/types';
 import { useApi } from '../api/client';
-import { LimitBar } from './LimitBar';
+import { signOut } from '../app/SignIn';
+import { isDark, toggleTheme } from '../app/theme';
 
 export function selectSidebarLimits(cards: LimitCard[], n = 4) {
   return cards
@@ -43,13 +44,17 @@ export function selectSidebarLimits(cards: LimitCard[], n = 4) {
     .slice(0, n);
 }
 
-export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r: Route) => void; onRun?: () => void }) {
-  const { data } = useApi<LimitCard[]>('/api/limits');
-  const limits = selectSidebarLimits(data ?? []);
+const MAIN: [Route, string][] = [['overview', 'Overview'], ['agents', 'Agents'], ['usage', 'Usage'], ['insights', 'Insights'], ['office', 'Office']];
+
+export function Sidebar({ route, navigate, onRun, onSearch }: { route: Route; navigate: (r: Route) => void; onRun?: () => void; onSearch?: () => void }) {
   const { data: options } = useApi<{ run_mode: boolean; run_key_ok?: boolean }>('/api/runs/options', { live: false });
   const { data: approvals } = useApi<Approval[]>(options?.run_mode && options.run_key_ok ? '/api/approvals?state=waiting' : null);
+  const { data: branding } = useApi<{ brand: string | null }>('/api/brand', { live: false });
+  const brand = branding?.brand || 'Agent HQ';
   const [notifications, setNotifications] = useState(false);
+  const [dark, setDark] = useState(() => isDark());
   const seen = useRef(new Set<string>());
+  useEffect(() => { document.title = brand; }, [brand]);
   useEffect(() => { const enable = () => setNotifications(true); window.addEventListener('hq-notifications-enabled', enable); return () => window.removeEventListener('hq-notifications-enabled', enable); }, []);
   useEffect(() => {
     if (!approvals) return;
@@ -58,35 +63,33 @@ export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r
       seen.current.add(item.id);
     }
   }, [approvals, notifications]);
+  const inbox = location.hash.startsWith('#/inbox');
+  const link = (target: Route, label: string) => (
+    <button key={target} type="button" className={`side-link${route === target && !inbox ? ' selected' : ''}`} aria-current={route === target && !inbox ? 'page' : undefined} onClick={() => navigate(target)}>
+      {label}
+    </button>
+  );
   return (
     <aside className="sidebar">
-      <div className="brand">Agent HQ</div>
-      <button onClick={onRun}>Run</button>
-      <nav>
-        {(['office', 'dashboard', 'agents', 'limits', 'runs', 'goals'] as Route[]).map((r) => (
-          <button key={r} className={route === r ? 'selected' : ''} onClick={() => navigate(r)}>
-            {r[0].toUpperCase() + r.slice(1)}
+      <div className="brand"><span className="brand-mark" aria-hidden="true" />{brand}</div>
+      <button type="button" className="side-find" onClick={onSearch}><span>Search</span><kbd>Ctrl K</kbd></button>
+      <nav aria-label="Main">{MAIN.map(([target, label]) => link(target, label))}</nav>
+      {options?.run_mode && (
+        <nav aria-label="Work">
+          <div className="nav-heading">Work</div>
+          <button type="button" className="side-link" onClick={onRun}>New run</button>
+          {link('runs', 'Runs')}
+          {link('goals', 'Goals')}
+          <button type="button" className={`side-link${inbox ? ' selected' : ''}`} onClick={() => { location.hash = '/inbox'; }}>
+            Inbox {approvals?.length ? <span className="nav-count">{approvals.length}</span> : null}
           </button>
-        ))}
-        <button className={location.hash.startsWith('#/inbox') ? 'selected' : ''} onClick={() => { location.hash = '/inbox'; }}>Inbox {approvals?.length ? `(${approvals.length})` : ''}</button>
-        <hr />
-        <div className="mini-limits">
-          {limits.map((limit, index) => (
-            <div key={`${limit.label}-${limit.window}-${index}`}>
-              <div>
-                {limit.label} · {limit.window}
-              </div>
-              <LimitBar percent={limit.percent} source={limit.source} stale={limit.stale} />
-            </div>
-          ))}
-        </div>
-      </nav>
-      <button
-        className={route === 'settings' ? 'selected settings' : 'settings'}
-        onClick={() => navigate('settings')}
-      >
-        Settings
-      </button>
+        </nav>
+      )}
+      <div className="side-foot">
+        {link('settings', 'Settings')}
+        <button type="button" className="side-link" onClick={() => { toggleTheme(); setDark(isDark()); }}>{dark ? 'Switch to light' : 'Switch to dark'}</button>
+        <button type="button" className="side-link" onClick={signOut}>Sign out</button>
+      </div>
     </aside>
   );
 }

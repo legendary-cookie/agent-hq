@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+Added
+- **Fleet pages: Overview, Agents, Usage and Insights.** Overview opens with a one-sentence status and a grid of every remote agent's activity over 24 hours, 7 days or 30 days. Agents is a filterable table with details per agent. Usage ranks agents and models, with projected 30 days, spending with no messages, top-tier share, cost per task, cache share and error rate. Insights shows reply times, problems, task times, top tools and busy hours. New routes: `GET /api/fleet`, `/api/insights`, `/api/alerts` and `/api/brand`.
+- **Graphs** on Overview, Usage and Insights, each with a "Graphs on/off" switch that this browser remembers per page.
+- **Optional `config/fleet.json`** sets the app name and each agent's display name, owner and group. The Office uses those names too.
+- **Search anywhere with Ctrl K.** The old Agents page is now Sessions, and Overview is the start page.
+- **New visual design.** Minimal and monochrome, with colour reserved for status, in light and dark, with a switch in the sidebar. Geist is bundled, so no font is fetched from the internet. The inspector opens as a sheet over the page.
+- **Zylos message metrics for remote hosts.** A new `zylos_metrics` source in `hosts.json` counts messages on remote Zylos agents. The scanner sends only message metadata (id, direction, channel, failed, time), never the text, and no file is mirrored.
+- **Password sign-in for use behind an HTTPS proxy.** `--public-url https://host` accepts that one address, and `--set-password` sets the password from a terminal. A salted scrypt hash is stored, never the password. Sessions last 30 days and survive restarts, sign-out ends one, and wrong passwords lock sign-in for a growing time. The start-up link still works on the machine itself, but not through the public address.
+- A new sign-in page replaces "Open Agent HQ from the link…", and the sidebar has **Sign out**.
+
+Changed
+- The browser keeps its token in `localStorage` instead of `sessionStorage`, so closing the tab no longer signs you out. A token left in tab storage is moved across once.
+
+Fixed
+- Much faster on large databases. Status lookups skip sessions older than a day, fleet answers are cached, and every page loads `/api/alerts` instead of the full overview.
+- The Dashboard no longer switches from dollars to tokens because a row with no tokens has no price.
+- The Run button in the inspector shows only when run mode is on.
+- The server reads a request's body before refusing it, so clients get the error rather than a reset connection.
+
 ## 1.1.0 (2026-11-05): Goals, remote runs, office extras
 
 Added

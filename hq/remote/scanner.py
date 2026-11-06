@@ -15,6 +15,8 @@ SOURCES = {
     'dsh': ('.dsh/sessions',),
 }
 FORBIDDEN = {'auth.json', '.credentials.json', 'credentials', 'secrets', '.env', 'oauth_creds.json', 'google_accounts.json'}
+ZYLOS_DB = 'zylos/comm-bridge/c4.db'
+ZYLOS_ROW_LIMIT = 20000
 
 
 def forbidden(name):
@@ -40,9 +42,36 @@ def candidates(root):
                     yield path
 
 
+def zylos_metrics(home, after):
+    """Message metadata only. The content column is never selected, so it cannot leave the host."""
+    import sqlite3
+    # No inside() check: Zylos links ~/zylos/comm-bridge to /opt/zylos/comm-bridge. The path is
+    # fixed here rather than requested, and only these metadata columns are ever returned.
+    path = home / ZYLOS_DB
+    if not path.is_file():
+        return {'found': False, 'rows': [], 'more': False, 'max_id': 0}
+    conn = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=5)
+    try:
+        rows = conn.execute('SELECT id, direction, channel, status, timestamp FROM conversations '
+                            'WHERE id > ? ORDER BY id LIMIT ?', (after, ZYLOS_ROW_LIMIT + 1)).fetchall()
+        max_id = conn.execute('SELECT max(id) FROM conversations').fetchone()[0] or 0
+    finally:
+        conn.close()
+    return {'found': True, 'more': len(rows) > ZYLOS_ROW_LIMIT, 'max_id': max_id,
+            'rows': [[row_id, direction, channel, status == 'failed', timestamp]
+                     for row_id, direction, channel, status, timestamp in rows[:ZYLOS_ROW_LIMIT]]}
+
+
 def scan(request):
     home = Path.home()
     result = {'files': [], 'more': False, 'errors': []}
+    if 'zylos_metrics' in request.get('sources', []):
+        try:
+            result['zylos_metrics'] = zylos_metrics(home, int(request.get('zylos_after', 0)))
+            if not result['zylos_metrics']['found']:
+                result['errors'].append(ZYLOS_DB + ': not found')
+        except Exception as exc:  # A locked or unexpected database must not stop the file scan.
+            result['errors'].append('zylos_metrics: ' + type(exc).__name__ + ': ' + str(exc)[:200])
     remaining = min(max(0, int(request.get('cap_bytes', 20000000))), 20000000)
     db_cap = min(max(0, int(request.get('db_cap_bytes', 30000000))), 30000000)
     db_sent = False

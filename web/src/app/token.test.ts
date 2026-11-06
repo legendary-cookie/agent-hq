@@ -1,11 +1,11 @@
 import { expect, it, vi } from 'vitest';
-import { bootstrapToken } from './token';
+import { bootstrapToken, keepSignIn } from './token';
 it('stores token from hash and rewrites hash', () => {
   sessionStorage.clear();
   history.replaceState(null, '', '/#token=abc');
   expect(bootstrapToken(location, sessionStorage)).toBe('abc');
   expect(sessionStorage.getItem('hq-token')).toBe('abc');
-  expect(location.hash).toBe('#/office');
+  expect(location.hash).toBe('#/overview');
 });
 it('falls back to stored token', () => {
   sessionStorage.setItem('hq-token', 'saved');
@@ -26,7 +26,7 @@ it('bootstrap exchanges code for token', async () => {
     expect.objectContaining({ method: 'POST', body: JSON.stringify({ code: 'once' }) }),
   );
   expect(sessionStorage.getItem('hq-token')).toBe('exchanged');
-  expect(location.hash).toBe('#/office');
+  expect(location.hash).toBe('#/overview');
   vi.unstubAllGlobals();
 });
 
@@ -37,4 +37,15 @@ it('failed exchange keeps the existing token', async () => {
   expect(await bootstrapToken(location, sessionStorage)).toBe('working');
   expect(sessionStorage.getItem('hq-token')).toBe('working');
   vi.unstubAllGlobals();
+});
+
+it('moves an old tab-only sign-in into lasting storage once', () => {
+  sessionStorage.clear();
+  localStorage.clear();
+  sessionStorage.setItem('hq-token', 'old');
+  keepSignIn(sessionStorage, localStorage);
+  expect([localStorage.getItem('hq-token'), sessionStorage.getItem('hq-token')]).toEqual(['old', null]);
+  sessionStorage.setItem('hq-token', 'stale');
+  keepSignIn(sessionStorage, localStorage);
+  expect(localStorage.getItem('hq-token')).toBe('old');
 });

@@ -12,6 +12,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs, unquote
 from .config import Config, SourceCfg, Account, Price, _path, save_config
+from .auth import Locked, Login
+from .fleet import fleet_overview, load_fleet, rolling_window
+from .insights import insights
 from .kpis import compute_kpis, resolve_range, session_value, _rows, series
 from . import limits as limits_module
 from .limits import limit_cards, alerts, add_manual, recommend_bridge
@@ -49,8 +52,15 @@ def timeline_events(conn, start=None, end=None):
         where e.ts>=? and e.ts<=? order by e.ts, e.id limit 20001""", (start, end))
     return {'events': events[:20000], 'truncated': len(events) > 20000}
 
-def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None):
+FLEET_CACHE_S = 15
+INSIGHTS_CACHE_S = 60
+
+def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None,public_url=None):
     run_key = secrets.token_urlsafe(32)
+    login = Login(store.path.parent / 'login.json')
+    fleet_cache = {}; fleet_lock = threading.Lock()
+    public_url = public_url.rstrip('/') if public_url else None
+    public_host = urlsplit(public_url).netloc if public_url else None
     token=secrets.token_urlsafe(32) if token is None else token; listeners=set(); lock=threading.Lock(); install_lock=threading.Lock()
     source=cfg.sources.get('provider_usage')
     tracker_path=Path(source.paths[0]) if source and source.enabled and source.paths else None
@@ -68,14 +78,23 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def log_message(self,*args): pass
         def send_json(self,status,data):
             body=json.dumps(data,allow_nan=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
-        def host_ok(self): return self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
-        def token_ok(self, value): return isinstance(value,str) and hmac.compare_digest(value.encode(),token.encode())
+        def is_public(self): return public_host is not None and self.headers.get('Host')==public_host
+        def host_ok(self): return self.is_public() or self.headers.get('Host') in (f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}')
+        def origin_ok(self): return self.headers.get('Origin')==(public_url if self.is_public() else f'http://{self.headers.get("Host")}')
+        def token_ok(self, value): return isinstance(value,str) and (hmac.compare_digest(value.encode(),token.encode()) or login.valid(value))
         def write_ok(self):
-            return self.token_ok(self.headers.get('X-HQ-Token')) and self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
+            return self.token_ok(self.headers.get('X-HQ-Token')) and self.origin_ok()
+        def read_raw(self):
+            # Read once, before any answer: replying while the body is still unread makes some clients
+            # (Windows in particular) see a reset connection instead of the reply.
+            if getattr(self,'_raw',None) is None:
+                try: length=int(self.headers.get('Content-Length','0'))
+                except ValueError: length=-1
+                if length<0 or length>1048576: self.close_connection=True; raise ValueError('invalid body size')
+                self._raw=self.rfile.read(length)
+            return self._raw
         def parse_body(self):
-            length=int(self.headers.get('Content-Length','0'))
-            if length<0 or length>1048576: raise ValueError('invalid body size')
-            data=json.loads(self.rfile.read(length));
+            data=json.loads(self.read_raw());
             if not isinstance(data,dict): raise ValueError('expected object')
             return data
         def run_key_ok(self):
@@ -85,6 +104,8 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def do_GET(self):
             if not self.host_ok(): return self.send_json(403,{'error':'forbidden host'})
             parsed=urlsplit(self.path); path=parsed.path; query=parse_qs(parsed.query,keep_blank_values=True); now=time.time()
+            # The app's name is shown on the sign-in page, before anyone has signed in.
+            if path=='/api/brand': return self.send_json(200,{'brand':load_fleet(config_dir)['brand']})
             if path.startswith('/api/') and not (self.token_ok(self.headers.get('X-HQ-Token')) or (path=='/api/stream' and self.token_ok(query.get('token',[None])[0]))): return self.send_json(403,{'error':'forbidden'})
             def param(k,default=None): return query.get(k,[default])[0]
             try:
@@ -145,6 +166,24 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                 with closing(store.conn()) as conn:
                     if path=='/api/timeline': return self.send_json(200, timeline_events(conn, param('from'), param('to')))
                     if path=='/api/delegations': return self.send_json(200,_rows(conn,'select ext_id as id, ts, provider, model, task_kind, outcome from delegations order by ts desc, id desc limit ?', (min(200,max(1,int(param('limit','20')))),)))
+                    if path=='/api/fleet':
+                        name=param('range','today')
+                        # Updates arrive every few seconds, so one answer serves them all for a short while.
+                        with fleet_lock:
+                            cached=fleet_cache.get(name)
+                            if cached and now-cached[0]<FLEET_CACHE_S: return self.send_json(200,cached[1])
+                            answer=fleet_overview(conn,cfg,rolling_window(name,now),now,remote_collector.health() if remote_collector else {},load_fleet(config_dir))
+                            fleet_cache[name]=(now,answer)
+                        return self.send_json(200,answer)
+                    if path=='/api/insights':
+                        name=param('range','today')
+                        with fleet_lock:
+                            cached=fleet_cache.get('insights:'+name)
+                            if cached and now-cached[0]<INSIGHTS_CACHE_S: return self.send_json(200,cached[1])
+                            answer=insights(conn,rolling_window(name,now),now)
+                            fleet_cache['insights:'+name]=(now,answer)
+                        return self.send_json(200,answer)
+                    if path=='/api/alerts': return self.send_json(200,{'alerts':alerts(limit_cards(conn,cfg,now),cfg.alerts.get('thresholds',[80,95]),cfg.deepseek_alert)})
                     if path=='/api/limits': return self.send_json(200,limit_cards(conn,cfg,now))
                     if path=='/api/series':
                         rng=resolve_range(param('range','today'),datetime.now().astimezone(),param('from'),param('to'))
@@ -153,7 +192,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         name=param('range','today'); start=param('from'); end=param('to'); rng=resolve_range(name,datetime.now().astimezone(),start,end)
                         return self.send_json(200,compute_kpis(conn,cfg,rng,param('group_by'),now))
                     if path in ('/api/sessions','/api/overview'):
-                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id, r.goal_id as goal_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn)
+                        sessions=_rows(conn,'select sessions.*, r.id as launched_run_id, r.goal_id as goal_id from sessions left join runs r on r.rowid=(select rowid from runs where session_id=sessions.id order by started_at desc, rowid desc limit 1) order by sessions.last_event_at desc'); last=last_kinds(conn,since=now-86400)
                         for s in sessions: s['status']=session_status(s['last_event_at'],last.get(s['id']),s['ended_at'],now,imported=bool(s['imported']))
                         if path=='/api/sessions':
                             for key,col in [('status','status'),('harness','harness'),('account','account_id')]:
@@ -178,7 +217,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                         if not rows: return self.send_json(404,{'error':'session not found'})
                         order=param('order','asc')
                         if order not in ('asc','desc'): raise ValueError('invalid order')
-                        s=rows[0]; s['status']=session_status(s['last_event_at'],last_kinds(conn).get(sid),s['ended_at'],now,imported=bool(s['imported'])); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
+                        s=rows[0]; kind=conn.execute('select kind from events where session_id=? order by ts desc, id desc limit 1',(sid,)).fetchone(); s['status']=session_status(s['last_event_at'],kind[0] if kind else None,s['ended_at'],now,imported=bool(s['imported'])); events=_rows(conn,f'select * from events where session_id=? order by ts {order}, id {order} limit ? offset ?',(sid,min(1000,max(1,int(param('limit','100')))),max(0,int(param('offset','0')))))
                         cards=limit_cards(conn,cfg,now)
                         return self.send_json(200,{'session':s,'events':events,'tasks':_rows(conn,'select * from tasks where session_id=? order by started_at',(sid,)),'children':_rows(conn,'select * from sessions where parent_id=?',(sid,)),'value':session_value(conn,cfg,sid),'account_limit':next((c for c in cards if c['account_id']==s['account_id']),None)})
                 return self.send_json(404,{'error':'not found'})
@@ -193,11 +232,24 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
         def do_PUT(self): self.write_request('PUT')
         def write_request(self,method):
             path=urlsplit(self.path).path
-            exchange=method=='POST' and path=='/api/exchange'
-            origin_ok=self.headers.get('Origin')==f'http://{self.headers.get("Host")}'
-            if not self.host_ok() or not origin_ok or (not exchange and not self.write_ok()): return self.send_json(403,{'error':'forbidden'})
+            # The start-up code hands over the permanent token, so it only works on this machine.
+            exchange=method=='POST' and path=='/api/exchange' and not self.is_public()
+            sign_in=method=='POST' and path=='/api/login'
+            self._raw=None
+            try: self.read_raw()
+            except ValueError: pass  # refused below, once it's clear what kind of request it is
+            if not self.host_ok() or not self.origin_ok() or not (exchange or sign_in or self.write_ok()): return self.send_json(403,{'error':'forbidden'})
+            if sign_in and self.is_public() and self.headers.get('X-Forwarded-Proto')!='https': return self.send_json(403,{'error':'sign-in needs HTTPS'})
             try:
                 data=self.parse_body()
+                if sign_in:
+                    if not login.configured(): return self.send_json(403,{'error':'Password sign-in is not set up yet.'})
+                    try: session=login.sign_in(data.get('password'))
+                    except Locked as exc: return self.send_json(429,{'error':'Too many attempts.','retry_after':exc.retry_after})
+                    return self.send_json(200,{'token':session,'run_key':run_key}) if session else self.send_json(401,{'error':'That password is not right.'})
+                if method=='POST' and path=='/api/logout':
+                    login.sign_out(self.headers.get('X-HQ-Token'))
+                    return self.send_json(200,{'ok':True})
                 if exchange:
                     code=data.get('code')
                     with lock:
