@@ -43,16 +43,20 @@ def _billing(now, day):
 def _rows(conn, sql, args=()):
     cur=conn.execute(sql,args); return [dict(zip([d[0] for d in cur.description], row)) for row in cur.fetchall()]
 
+# Events are read one row at a time with only the columns used. A month can hold over a million events,
+# and loading them all as dicts took HQ to 1.5 GB per request.
+EVENT_COLS = 'session_id, ts, model, kind, tokens_in, tokens_out, tokens_cache_read, tokens_cache_write, tokens_estimated'
+
 def session_value(conn,cfg,session_id):
     session=_rows(conn,'select * from sessions where id=?',(session_id,))
     if not session: return {'tokens': 0,'value_usd':0.0,'unpriced_tokens':0,'effective_cost_usd':None,'estimated':False}
-    s=session[0]; events=_rows(conn,'select * from events where session_id=?',(session_id,)); total=0; val=0.; unpriced=0; est=False
-    for e in events:
-        nums=[e[k] or 0 for k in ('tokens_in','tokens_out','tokens_cache_read','tokens_cache_write')]; n=sum(nums); total+=n
-        v=value_usd(*nums,cfg.pricebook.get(e['model'] or s['model']))
+    s=session[0]; total=0; val=0.; unpriced=0; est=False
+    for model,*nums,estimated in conn.execute('select model, tokens_in, tokens_out, tokens_cache_read, tokens_cache_write, tokens_estimated from events where session_id=?',(session_id,)):
+        nums=[x or 0 for x in nums]; n=sum(nums); total+=n
+        v=value_usd(*nums,cfg.pricebook.get(model or s['model']))
         if v is None: unpriced+=n
         else: val+=v
-        est |= bool(n and e['tokens_estimated'])
+        est |= bool(n and estimated)
     cost=None; account=next((a for a in cfg.accounts if a.id==s['account_id']),None)
     if account and account.monthly_price_usd is not None and s['started_at'] is not None:
         start,end=_billing(s['started_at'],account.billing_day)
@@ -73,11 +77,11 @@ def series(conn, cfg, rng: Range, bucket: Literal["hour", "day"], by: Literal["h
         key = (model or session.get('model')) if by == 'model' else session.get('account_id' if by == 'account' else by)
         k = (dt.timestamp(), key or 'unknown')
         return rows.setdefault(k, {'t': k[0], 'key': k[1], 'tokens': 0, 'value_usd': None, 'unpriced_tokens': 0, 'tasks': 0, 'errors': 0})
-    for e in _rows(conn, 'select * from events where ts>=? and ts<?', (rng.start, rng.end)):
-        s = sessions.get(e['session_id'], {})
-        r = row(e['ts'], s, e['model']); nums = [e[k] or 0 for k in ('tokens_in','tokens_out','tokens_cache_read','tokens_cache_write')]
-        r['tokens'] += sum(nums); r['errors'] += e['kind'] == 'error'
-        v = value_usd(*nums, cfg.pricebook.get(e['model'] or s.get('model')))
+    for sid, ts, model, kind, *nums in conn.execute('select session_id, ts, model, kind, tokens_in, tokens_out, tokens_cache_read, tokens_cache_write from events where ts>=? and ts<?', (rng.start, rng.end)):
+        s = sessions.get(sid, {})
+        r = row(ts, s, model); nums = [x or 0 for x in nums]
+        r['tokens'] += sum(nums); r['errors'] += kind == 'error'
+        v = value_usd(*nums, cfg.pricebook.get(model or s.get('model')))
         if v is None: r['unpriced_tokens'] += sum(nums)
         if v is not None and sum(nums): r['value_usd'] = (r['value_usd'] or 0) + v
     for task in _rows(conn, 'select * from tasks where started_at>=? and started_at<?', (rng.start, rng.end)):
@@ -88,20 +92,27 @@ def compute_kpis(conn,cfg,rng,group_by,now):
     if group_by not in (None,'harness','provider','model','account'): raise ValueError('invalid group_by')
     def calculate(start,end,lists=True, filter_group=None):
         sessions=_rows(conn,'select * from sessions'); byid={s['id']:s for s in sessions}
-        events=_rows(conn,'select * from events where ts>=? and ts<? order by session_id,ts,id',(start,end))
         tasks=_rows(conn,'select * from tasks where started_at>=? and started_at<?',(start,end))
+        keep=lambda sid: True
         if filter_group:
             key,value=filter_group; col='account_id' if key=='account' else key
-            events=[e for e in events if byid.get(e['session_id'],{}).get(col)==value]; tasks=[t for t in tasks if byid.get(t['session_id'],{}).get(col)==value]; sessions=[s for s in sessions if s.get(col)==value]
-        totals=[0]*4; priced=0.; unpriced=0; estimated=False; values=defaultdict(float); session_tokens=defaultdict(int); priced_sessions=set(); models=defaultdict(int); times=defaultdict(list)
-        for e in events:
-            s=byid.get(e['session_id'],{}); nums=[e[k] or 0 for k in ('tokens_in','tokens_out','tokens_cache_read','tokens_cache_write')]; n=sum(nums)
-            session_tokens[e['session_id']]+=n; totals=[a+b for a,b in zip(totals,nums)]; model=e['model'] or s.get('model'); models[model or 'unknown']+=n
+            keep=lambda sid: byid.get(sid,{}).get(col)==value
+            tasks=[t for t in tasks if keep(t['session_id'])]; sessions=[s for s in sessions if s.get(col)==value]
+        totals=[0]*4; priced=0.; unpriced=0; estimated=False; values=defaultdict(float); session_tokens=defaultdict(int); priced_sessions=set(); models=defaultdict(int)
+        seconds=0.; tools=0; errors=0; last_sid=None; last_ts=None
+        # Ordered by session then time, so active time is summed from each event's gap to the one before.
+        for sid,ts,model,kind,*nums,est in conn.execute(f'select {EVENT_COLS} from events where ts>=? and ts<? order by session_id,ts,id',(start,end)):
+            if not keep(sid): continue
+            s=byid.get(sid,{}); nums=[x or 0 for x in nums]; n=sum(nums)
+            session_tokens[sid]+=n; totals=[a+b for a,b in zip(totals,nums)]; model=model or s.get('model'); models[model or 'unknown']+=n
             v=value_usd(*nums,cfg.pricebook.get(model)); unpriced+=n if v is None else 0
-            if v is not None: priced+=v; values[e['session_id']]+=v; priced_sessions.add(e['session_id']) if n else None
-            estimated |= bool(n and e['tokens_estimated']); times[e['session_id']].append(e['ts'])
-        hours=sum(sum(b-a for a,b in zip(ts,ts[1:]) if b-a<=600) for ts in times.values())/3600
-        ok=sum(t['outcome']=='ok' for t in tasks); err=sum(t['outcome']=='error' for t in tasks); tools=sum(e['kind']=='tool_call' for e in events); errors=sum(e['kind']=='error' for e in events)
+            if v is not None: priced+=v; values[sid]+=v; priced_sessions.add(sid) if n else None
+            estimated |= bool(n and est)
+            if sid==last_sid and ts-last_ts<=600: seconds+=ts-last_ts
+            last_sid,last_ts=sid,ts
+            tools+=kind=='tool_call'; errors+=kind=='error'
+        hours=seconds/3600
+        ok=sum(t['outcome']=='ok' for t in tasks); err=sum(t['outcome']=='error' for t in tasks)
         durations=[t['ended_at']-t['started_at'] for t in tasks if t['ended_at'] is not None]
         from .status import session_status
         from .status import last_kinds
@@ -110,8 +121,8 @@ def compute_kpis(conn,cfg,rng,group_by,now):
         roi={}
         for a in cfg.accounts:
             b0,b1=_billing(now,a.billing_day); v=0
-            for e in _rows(conn,'select e.*,s.model as session_model from events e join sessions s on s.id=e.session_id where s.account_id=? and e.ts>=? and e.ts<?',(a.id,b0,b1)):
-                v+=value_usd(e['tokens_in'],e['tokens_out'],e['tokens_cache_read'],e['tokens_cache_write'],cfg.pricebook.get(e['model'] or e['session_model'])) or 0
+            for model,session_model,*nums in conn.execute('select e.model,s.model,e.tokens_in,e.tokens_out,e.tokens_cache_read,e.tokens_cache_write from events e join sessions s on s.id=e.session_id where s.account_id=? and e.ts>=? and e.ts<?',(a.id,b0,b1)):
+                v+=value_usd(*nums,cfg.pricebook.get(model or session_model)) or 0
             roi[a.id]={'value_usd':v,'monthly_price_usd':a.monthly_price_usd,'roi':v/a.monthly_price_usd if a.monthly_price_usd else None}
         snaps=_rows(conn,'select * from limit_snapshots where recorded_at>=? and recorded_at<?',(start,end)); peaks={}
         for s in snaps:
