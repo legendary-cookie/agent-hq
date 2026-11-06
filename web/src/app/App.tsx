@@ -4,7 +4,7 @@ import { AlertBanner } from '../components/AlertBanner';
 import type { LimitCard, Overview } from '../api/types';
 import { useApi } from '../api/client';
 import { useRoute } from './router';
-import { TokenHelp } from './TokenHelp';
+import { SignIn } from './SignIn';
 import type { Route } from './router';
 import { Office } from '../pages/Office';
 import { Dashboard } from '../pages/Dashboard';
@@ -39,7 +39,7 @@ export function App() {
     window.addEventListener('hq-forbidden', handler);
     return () => { window.removeEventListener('hq-forbidden', handler); window.removeEventListener('hq-open-run', openRun); };
   }, []);
-  if (forbidden || error?.status === 403) return <TokenHelp />;
+  if (forbidden || error?.status === 403) return <SignIn />;
   const Page = PAGES[route];
   return (
     <div className="shell">

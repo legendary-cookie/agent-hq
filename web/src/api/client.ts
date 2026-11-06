@@ -17,7 +17,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   ) {
     return request<T>(path, init);
   }
-  const key = JSON.stringify([path, sessionStorage.getItem('hq-token'), sessionStorage.getItem('hq-run-key'), changeCounter]);
+  const key = JSON.stringify([path, localStorage.getItem('hq-token'), localStorage.getItem('hq-run-key'), changeCounter]);
   const existing = inFlight.get(key);
   if (existing) return existing as Promise<T>;
   const promise = request<T>(path, init);
@@ -34,8 +34,8 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set('X-HQ-Token', sessionStorage.getItem('hq-token') ?? '');
-  if (path === '/api/runs' || path.startsWith('/api/runs/') || path.startsWith('/api/approvals')) headers.set('X-HQ-Run-Key', sessionStorage.getItem('hq-run-key') ?? '');
+  headers.set('X-HQ-Token', localStorage.getItem('hq-token') ?? '');
+  if (path === '/api/runs' || path.startsWith('/api/runs/') || path.startsWith('/api/approvals')) headers.set('X-HQ-Run-Key', localStorage.getItem('hq-run-key') ?? '');
   if ((init.method ?? 'GET').toUpperCase() !== 'GET')
     headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });

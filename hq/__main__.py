@@ -6,6 +6,8 @@ from pathlib import Path
 import webbrowser
 from .config import load_config
 from .collector import Collector
+from urllib.parse import urlsplit
+from .auth import prompt_for_password
 from .remote.collector import RemoteCollector
 from .remote.config import load_hosts
 from .store import Store
@@ -59,7 +61,11 @@ def load_token(token_path, rotate=False):
 def main(argv=None):
     root=Path(__file__).resolve().parent.parent
     default_db=Path(os.environ['LOCALAPPDATA'])/'agent-hq'/'hq.db' if os.name=='nt' and os.environ.get('LOCALAPPDATA') else Path.home()/'.local'/'share'/'agent-hq'/'hq.db'
-    p=argparse.ArgumentParser(); p.add_argument('--port',type=int,default=7420); p.add_argument('--config',type=Path,default=root/'config'); p.add_argument('--db',type=Path,default=default_db); p.add_argument('--no-browser',action='store_true'); p.add_argument('--rotate-token',action='store_true'); p.add_argument('--once',action='store_true'); args=p.parse_args(argv)
+    p=argparse.ArgumentParser(); p.add_argument('--port',type=int,default=7420); p.add_argument('--config',type=Path,default=root/'config'); p.add_argument('--db',type=Path,default=default_db); p.add_argument('--no-browser',action='store_true'); p.add_argument('--rotate-token',action='store_true'); p.add_argument('--once',action='store_true'); p.add_argument('--public-url',help='https://host[:port] of the HTTPS proxy in front of Agent HQ'); p.add_argument('--set-password',action='store_true',help='set the sign-in password, then exit'); args=p.parse_args(argv)
+    if args.set_password: return prompt_for_password(args.db.parent/'login.json')
+    if args.public_url:
+        public=urlsplit(args.public_url)
+        if public.scheme!='https' or not public.netloc or public.path.strip('/') or public.query: p.error('--public-url must look like https://host[:port]')
     cfg=load_config(args.config); args.db.parent.mkdir(parents=True,exist_ok=True); store=Store(args.db)
     adapters=build_adapters(cfg,args.db.parent); collector=Collector(store,cfg,adapters)
     hosts, warnings = load_hosts(args.config)
@@ -78,7 +84,7 @@ def main(argv=None):
         service=RunService(store,cfg,args.config,args.db.parent,lambda kind: recommend_bridge(pu_dir,kind) if pu_dir else None,pu=pu_dir)
         service.runner.recover()
         try:
-            server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist',token=token,run_service=service,remote_collector=remote); collector.start(); remote.start()
+            server,token=make_server(store,collector,cfg,args.config,args.port,root/'web'/'dist',token=token,run_service=service,remote_collector=remote,public_url=args.public_url); collector.start(); remote.start()
         except BaseException:
             service.runner.shutdown()
             raise

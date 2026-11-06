@@ -4,6 +4,7 @@ import type { Approval } from '../api/types';
 import type { LimitCard } from '../api/types';
 import { useApi } from '../api/client';
 import { LimitBar } from './LimitBar';
+import { signOut } from '../app/SignIn';
 
 export function selectSidebarLimits(cards: LimitCard[], n = 4) {
   return cards
@@ -86,6 +87,9 @@ export function Sidebar({ route, navigate, onRun }: { route: Route; navigate: (r
         onClick={() => navigate('settings')}
       >
         Settings
+      </button>
+      <button className="sign-out" onClick={signOut}>
+        Sign out
       </button>
     </aside>
   );

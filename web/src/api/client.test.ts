@@ -8,7 +8,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 it('sends token header', async () => {
-  sessionStorage.setItem('hq-token', 'abc');
+  localStorage.setItem('hq-token', 'abc');
   const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
   vi.stubGlobal('fetch', fetcher);
   await api('/api/health');
@@ -24,7 +24,7 @@ it('throws ApiError with status', async () => {
   await expect(api('/api/health')).rejects.toMatchObject({ status: 403 });
   expect(new ApiError(403)).toBeInstanceOf(Error);
 });
-it('shows token help on 403', async () => {
+it('shows the sign-in page on 403', async () => {
   vi.stubGlobal(
     'fetch',
     vi
@@ -39,7 +39,7 @@ it('shows token help on 403', async () => {
     },
   );
   render(createElement(App));
-  await waitFor(() => expect(screen.getByText(/Open Agent HQ from the link/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByLabelText('Password')).toBeInTheDocument());
 });
 it('useApi clears data when path changes', async () => {
   const { renderHook } = await import('@testing-library/react');

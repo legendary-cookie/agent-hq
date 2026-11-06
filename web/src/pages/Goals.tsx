@@ -9,7 +9,7 @@ import './goals.css';
 
 type Goal = { id:string; text_preview:string; project:string; status:string; stop_reason?:string|null; branch:string|null; plan_json:string|null; steps:Record<string,{status:string;run_id:string|null}> };
 type Diff = {diff:string; truncated:boolean; commit:string|null};
-const call = <T,>(path:string, method='GET', body?:unknown) => api<T>(path, {method, headers:{'X-HQ-Run-Key':sessionStorage.getItem('hq-run-key') ?? ''}, ...(body === undefined ? {} : {body:JSON.stringify(body)})});
+const call = <T,>(path:string, method='GET', body?:unknown) => api<T>(path, {method, headers:{'X-HQ-Run-Key':localStorage.getItem('hq-run-key') ?? ''}, ...(body === undefined ? {} : {body:JSON.stringify(body)})});
 export function Goals() {
   const [goals,setGoals] = useState<Goal[]>([]), [goal,setGoal] = useState<Goal|null>(null), [steps,setSteps] = useState<Step[]>([]), [diff,setDiff] = useState<Diff|null>(null), [open,setOpen] = useState(false), [error,setError] = useState(''), [options,setOptions] = useState<{projects:string[];tools:Record<string,unknown>}>({projects:[],tools:{}});
   const load = () => call<Goal[]>('/api/goals').then(setGoals).catch(e => setError(e.message));
