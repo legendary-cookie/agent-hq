@@ -31,6 +31,7 @@ export function Agents() {
   const hosts = [...new Set([...Object.keys(health?.hosts ?? {}), ...sessions.flatMap((row) => row.host ? [row.host] : [])])].sort();
   const filtered = sessions.filter(
     (row) =>
+      !row.id.endsWith('/zylos:comm') && // A message log from the zylos_metrics source, not a session to open.
       (host === 'all' || (host === 'local' ? !row.host : row.host === host.slice(5))) &&
       (status === 'all' || row.status === status) && (harness === 'all' || row.harness === harness),
   );
