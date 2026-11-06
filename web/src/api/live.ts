@@ -16,7 +16,7 @@ function notify() {
 
 function connect() {
   const connection = new EventSource(
-    `/api/stream?token=${encodeURIComponent(sessionStorage.getItem('hq-token') ?? '')}`,
+    `/api/stream?token=${encodeURIComponent(localStorage.getItem('hq-token') ?? '')}`,
   );
   source = connection;
   connection.addEventListener('changed', () => {

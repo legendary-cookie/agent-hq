@@ -18,6 +18,15 @@ _LAST_KIND_SQL = (
     '(PARTITION BY session_id ORDER BY ts DESC, id DESC) AS rn FROM events) WHERE rn = 1')
 
 
-def last_kinds(conn) -> dict:
-    """Kind of each session's most recent event, in one indexed query."""
-    return dict(conn.execute(_LAST_KIND_SQL).fetchall())
+def last_kinds(conn, since=None) -> dict:
+    """Kind of each session's most recent event, in one indexed query.
+
+    Pass since to skip sessions with nothing after that time. Status needs the kind only for the
+    last day, so this keeps the lookup fast on a database with millions of events.
+    """
+    if since is None:
+        return dict(conn.execute(_LAST_KIND_SQL).fetchall())
+    return dict(conn.execute(
+        'SELECT session_id, kind FROM (SELECT session_id, kind, ROW_NUMBER() OVER '
+        '(PARTITION BY session_id ORDER BY ts DESC, id DESC) AS rn FROM events '
+        'WHERE session_id IN (SELECT id FROM sessions WHERE last_event_at >= ?)) WHERE rn = 1', (since,)).fetchall())

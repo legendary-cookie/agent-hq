@@ -1,3 +1,55 @@
+export interface FleetAgent {
+  host: string;
+  label: string;
+  owner: string | null;
+  group: string;
+  status: 'working' | 'recent' | 'idle' | 'quiet' | 'attention';
+  error: string | null;
+  catching_up: boolean;
+  last_seen: number | null;
+  messages_in: number;
+  messages_out: number;
+  agent_messages: number;
+  tasks: number;
+  errors: number;
+  cells: number[];
+  gap: number;
+  tokens: number;
+  cache_read_tokens: number;
+  value_usd: number;
+  top_tier_usd: number;
+  unpriced_tokens: number;
+}
+export interface Fleet {
+  window: { start: number; end: number; bucket_s: number; count: number };
+  totals: {
+    agents: number;
+    working: number;
+    active: number;
+    attention: number;
+    quiet: number;
+    catching_up: number;
+    messages: number;
+    previous_messages: number;
+    agent_messages: number;
+    tasks: number;
+    tokens: number;
+    cache_read_tokens: number;
+    actions: number;
+    value_usd: number;
+    top_tier_usd: number;
+    projected_30d_usd: number;
+    silent_usd: number;
+    silent_agents: number;
+    unpriced_tokens: number;
+    previous_value_usd: number;
+    errors: number;
+  };
+  /** The whole fleet per cell of the window, for the graphs. Absent from older servers. */
+  series?: { actions: number[]; messages: number[]; agent_messages: number[]; tokens: number[]; value_usd: number[]; errors: number[] };
+  models: { model: string; tokens: number; value_usd: number; unpriced_tokens: number }[];
+  agents: FleetAgent[];
+}
 export interface SessionRow {
   id: string;
   host?: string | null;
