@@ -22,6 +22,10 @@ Status:
 
 Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [Steer spec](docs/superpowers/specs/2026-11-03-agent-hq-steer-design.md), [remote watching spec](docs/superpowers/specs/2026-11-03-agent-hq-remote-watch-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [1.1 spec](docs/superpowers/specs/2026-11-04-agent-hq-1.1-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
+## Fleet management and accounts
+
+The fleet edition adds Overview, Usage, Insights, Trends, an interactive office, accounts with configurable roles, and optional Proxmox and 9router integration. Local collection and run mode still work without a fleet. See [fleet setup](docs/fleet-setup.md) for authentication, SSH prerequisites and integration limits.
+
 ## Requirements
 
 - Python 3.11 or newer. No third-party packages.
@@ -225,6 +229,36 @@ Safety:
   - each pass is capped at 20 MB of logs and one database of at most 40 MB;
   - forbidden files (`auth.json`, `.credentials.json`, `.env`, `secrets` and so on) are skipped on both sides.
 - An unreachable or misbehaving host only affects its own health row. It backs off up to 10 minutes and retries.
+
+### Sign in from another computer
+
+Agent HQ still listens only on `127.0.0.1`, so put an HTTPS proxy such as Caddy on the same machine, then:
+
+1. Set a password: `python -m hq --set-password --db <path to hq.db>`.
+2. Start with `--public-url https://your-address`. Only that address is accepted, and the proxy must send `X-Forwarded-Proto: https`.
+
+Never expose it through a plain HTTP proxy, and keep run mode off unless you trust everyone who can reach it.
+
+### Overview, Agents and Usage
+
+These pages, which open first, show one row per remote host. To show people's names, add `config/fleet.json`. Everything in it is optional:
+
+```json
+{"brand": "My HQ", "agents": {"agent-1": {"label": "Sales bot", "owner": "Sam", "group": "Sales"}}}
+```
+
+### Zylos message metrics (no message text)
+
+To count messages on a remote Zylos agent, add the `zylos_metrics` source:
+
+```json
+{"hosts": [{"name": "agent-1", "ssh": "zylos@agent-1", "os": "linux", "interval_s": 300, "sources": ["zylos_metrics"]}]}
+```
+
+- The scanner opens `~/zylos/comm-bridge/c4.db` read-only and sends only the id, direction, channel, failed flag and timestamp of each message. It never selects the message text, so the text can't leave the machine, and the "Show Zylos message previews" setting has no effect on this source.
+- No file is copied, so the database size limit above doesn't apply. A large backlog arrives 20,000 messages per pass, and the host shows as catching up.
+- You get message counts and activity, not tokens or costs. Those come from the `claude_code` source, which copies full transcripts into the mirror.
+- If the database is replaced by one with a lower highest id, Agent HQ reads the new one from the start and keeps the old counts. A replacement that already has a higher id than the last one read isn't detected, so its earlier messages are skipped.
 
 Checked on this PC, 2026-11-03: WSL Debian, reached over SSH as a stand-in server.
 - 90 Codex sessions, with 68,712,888 tokens.

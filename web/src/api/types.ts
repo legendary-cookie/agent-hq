@@ -1,3 +1,90 @@
+export interface FleetAgent {
+  host: string;
+  label: string;
+  owner: string | null;
+  group: string;
+  account: string | null;
+  status: 'working' | 'recent' | 'idle' | 'quiet' | 'attention';
+  error: string | null;
+  catching_up: boolean;
+  last_seen: number | null;
+  messages_in: number;
+  messages_out: number;
+  agent_messages: number;
+  tasks: number;
+  errors: number;
+  cells: number[];
+  gap: number;
+  tokens: number;
+  cache_read_tokens: number;
+  value_usd: number;
+  top_tier_usd: number;
+  unpriced_tokens: number;
+  /** This agent's share of the fleet's whole weekly Claude plan capacity, this week (from 9router). */
+  plan_pct?: number | null;
+  /** API-price value of its 9router traffic this week. */
+  cost_week?: number | null;
+  /** Dollars it actually spent through API-key accounts this week. */
+  api_paid?: number | null;
+}
+/** One 9router account's week, for the plan figures. */
+export interface PlanAccount {
+  id?: string;
+  name: string;
+  plan: boolean;
+  used_pct: number | null;
+  resets_at: number | null;
+  week_start: number | null;
+  cost_week: number;
+}
+/** This week's Claude plan use from 9router. Absent when 9router isn't configured. */
+export interface FleetPlan {
+  billing: 'plan' | 'api' | 'mixed' | 'none';
+  used_pct: number | null;
+  /** The part of used_pct 9router can't put on any agent: use before the account came to 9router. */
+  unattributed_pct?: number | null;
+  plan_accounts: number;
+  api_cost_week: number;
+  accounts: PlanAccount[];
+}
+export interface FleetAccount {
+  id: string;
+  provider?: string;
+  plan?: string;
+  individual?: boolean;
+}
+export interface Fleet {
+  window: { start: number; end: number; bucket_s: number; count: number };
+  totals: {
+    agents: number;
+    working: number;
+    active: number;
+    attention: number;
+    quiet: number;
+    catching_up: number;
+    messages: number;
+    previous_messages: number;
+    agent_messages: number;
+    tasks: number;
+    tokens: number;
+    cache_read_tokens: number;
+    actions: number;
+    value_usd: number;
+    top_tier_usd: number;
+    projected_30d_usd: number;
+    silent_usd: number;
+    silent_agents: number;
+    unpriced_tokens: number;
+    previous_value_usd: number;
+    errors: number;
+  };
+  /** The whole fleet per cell of the window, for the graphs. Absent from older servers. */
+  series?: { actions: number[]; messages: number[]; agent_messages: number[]; tokens: number[]; value_usd: number[]; errors: number[] };
+  models: { model: string; tokens: number; value_usd: number; unpriced_tokens: number }[];
+  accounts: FleetAccount[];
+  agents: FleetAgent[];
+  plan?: FleetPlan;
+}
 export interface SessionRow {
   id: string;
   host?: string | null;

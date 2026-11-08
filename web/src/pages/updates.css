@@ -1,0 +1,29 @@
+.updates-table .mini-row { grid-template-columns: var(--update-cols, 28px minmax(0, 1.4fr) 1.1fr .8fr .8fr .7fr 96px); align-items: center; }
+.updates-table .mini-row span:first-child { text-align: left; }
+.updates-table .mini-row span:nth-child(2) { text-align: left; }
+.updates-table .behind { color: var(--waiting); font-weight: 500; }
+.updates-wide { grid-column: span 4; text-align: left !important; }
+.updates-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; font-size: 13px; }
+.updates-bulk .plain-button, .updates-table .plain-button, .snapshots .plain-button { height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.updates-job { margin: 0 0 6px 28px; font-size: 12.5px; color: var(--muted); }
+.updates-job.failed { color: var(--error); }
+.updates-job.done { color: var(--working); }
+.snapshots { margin: 0 0 10px 28px; font-size: 12.5px; }
+.snapshots .control-buttons { margin: 0; }
+.updates-select { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 14px 0 0; }
+.updates-select .plain-button { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; }
+.updates-select .plain-button:hover { background: var(--hover); }
+.updates-table .updates-group { border-bottom: 0; padding-top: 14px; }
+.updates-group-name { grid-column: 2 / -1; font-weight: 600; font-size: 12.5px; }
+.updates-group-name .muted { font-weight: 400; margin-left: 4px; }
+.updates-table .mini-row[data-updating] { background: var(--subtle); }
+.updates-snap { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; }
+.updates-settings { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: flex-end; font-size: 13px; }
+.updates-settings h2 { flex-basis: 100%; margin: 0; font-size: 14px; }
+.updates-settings label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.updates-settings label.watch-check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); flex-basis: 100%; }
+.updates-settings select, .updates-settings input[type="number"], .updates-settings input[type="time"] { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg, transparent); color: var(--text); font: inherit; }
+.updates-settings input[type="number"] { width: 90px; }
+.updates-settings .control-buttons { margin: 0; flex-basis: 100%; }
+.updates-settings .plain-button { height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer; }
+.updates-settings .note { flex-basis: 100%; margin: 0; }

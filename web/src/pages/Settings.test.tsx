@@ -46,7 +46,8 @@ it('Settings save sends unchanged sources', async () => {
   const fetcher = setup();
   await screen.findByDisplayValue('Codex');
   fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
-  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(5));
+  // The settings calls, plus the alerts and agent keys panels' reads (/api/watch, /api/control, /api/agent-keys).
+  await waitFor(() => expect(fetcher.mock.calls.filter((call) => !['/api/watch', '/api/control', '/api/agent-keys'].includes(String(call[0])))).toHaveLength(5));
   expect(JSON.parse(fetcher.mock.calls.find((call) => call[1]?.method === 'PUT')![1].body).sources).toEqual(settings.sources);
   expect(await screen.findByText('Saved')).toBeInTheDocument();
 });

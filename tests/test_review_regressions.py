@@ -43,7 +43,13 @@ class ReviewTests(unittest.TestCase):
 
     def test_forbidden_resolved_globs_and_walk(self):
         secret=self.root/'secrets'; secret.mkdir(); (secret/'x.jsonl').write_text('{}\n')
-        (self.root/'auth.json').write_text('{}'); (self.root/'link').symlink_to(secret, target_is_directory=True)
+        (self.root/'auth.json').write_text('{}')
+        try:
+            (self.root/'link').symlink_to(secret, target_is_directory=True)
+        except OSError as exc:
+            if getattr(exc, 'winerror', None) == 1314:
+                self.skipTest('Windows requires symlink privilege for this test')
+            raise
         for value in [str(self.root/'auth.json.'),str(self.root/'auth.json::$DATA'),str(self.root/'link'/'x.jsonl'),str(self.root/'.credentials.json')]:
             with self.subTest(value=value), self.assertRaises(ForbiddenPathError): _path(value)
         for value in [str(self.root/'secret?'/'x.jsonl'),str(self.root/'secre[t]s'),str(self.root/'*.json'),str(self.root)]:

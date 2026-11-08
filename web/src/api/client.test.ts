@@ -8,7 +8,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 it('sends token header', async () => {
-  sessionStorage.setItem('hq-token', 'abc');
+  localStorage.setItem('hq-token', 'abc');
   const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) });
   vi.stubGlobal('fetch', fetcher);
   await api('/api/health');
@@ -39,7 +39,35 @@ it('shows token help on 403', async () => {
     },
   );
   render(createElement(App));
-  await waitFor(() => expect(screen.getByText(/Open Agent HQ from the link/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByLabelText('Password')).toBeInTheDocument());
+});
+it('a 403 naming a permission keeps you signed in and carries the reason', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ ok: false, status: 403, json: async () => ({ error: 'You don’t have permission to change accounts.', permission: 'accounts.manage' }) }),
+  );
+  const forbidden = vi.fn();
+  window.addEventListener('hq-forbidden', forbidden);
+  await expect(api('/api/accounts', { method: 'POST', body: '{}' })).rejects.toMatchObject({ status: 403, permission: 'accounts.manage', message: 'You don’t have permission to change accounts.' });
+  window.removeEventListener('hq-forbidden', forbidden);
+  expect(forbidden).not.toHaveBeenCalled();
+});
+it('a page the role cannot view says so instead of showing it', async () => {
+  const { resetMe } = await import('./me');
+  resetMe();
+  localStorage.setItem('hq-token', 'viewer-token');
+  location.hash = '#/router';
+  vi.stubGlobal('EventSource', class { addEventListener() {} close() {} });
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path === '/api/me') return { ok: true, status: 200, json: async () => ({ username: 'sam', name: 'Sam', role: 'viewer', role_label: 'Viewer', permissions: ['view.overview'], admin: false }) };
+    if (path === '/api/router') return { ok: false, status: 403, json: async () => ({ error: 'You don’t have permission to view the router.', permission: 'view.router' }) };
+    return { ok: true, status: 200, json: async () => (path === '/api/limits' ? [] : path === '/api/alerts' ? { alerts: [] } : {}) };
+  }));
+  render(createElement(App));
+  expect(await screen.findByText(/You don’t have access to this page/)).toBeInTheDocument();
+  expect(screen.queryByLabelText('Password')).toBeNull();
+  location.hash = '';
+  resetMe();
 });
 it('useApi clears data when path changes', async () => {
   const { renderHook } = await import('@testing-library/react');

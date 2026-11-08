@@ -68,7 +68,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
-it('Office is the default route', () => expect(parseRoute('')).toBe('office'));
+it('Overview is the default route', () => expect(parseRoute('')).toBe('overview'));
 it('Office shows empty state', async () => {
   render(<Office skinFactory={factory} />);
   expect(await screen.findByText('No agents in the last 24 hours')).toBeInTheDocument();

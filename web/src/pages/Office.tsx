@@ -69,6 +69,11 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
     () => { const base = synthetic ? makeSyntheticSessions(synthetic, Date.now() / 1000) : (sessions ?? []); return replayAt === null ? base : replaySessions(base, timeline?.events ?? [], replayAt); },
     [sessions, synthetic, replayAt, timeline],
   );
+  const { data: fleet } = useApi<{ agents?: { host: string; label: string }[] }>('/api/fleet?range=today', { live: false });
+  const hostLabels = useMemo(
+    () => Object.fromEntries((Array.isArray(fleet?.agents) ? fleet.agents : []).map((agent) => [agent.host, agent.label])),
+    [fleet],
+  );
   const fullScene = useMemo(() => {
     const loaded = sessions !== null && delegations !== null;
     const next = buildScene(
@@ -77,10 +82,11 @@ function OfficeView({ skinFactory }: { skinFactory?: (id: SkinId) => Promise<Ski
       memory.current,
       replayAt ?? Date.now() / 1000,
       loaded ? previous.current : undefined,
+      hostLabels,
     );
     if (loaded) previous.current = next;
     return next;
-  }, [allSessions, sessions, delegations, replayAt]);
+  }, [allSessions, sessions, delegations, replayAt, hostLabels]);
   const scene = useMemo(() => {
     const visible = new Set(
       allSessions

@@ -13,6 +13,9 @@ const priceFields: { key: keyof Price; label: string }[] = [
   { key: 'cache_write', label: 'Cache write' },
 ];
 
+import { AlertSettingsPanel } from './Watch';
+import { AgentKeysPanel } from './AgentKeys';
+
 export function Settings() {
   const {
     data,
@@ -111,6 +114,8 @@ export function Settings() {
   return (
     <div className="settings-page">
       <h1>Settings</h1>
+      <section className="settings-card"><AlertSettingsPanel /></section>
+      <section className="settings-card"><AgentKeysPanel /></section>
       {runOptions?.projects && runOptions?.profiles && <section className="settings-card"><h2>Run mode</h2><p>{runOptions.run_mode ? 'On' : 'Off'}</p><p>Projects: {runOptions.projects.join(', ') || 'None'}</p><p>Profiles: {runOptions.profiles.map((p) => `${p.id} (${p.tool})`).join(', ') || 'None'}</p><p>Turn run mode on and list projects in config/run.json and config/projects.json; profiles live in config/accounts.json.</p></section>}
       {(settingsError || kpisError || healthError) && (
         <p role="alert">{(settingsError || kpisError || healthError)?.message}</p>

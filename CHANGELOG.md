@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add fleet Overview, Agents, Usage, Insights and Trends pages, sortable tables, refreshed light/dark design and mobile layouts.
+- Add username/password accounts, configurable roles, server-side permissions and personal account settings.
+- Add optional Proxmox inventory, agent controls, terminals, agent creation, memory and settings editors, and update jobs.
+- Add optional 9router health, account limits, usage attribution and API-key management.
+- Add authenticated MCP tools and per-agent keys.
+- Stream large KPI queries and cache shared results to reduce memory use.
+- Improve Debian 12 Hermes updates and discovery of per-user agent installations.
+- Make the Proxmox SSH target and agent network/storage configurable; integrations remain inactive without explicit SSH setup.
+
+
 ## 1.1.0 (2026-11-05): Goals, remote runs, office extras
 
 Added
@@ -190,7 +202,7 @@ Verified on real logs (2026-11-03), with independent hand-count scripts
 - DeepSeek Harness: 28 sessions, 122,756,699 tokens, 972 tool calls, 92 prompts, 42 turn ends, 4 subagents linked. 0 mismatched sessions.
 - Antigravity: 40 conversations, 306,072,353 tokens. 0 mismatches, including the largest (77,296,252) and the oldest.
 - Kimi: the one real session (setup records only) reads with 0 warnings.
-- Importer: installed through `POST /api/importer/install` on Windows (health `installing` → `ok`). `doctor` finds no long-tail tools on this PC, so 0 sessions are imported. The tools read natively (claude, codex, antigravity, dsh) are excluded.
+- Importer: installed through `POST /api/importer/install` on Windows (health `installing` â†’ `ok`). `doctor` finds no long-tail tools on this PC, so 0 sessions are imported. The tools read natively (claude, codex, antigravity, dsh) are excluded.
 - Full pass: every reader `ok`, 0 warnings.
 
 Independent review (risk gate)
@@ -248,11 +260,11 @@ Added
 - **Dev only:** `?synthetic=N` for performance checks, removed from production builds.
 
 Fixed (found by checking the running office on real data)
-- **Walks never showed:** delegations reach the page 3–7 s late, which the first walk rule missed.
+- **Walks never showed:** delegations reach the page 3â€“7 s late, which the first walk rule missed.
 - **History animated:** the first scene made every existing subagent walk.
 - **Scattered layout:** rooms floated as separate plates. Labels used raw ids and were covered by figures. Harness colours were the same as status colours.
 - **Dark mode:** the office floor ignored it.
-- **1–2 fps with 60 agents:** every skin rebuilt the whole stage and every text label each frame. Now **100 fps** for all three skins, the display's refresh rate.
+- **1â€“2 fps with 60 agents:** every skin rebuilt the whole stage and every text label each frame. Now **100 fps** for all three skins, the display's refresh rate.
 - **Tower cut off:** its bottom floor was hidden by page scroll.
 - **Duplicate requests:** each refresh sent some requests twice.
 - **Node 25+ tests:** a broken global `localStorage` failed the Office tests on Windows.
@@ -272,7 +284,7 @@ Verified (2026-11-02)
 - Real logs, light and dark mode: all three skins showed the right agents in the right zones. Click opened the right session, with no console errors.
 - 60 synthetic agents: 100 fps in each skin, against a no-canvas baseline of 100 fps.
 - 30 skin switches left 1 canvas, and the JS heap went from 22 MB to 16 MB.
-- With the inspector open and closed, the canvas width follows the stage (966 → 666 → 966 px).
+- With the inspector open and closed, the canvas width follows the stage (966 â†’ 666 â†’ 966 px).
 
 Known limits
 - With hundreds of agents, Isometric and Top-down get crowded and partly clipped.
@@ -319,7 +331,7 @@ Verified (2026-10-31, real logs)
 - Tests: 41 web, 120 Python (on Windows; the two DST tests skip without `tzset` and pass on Linux).
 - Launch flow in the browser: the code was exchanged, the URL cleaned to `#/dashboard` with no token in it, and reusing the code returned 403.
 - Browser checks:
-  - Every page in light mode at 1280–1440 px and in dark mode at 1280 px.
+  - Every page in light mode at 1280â€“1440 px and in dark mode at 1280 px.
   - No horizontal overflow at 1024 px.
   - No `NaN` or `undefined` text.
   - No console errors.
@@ -341,7 +353,7 @@ Verified on real logs (2026-10-31)
 - Hand count from raw JSONL (independent script) vs the API, exact match:
   - Claude Code session (afk-desk): 641 tool calls, 303,310,232 tokens.
   - Codex session: 997 tool calls, 137,132,267 tokens.
-- Live server: foreign `Host` → 403; `POST` without token → 403.
+- Live server: foreign `Host` â†’ 403; `POST` without token â†’ 403.
 - Timings on real data: overview ~270 ms, week KPIs ~200 ms, month KPIs grouped by harness ~1 s.
 
 Independent review (risk gate)

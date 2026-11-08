@@ -1,0 +1,37 @@
+.health { margin: 0 0 22px; padding: 12px 14px; border: 1px solid var(--line-strong); border-left: 3px solid var(--waiting); border-radius: 10px; background: var(--subtle); }
+.health-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; font-size: 14px; }
+.health-head a { color: var(--muted); font-size: 13px; }
+.health ul { list-style: none; margin: 0; padding: 0; }
+.health li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.health li[data-kind='down'] span, .health li[data-kind='crash'] span { color: var(--error); }
+.health-more { margin-top: 6px; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; }
+
+.watch-settings { margin: 0 0 32px; }
+.watch-settings h2 { font-size: 16px; margin: 0 0 6px; }
+.watch-settings > p.muted { margin: 0 0 12px; font-size: 13px; }
+.watch-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 16px; margin: 10px 0; }
+.watch-fields label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+.watch-fields input { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+.watch-number span { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.watch-number input { width: 90px; }
+.watch-check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; cursor: pointer; }
+.watch-kinds { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 12px 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.watch-kinds legend { padding: 0 4px; font-size: 13px; color: var(--muted); }
+.watch-ok { color: var(--working); font-size: 13px; }
+.watch-buttons { display: flex; gap: 8px; margin-top: 10px; }
+.watch-buttons button { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.watch-buttons button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.watch-buttons button:disabled { opacity: .5; cursor: default; }
+
+/* Inside the Settings card, whose own label and input styles would otherwise win. */
+.watch-settings label.watch-check { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; }
+.watch-settings label.watch-check input { width: auto; margin: 0; flex: none; }
+.watch-settings .watch-number span input { width: 90px; flex: none; }
+.watch-settings .watch-number span { white-space: nowrap; }
+.watch-settings .watch-kinds label.watch-check { font-size: 13px; }
+.agent-key-made { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 10px; font-size: 13px; }
+.agent-key-made p { margin: 0 0 8px; }
+.agent-key-made pre { margin: 0 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--hover); font: 12px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.agent-keys { margin-top: 14px; }
+.agent-keys .mini-row { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.4fr) minmax(0, 1fr) 80px; align-items: center; }
+.agent-keys .plain-button, .agent-key-made .plain-button { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; }

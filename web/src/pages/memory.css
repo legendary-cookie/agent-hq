@@ -1,0 +1,27 @@
+.memory-page .tools select { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; min-width: 200px; }
+.memory-new { height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; cursor: pointer; }
+.memory-ok { color: var(--working); font-size: 13px; }
+.memory-grid { display: grid; grid-template-columns: minmax(200px, 280px) 1fr; gap: 20px; align-items: start; }
+.memory-files { max-height: calc(100vh - 220px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 6px; }
+.memory-folder { padding: 8px 8px 2px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.memory-file { display: flex; width: 100%; justify-content: space-between; gap: 8px; padding: 6px 8px; border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.memory-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.memory-file:hover { background: var(--hover); }
+.memory-file[aria-current='true'] { background: var(--hover); font-weight: 600; }
+.memory-editor { min-width: 0; }
+.memory-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; font-size: 13px; }
+.memory-buttons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.memory-buttons button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+.memory-buttons button.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.memory-buttons button:disabled { opacity: .5; cursor: default; }
+.memory-editor textarea { width: 100%; min-height: 420px; height: calc(100vh - 380px); padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--subtle); color: inherit; font-family: var(--mono); font-size: 13px; line-height: 1.5; resize: vertical; }
+.memory-editor textarea[readonly] { background: var(--hover); }
+.memory-history { margin-top: 14px; }
+.memory-history h2 { font-size: 14px; margin: 0 0 6px; }
+.memory-history button { display: flex; width: 100%; justify-content: space-between; gap: 10px; padding: 6px 8px; border: 0; border-top: 1px solid var(--line); background: none; color: inherit; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.memory-history button:hover { background: var(--hover); }
+@media (max-width: 760px) {
+  .memory-grid { grid-template-columns: 1fr; }
+  .memory-files { max-height: 240px; }
+  .memory-editor textarea { height: 55vh; min-height: 260px; }
+}

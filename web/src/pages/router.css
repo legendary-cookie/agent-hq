@@ -1,0 +1,45 @@
+.router-accounts .mini-row { grid-template-columns: 28px minmax(0, 1.6fr) minmax(0, 1.1fr) 1.2fr .8fr .9fr 70px; align-items: center; }
+.router-accounts .mini-row span { text-align: left; }
+.router-accounts .mini-row[data-in-use] { background: var(--subtle); }
+.router-accounts .behind { color: var(--waiting); }
+.router-badge { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--working); color: var(--bg); font-size: 11px; font-weight: 600; }
+.router-limit { display: inline-flex; align-items: center; gap: 6px; width: 100%; }
+.router-limit .px-bar { flex: 1; min-width: 50px; }
+/* Each table is only as tall as its rows (no stretching to the tallest), and names wrap instead of being cut off. */
+.router-breaks { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px 24px; margin-top: 12px; align-items: start; }
+.router-break { align-self: start; align-content: start; height: auto; }
+.router-break .mini-row { grid-template-columns: minmax(0, 1.8fr) 62px 78px 62px; align-items: center; min-height: 0; height: auto; }
+.router-break .mini-row span:first-child { text-align: left; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.router-combo { margin: 6px 0; font-size: 13px; }
+.router-combo code { margin: 0 4px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.router-settings { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 18px; font-size: 13px; }
+.router-setting { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.router-setting b { font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+.router-keys .mini-row { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.3fr) .6fr 1fr .9fr .7fr 250px; align-items: center; }
+.router-key-actions { display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap; }
+.router-keys .plain-button.danger, .router-confirm .plain-button.danger { border-color: var(--bad, #d55); color: var(--bad, #d55); }
+.router-keys .plain-button:disabled { opacity: .5; cursor: default; }
+.router-paused { margin-left: 6px; padding: 1px 6px; border-radius: 999px; border: 1px solid var(--waiting); color: var(--waiting); font-size: 11px; }
+.router-confirm, .router-made { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; font-size: 13px; }
+.router-confirm span, .router-made span { flex: 1; min-width: 220px; }
+.router-confirm .plain-button, .router-made .plain-button, .router-new { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.router-new { margin-left: 8px; }
+.router-key-editor label.router-inline { flex-direction: row; align-items: center; gap: 6px; }
+.router-small { margin: 0; font-size: 12px; }
+.router-keys .mini-row span { text-align: left; overflow-wrap: anywhere; }
+.router-keys .mini-row > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; }
+.router-keys .mini-row[data-off] { opacity: .6; }
+.router-keys .plain-button, .router-key-editor .plain-button { height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.router-find { height: 30px; min-width: 260px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+.router-key-editor { margin: 4px 0 12px; padding: 12px; border: 1px solid var(--line-strong); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.router-key-editor label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
+.router-key-editor input:not([type="checkbox"]) { height: 30px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.router-key-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; max-height: 200px; overflow: auto; }
+.router-key-agents label.watch-check { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+@media (max-width: 720px) {
+  .router-keys .mini-row { grid-template-columns: 1fr 1fr; }
+  .router-key-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  .router-keys .mini-row > span:nth-child(3), .router-keys .mini-row > span:nth-child(4), .router-keys .mini-row > span:nth-child(6) { display: none; }
+  .router-accounts .mini-row { grid-template-columns: 24px 1fr 1fr; }
+  .router-accounts .mini-row span:nth-child(n+5) { display: none; }
+}

@@ -1,0 +1,11 @@
+.activity { list-style: none; margin: 0; padding: 0; }
+.activity-day { padding: 18px 0 6px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.activity-row { display: grid; grid-template-columns: 52px minmax(120px, 180px) 1fr; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; align-items: baseline; }
+.activity-who { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-what { min-width: 0; overflow-wrap: anywhere; }
+.activity-row[data-bad] .activity-what { color: var(--error); }
+.hq-page .tools select { height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; }
+@media (max-width: 760px) {
+  .activity-row { grid-template-columns: 46px 1fr; }
+  .activity-what { grid-column: 2; }
+}

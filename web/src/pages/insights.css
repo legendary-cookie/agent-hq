@@ -1,0 +1,28 @@
+.insights-gap { margin-top: 32px; }
+.heat { display: grid; gap: 3px; }
+.heat-hours, .heat-row { display: grid; grid-template-columns: 34px repeat(24, minmax(0, 1fr)); gap: 3px; align-items: center; }
+.heat-hours span { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.heat-day { color: var(--muted); font-size: 12px; }
+.heat-row i { display: block; aspect-ratio: 1; border-radius: 3px; background: var(--text); }
+.mini-table { display: grid; font-size: 13px; }
+.mini-row { display: grid; grid-template-columns: minmax(0, 1.6fr) .6fr 1fr 1fr .7fr; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.mini-row span:not(:first-child) { text-align: right; }
+.mini-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-headrow { color: var(--muted); font-size: 12px; }
+
+/* Things on the Insights page open their details: rows, list items and tiles are buttons that look as before. */
+.list-open, .bar-open, .stat-button, .row-open { width: 100%; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.list-open { border-bottom: 1px solid var(--line); border-radius: 0; }
+.list-open:hover, .bar-open:hover, .stat-button:hover { background: var(--subtle); }
+.stat-button { border-left: 1px solid var(--line); border-radius: 0; }
+.stats-grid .stat-button:nth-child(3n + 1) { border-left: 0; }
+.stats-grid .stat-button:nth-child(n + 4) { border-top: 1px solid var(--line); }
+.row-open { padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.row-open:hover { text-decoration: underline; }
+.list-open:focus-visible, .bar-open:focus-visible, .stat-button:focus-visible, .row-open:focus-visible { outline: 1px solid var(--text); outline-offset: -1px; }
+.insight-sheet { width: min(520px, 100%); }
+.insight-sheet h3 { margin: 22px 0 8px; }
+.insight-sheet .trends { margin: 0; }
+.insight-open { height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 13px; cursor: pointer; }
+.insight-open:hover { background: var(--hover); }
+.insight-sheet code { font-size: 12px; overflow-wrap: anywhere; }

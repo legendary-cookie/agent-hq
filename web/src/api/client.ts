@@ -4,6 +4,8 @@ export class ApiError extends Error {
   constructor(
     public status: number,
     message = `Request failed (${status})`,
+    /** Set when the server refused because the user's role lacks this permission (the session itself is fine). */
+    public permission?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -17,7 +19,7 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   ) {
     return request<T>(path, init);
   }
-  const key = JSON.stringify([path, sessionStorage.getItem('hq-token'), sessionStorage.getItem('hq-run-key'), changeCounter]);
+  const key = JSON.stringify([path, localStorage.getItem('hq-token'), localStorage.getItem('hq-run-key'), changeCounter]);
   const existing = inFlight.get(key);
   if (existing) return existing as Promise<T>;
   const promise = request<T>(path, init);
@@ -34,17 +36,19 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 async function request<T>(path: string, init: RequestInit): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set('X-HQ-Token', sessionStorage.getItem('hq-token') ?? '');
-  if (path === '/api/runs' || path.startsWith('/api/runs/') || path.startsWith('/api/approvals')) headers.set('X-HQ-Run-Key', sessionStorage.getItem('hq-run-key') ?? '');
+  headers.set('X-HQ-Token', localStorage.getItem('hq-token') ?? '');
+  if (path === '/api/runs' || path.startsWith('/api/runs/') || path.startsWith('/api/approvals')) headers.set('X-HQ-Run-Key', localStorage.getItem('hq-run-key') ?? '');
   if ((init.method ?? 'GET').toUpperCase() !== 'GET')
     headers.set('Content-Type', 'application/json');
   const response = await fetch(path, { ...init, headers });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {
       error?: string;
+      permission?: string;
     } | null;
-    const error = new ApiError(response.status, body?.error);
-    if (response.status === 403 && !path.startsWith('/api/runs') && !path.startsWith('/api/approvals')) window.dispatchEvent(new Event('hq-forbidden'));
+    const error = new ApiError(response.status, body?.error, body?.permission || undefined);
+    // A 403 naming a permission means "your role can't do this", not "you're signed out", so it doesn't send you to sign-in.
+    if (response.status === 403 && !error.permission && !path.startsWith('/api/runs') && !path.startsWith('/api/approvals')) window.dispatchEvent(new Event('hq-forbidden'));
     throw error;
   }
   return response.json() as Promise<T>;

@@ -1,0 +1,16 @@
+.bulk { position: sticky; top: 8px; z-index: 20; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--bg); box-shadow: var(--overlay-shadow); }
+.bulk-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.bulk-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.bulk-actions button, .bulk-actions a, .bulk-message button { height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.bulk-actions button:hover, .bulk-actions a:hover { background: var(--hover); }
+.bulk-actions button:disabled { opacity: .5; cursor: default; }
+.bulk-actions .quiet { color: var(--muted); }
+.bulk-message { display: grid; gap: 8px; margin-top: 10px; }
+.bulk-message textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; resize: vertical; }
+.bulk-message div { display: flex; justify-content: flex-end; }
+.bulk-results { list-style: none; margin: 10px 0 0; padding: 0; max-height: 220px; overflow: auto; font-size: 13px; }
+.bulk-results li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
+.bulk-results li[data-state='failed'] .muted { color: var(--error); }
+.bulk-results li[data-state='done'] .muted { color: var(--working); }
+.fleet-table .pick { width: 28px; padding-right: 0; }
+.fleet-table .pick input { width: 15px; height: 15px; cursor: pointer; }

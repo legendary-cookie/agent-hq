@@ -31,6 +31,7 @@ export function Agents() {
   const hosts = [...new Set([...Object.keys(health?.hosts ?? {}), ...sessions.flatMap((row) => row.host ? [row.host] : [])])].sort();
   const filtered = sessions.filter(
     (row) =>
+      !row.id.endsWith('/zylos:comm') && // A message log, counted on the Fleet page. Not a session to open.
       (host === 'all' || (host === 'local' ? !row.host : row.host === host.slice(5))) &&
       (status === 'all' || row.status === status) && (harness === 'all' || row.harness === harness),
   );
@@ -55,7 +56,7 @@ export function Agents() {
   return (
     <div className="agents-layout">
       <div className="agents-page">
-        <h1>Agents</h1>
+        <h1>Sessions</h1>
         <div className="agents-filters">
           <div className="agents-statuses" aria-label="Status filters">
             {statuses.map(([key, label]) => (

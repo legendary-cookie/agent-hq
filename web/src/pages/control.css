@@ -1,0 +1,44 @@
+/* The plain outlined button used across HQ (moved here from the retired Pool page's stylesheet). */
+.plain-button { height: 26px; padding: 0 9px; border: 1px solid var(--line); border-radius: 6px; background: none; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.plain-button:hover { background: var(--hover); }
+.plain-button:disabled { opacity: .5; cursor: default; }
+.agent-control { margin: 22px 0; padding: 16px 0; border-block: 1px solid var(--line); }
+.agent-control h3 { margin: 0 0 8px; }
+.control-status { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 13px; margin-bottom: 6px; }
+.control-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.agent-control .plain-button, .control-dialog .plain-button, .terminal-head .plain-button { height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: none; color: inherit; font: inherit; font-size: 12.5px; cursor: pointer; }
+.agent-control .plain-button:hover, .control-dialog .plain-button:hover { background: var(--hover); }
+.agent-control .plain-button:disabled, .control-dialog .plain-button:disabled { opacity: .5; cursor: default; }
+.plain-button.danger { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--line)); }
+.plain-button.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.control-send { display: flex; gap: 6px; margin: 4px 0 8px; }
+.control-send input { flex: 1; height: 30px; padding: 0 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: inherit; font: inherit; font-size: 13px; }
+.control-error { color: var(--error); font-size: 13px; margin: 6px 0; }
+.control-ok { color: var(--working); font-size: 13px; margin: 6px 0; }
+.control-scrim, .terminal-scrim { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; background: var(--scrim); }
+.control-dialog { width: min(360px, 92vw); padding: 20px; border-radius: 12px; background: var(--bg); box-shadow: var(--overlay-shadow); }
+.control-dialog h3 { margin: 0 0 6px; font-size: 16px; }
+.control-dialog p { margin: 0 0 12px; font-size: 13px; }
+.control-dialog input { width: 100%; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: inherit; font: inherit; }
+.control-dialog .control-buttons { justify-content: flex-end; margin-bottom: 0; }
+.terminal-frame { display: flex; flex-direction: column; width: min(1200px, 96vw); height: min(780px, 90vh); border-radius: 12px; overflow: hidden; background: #0b0b0c; box-shadow: var(--overlay-shadow); }
+.terminal-head { display: flex; align-items: center; gap: 12px; padding: 8px 12px; background: #141416; color: #f1f1f3; font-size: 13px; }
+.terminal-head .plain-button { margin-left: auto; border-color: #2e2e33; }
+.terminal-head .muted { color: #93939c; font-size: 12px; }
+.terminal-state { font-size: 12px; color: #93939c; }
+.terminal-state.open { color: #3ecf72; }
+.terminal-body { flex: 1; min-height: 0; padding: 6px 8px; }
+.settings-toggle { display: flex; width: 100%; align-items: baseline; justify-content: space-between; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.settings-toggle h3 { margin: 0; }
+.agent-settings fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; align-items: end; margin: 14px 0 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--line); font-size: 13px; }
+.agent-settings legend { padding: 0; font-weight: 500; }
+.agent-settings label { display: grid; gap: 4px; color: var(--muted); }
+.agent-settings label.check { display: flex; align-items: center; gap: 6px; color: inherit; }
+.agent-settings .wide { grid-column: 1 / -1; }
+.agent-settings input:not([type="checkbox"]), .agent-settings select, .agent-settings textarea { width: 100%; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }
+.agent-settings textarea { font-family: var(--mono); font-size: 12px; }
+.agent-settings small { grid-column: 1 / -1; color: var(--faint); font-size: 12px; }
+.settings-service { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.settings-service .control-buttons { margin: 0; }
+.settings-chip { display: inline-flex; gap: 4px; margin: 0 6px 6px 0; }
+.settings-chip button { border: 0; background: none; color: inherit; cursor: pointer; }
