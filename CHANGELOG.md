@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add multi-router tabs, targeted key actions, combined plan usage, fallback-link handling and per-router alerts/MCP summaries. Labels and primary router are configurable.
+- Add the optional Chat companion: private chats, channels, tasks, directory/org chart, exports, activity, Telegram history and experimental voice.
+- Include reply/quote support and per-person Chat permissions; passwords are hash-only with one-time reset delivery.
+- Link HQ and Chat through configured HTTP/HTTPS URLs; retain independent sign-ins and optional dependencies.
+- Add a reusable read-only agent audit and CI coverage for the Chat backend/frontend.
+
 - Add fleet Overview, Agents, Usage, Insights and Trends pages, sortable tables, refreshed light/dark design and mobile layouts.
 - Add username/password accounts, configurable roles, server-side permissions and personal account settings.
 - Add optional Proxmox inventory, agent controls, terminals, agent creation, memory and settings editors, and update jobs.

@@ -22,10 +22,12 @@ export type RouterAccount = {
   backoff_level: number; rate_limited_until: number | null; limit: { window: string; left_pct: number; resets_at: number | null } | null;
   rotation_position: number | null; requests_24h: number; tokens_24h: number; last_used_at: number | null; auto_ping: boolean;
   auto_ping_how?: string | null; last_ping_at?: number | null;
+  /** Set when this "account" is a link to another 9router (a fallback), with that router's address. */
+  link?: string | null; prefix?: string | null;
 };
 type Row = { name: string; requests: number; tokens: number; cost: number };
 export type RouterSnapshot = {
-  found: boolean; vmid?: string; status?: string; up?: boolean; version?: string | null; checked_at?: number;
+  found: boolean; vmid?: string; hostname?: string; label?: string; role?: string | null; status?: string; up?: boolean; version?: string | null; checked_at?: number;
   services?: Record<string, string>; health?: number | string; headroom_health?: number | string;
   connections?: RouterAccount[]; in_use?: string | null; rotation_ran_at?: number | null;
   settings?: Record<string, unknown> & { autoPing?: { enabled: boolean; connections: Record<string, boolean>; schedules: Record<string, boolean> } };
@@ -35,6 +37,8 @@ export type RouterSnapshot = {
   /** This week's Claude plan use, the same as /api/fleet's plan. */
   plan?: FleetPlan;
   errors?: string[];
+  /** Every 9router container; the top level is the main one (CT 122). */
+  routers?: RouterSnapshot[];
 };
 export type RouterKey = {
   id: string; name: string; active: boolean; created: string; restricted: boolean; allow: string[]; vmid: number | null;
@@ -120,7 +124,7 @@ export function usualModels(keys: RouterKey[]) {
 type KeyAnswer = { id?: string; name?: string; key?: string };
 const keyAction = (body: Record<string, unknown>) => api<KeyAnswer>('/api/router/key-action', { method: 'POST', body: JSON.stringify(body) });
 
-function NewKey({ keys, ensure, onDone }: { keys: RouterKey[]; ensure: () => Promise<boolean>; onDone: (text: string, bad?: boolean, made?: KeyAnswer) => void }) {
+function NewKey({ keys, router, ensure, onDone }: { keys: RouterKey[]; router?: string; ensure: () => Promise<boolean>; onDone: (text: string, bad?: boolean, made?: KeyAnswer) => void }) {
   const usual = usualModels(keys);
   const [name, setName] = useState('');
   const [limit, setLimit] = useState(usual.length > 0);
@@ -129,7 +133,7 @@ function NewKey({ keys, ensure, onDone }: { keys: RouterKey[]; ensure: () => Pro
     if (!name.trim() || !(await ensure())) return;
     setBusy(true);
     try {
-      const made = await keyAction({ action: 'create', name: name.trim(), ...(limit && usual.length ? { access: { restricted: true, allow: usual } } : {}) });
+      const made = await keyAction({ action: 'create', name: name.trim(), router, ...(limit && usual.length ? { access: { restricted: true, allow: usual } } : {}) });
       onDone(`${made.name ?? name} created.`, false, made);
     } catch (error) {
       onDone((error as Error).message, true);
@@ -147,7 +151,7 @@ function NewKey({ keys, ensure, onDone }: { keys: RouterKey[]; ensure: () => Pro
   );
 }
 
-function ApiKeys({ keys, plan, assignments, onSaved }: { keys: RouterKey[]; plan?: FleetPlan; assignments: Record<string, KeyAssignment>; onSaved: () => void }) {
+function ApiKeys({ keys, router, plan, assignments, onSaved }: { keys: RouterKey[]; router?: string; plan?: FleetPlan; assignments: Record<string, KeyAssignment>; onSaved: () => void }) {
   const { data: fleet } = useApi<Fleet>('/api/fleet?range=today', { live: false });
   const { data: control } = useApi<{ elevated_until?: number | null }>('/api/control', { live: false });
   const { ensure, dialog } = usePasswordCheck(control?.elevated_until);
@@ -185,10 +189,10 @@ function ApiKeys({ keys, plan, assignments, onSaved }: { keys: RouterKey[]; plan
     setBusy(`${k.id}:${action}`);
     try {
       if (action === 'copy') {
-        const { key } = await keyAction({ action: 'reveal', id: k.id });
+        const { key } = await keyAction({ action: 'reveal', id: k.id, router });
         setNote(key && (await copyText(key)) ? { text: `${k.name}: copied.` } : { text: `${k.name}: the browser didn’t allow copying.`, bad: true });
       } else {
-        await keyAction({ action, id: k.id });
+        await keyAction({ action, id: k.id, router });
         setNote({ text: `${k.name}: ${action === 'pause' ? 'paused. Agents using it get errors until it’s resumed' : action === 'resume' ? 'resumed' : 'deleted'}.` });
         setConfirm(null);
         onSaved();
@@ -214,7 +218,7 @@ function ApiKeys({ keys, plan, assignments, onSaved }: { keys: RouterKey[]; plan
         <input type="search" className="router-find" placeholder="Find a key, agent or tool" aria-label="Find a key" value={find} onChange={(e) => setFind(e.target.value)} />
         {manage && <button type="button" className="plain-button router-new" onClick={() => setAdding(!adding)}>{adding ? 'Close' : 'New key'}</button>}
       </div>
-      {adding && <NewKey keys={keys} ensure={ensure} onDone={(text, bad, answer) => { setNote({ text, bad }); if (!bad) { setAdding(false); setMade(answer ?? null); onSaved(); } }} />}
+      {adding && <NewKey keys={keys} router={router} ensure={ensure} onDone={(text, bad, answer) => { setNote({ text, bad }); if (!bad) { setAdding(false); setMade(answer ?? null); onSaved(); } }} />}
       <div className="mini-table router-keys" role="table" aria-label="API keys">
         <div className="mini-row mini-headrow" role="row"><SortHeader sorter={sorter} col="key">Key</SortHeader><SortHeader sorter={sorter} col="for">For</SortHeader><SortHeader sorter={sorter} col="models">Models</SortHeader><SortHeader sorter={sorter} col="requests">Last 30 days</SortHeader><SortHeader sorter={sorter} col="week">{plan ? `${usageLabel(plan, 'Value')}, this week` : 'This week'}</SortHeader><SortHeader sorter={sorter} col="last">Last used</SortHeader><span role="columnheader" /></div>
         {shown.map((k) => {
@@ -298,7 +302,7 @@ function AccountsTable({ accounts, inUse, now }: { accounts: RouterAccount[]; in
         return (
           <div className="mini-row" role="row" key={a.id} data-in-use={a.id === inUse || undefined}>
             <span role="cell" className="num">{a.rotation_position ?? '—'}</span>
-            <span role="cell"><b>{a.name}</b>{a.id === inUse && <span className="router-badge">in use</span>}<span className="muted"> · {a.provider} {a.auth}</span></span>
+            <span role="cell"><b>{a.name}</b>{a.id === inUse && <span className="router-badge">in use</span>}<span className="muted"> · {a.link ? `fallback to the router at ${a.link.replace(/^https?:\/\//, '').replace(/\/v1$/, '')}` : `${a.provider} ${a.auth}`}</span></span>
             <span role="cell" className={bad ? 'control-error' : a.rate_limited_until ? 'behind' : ''}>
               {!a.active ? 'switched off' : a.rate_limited_until ? `cooling down, ${until(a.rate_limited_until, now)}` : a.test_status ?? 'unknown'}
               {a.backoff_level ? <span className="muted"> · backoff {a.backoff_level}</span> : null}
@@ -358,9 +362,18 @@ export function RouterPage() {
   if (data && !data.configured) return head('HQ needs its Proxmox access to read 9router. See “Control” in the HQ runbook.');
   if (!snap) return head(data?.error ? `Couldn’t read 9router: ${data.error}` : 'Reading 9router… this takes a few seconds after HQ starts.');
   if (!snap.found) return head('HQ didn’t find a container with “9router” in its name on the Proxmox host.');
+  return <RouterView data={data} snap={snap} graphs={graphs} setGraphs={setGraphs} reload={reload} />;
+}
+
+function RouterView({ data, snap: top, graphs, setGraphs, reload }: { data: RouterData | null | undefined; snap: RouterSnapshot; graphs: boolean; setGraphs: (on: boolean) => void; reload: () => void }) {
+  const routers = top.routers && top.routers.length > 0 ? top.routers : [top];
+  const [pick, setPick] = useState<string | undefined>(undefined);
+  const snap = routers.find((r) => r.vmid === pick) ?? routers.find((r) => r.vmid === top.vmid) ?? routers[0];
+  const now = Date.now() / 1000;
 
   const accounts = [...(snap.connections ?? [])].sort((a, b) => (a.rotation_position ?? 99) - (b.rotation_position ?? 99) || (a.priority ?? 99) - (b.priority ?? 99));
-  const ready = accounts.filter((a) => a.active && !a.rate_limited_until && (!a.test_status || a.test_status === 'active'));
+  const own = accounts.filter((a) => !a.link);  // a link to another router is its fallback, not an account
+  const ready = own.filter((a) => a.active && !a.rate_limited_until && (!a.test_status || a.test_status === 'active'));
   const inUse = accounts.find((a) => a.id === snap.in_use);
   const usage = snap.usage;
   const total = usage?.total;
@@ -373,7 +386,17 @@ export function RouterPage() {
       <header className="page-head">
         <div>
           <h1>Router</h1>
-          <p className="lede">9router {snap.version ?? ''} on CT {snap.vmid} · {snap.up ? 'answering' : 'not answering'} · read {snap.checked_at ? fmtRelative(snap.checked_at, now) : '—'}. HQ manages API keys here; change accounts, combos and settings in 9router’s own dashboard.</p>
+          {routers.length > 1 && (
+            <div className="router-tabs" role="tablist" aria-label="Routers">
+              {routers.map((r) => (
+                <button type="button" role="tab" key={r.vmid} aria-selected={r.vmid === snap.vmid} className={r.vmid === snap.vmid ? 'on' : ''} onClick={() => setPick(r.vmid)}>
+                  <b>{r.label ?? `CT ${r.vmid}`}</b> <span className={r.up ? 'muted' : 'control-error'}>{r.up ? '' : 'down · '}CT {r.vmid}</span>
+                  {r.role && <span className="muted router-small">{r.role}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="lede">{snap.label && routers.length > 1 ? `${snap.label}: ` : ''}9router {snap.version ?? ''} on CT {snap.vmid} · {snap.up ? 'answering' : 'not answering'} · read {snap.checked_at ? fmtRelative(snap.checked_at, now) : '—'}. HQ manages API keys here; change accounts, combos and settings in 9router’s own dashboard.</p>
         </div>
         <GraphsToggle on={graphs} onChange={setGraphs} />
       </header>
@@ -382,7 +405,7 @@ export function RouterPage() {
 
       <section className="stats stats-grid" aria-label="Router totals">
         <div className="stat"><div className="k">Status</div><div className={`v ${snap.up ? '' : 'control-error'}`}>{snap.up ? 'Up' : 'Down'}</div><div className="d">service {snap.services?.['9router'] ?? '—'} · Headroom {snap.services?.headroom ?? '—'}</div></div>
-        <div className="stat"><div className="k">Accounts ready</div><div className="v num">{ready.length}/{accounts.length}</div><div className="d">{inUse ? `next request goes to ${inUse.name}` : 'none ready'}</div></div>
+        <div className="stat"><div className="k">Accounts ready</div><div className="v num">{ready.length}/{own.length}</div><div className="d">{inUse ? `next request goes to ${inUse.name}` : 'none ready'}</div></div>
         <div className="stat"><div className="k">Next limit reset</div><div className="v">{until(nextReset, now)}</div><div className="d">{nextReset ? new Date(nextReset * 1000).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'no reset time known'}</div></div>
         <div className="stat"><div className="k">Requests, {usage?.days ?? 30} days</div><div className="v num">{num(total?.requests ?? 0)}</div><div className="d num">{num((total?.prompt_tokens ?? 0) + (total?.completion_tokens ?? 0))} tokens · {total?.errors ?? 0} errors · est. ${(total?.cost ?? 0).toFixed(2)}</div></div>
         {snap.plan && snap.plan.billing !== 'none' && <PlanStat plan={snap.plan} now={now} />}
@@ -405,7 +428,7 @@ export function RouterPage() {
         </div>
       </section>
 
-      <ApiKeys keys={snap.api_keys ?? []} plan={snap.plan} assignments={data?.assignments ?? {}} onSaved={reload} />
+      <ApiKeys key={snap.vmid} router={routers.length > 1 ? snap.vmid : undefined} keys={snap.api_keys ?? []} plan={snap.plan} assignments={data?.assignments ?? {}} onSaved={reload} />
 
       <section aria-label="Models">
         <div className="section-head"><h2>Models and combos</h2><span className="muted">{snap.catalog ? `catalog of ${num(snap.catalog.models)} models from ${snap.catalog.providers} providers` : ''}</span></div>

@@ -1,11 +1,13 @@
-"""9router, the AI router on its own container: health, accounts, rotation, limits, models, settings and usage.
+"""9router, the AI router on its own containers: health, accounts, rotation, limits, models, settings and usage.
 
-HQ finds the container by name (`9router` in its hostname) on the Proxmox host and reads 9router's SQLite
+HQ supports multiple independently configured routers. It finds
+every container with `9router` in its hostname on the Proxmox host and reads 9router's SQLite
 database read-only inside it, over HQ's existing SSH key. Tokens and refresh tokens are never read out: only
 whitelisted fields leave the container. API keys can be created, paused, resumed and deleted through 9router's
 own API (Router.key_action); a key's value leaves the container only when the owner copies it or has just made it.
 """
 import json
+import os
 import re
 import threading
 import time
@@ -48,6 +50,10 @@ try:
             item['lastError'] = item['lastError'][:200]
         conns.append(item)
     out['connections'] = conns
+    out['nodes'] = {}
+    for nid, ntype, nname, ndata in db.execute('select id, type, name, data from providerNodes'):
+        nd = json.loads(ndata or '{}')
+        out['nodes'][nid] = {'type': ntype, 'name': nname, 'prefix': nd.get('prefix'), 'base_url': str(nd.get('baseUrl') or '')[:200]}
     s = json.loads((db.execute('select data from settings').fetchone() or ['{}'])[0] or '{}')
     keep = ('fallbackStrategy', 'providerStrategies', 'comboStrategies', 'headroomEnabled', 'headroomCodeAware',
             'cavemanEnabled', 'cavemanLevel', 'ponytailEnabled', 'ponytailLevel')
@@ -106,21 +112,29 @@ except Exception as exc:
 print(json.dumps(out))
 ''' % {'days': USAGE_DAYS}
 
-# Runs on the Proxmox host: find the 9router container and run INNER inside it.
+# Runs on the Proxmox host: find the 9router containers (or just argv[1]) and run INNER inside each.
+# Prints {"routers": [...]} with one answer per container, in container order.
 SCRIPT = r'''
 import json, subprocess, sys
 inner = sys.stdin.read()
+only = sys.argv[1] if len(sys.argv) > 1 else None
 rows = subprocess.run(['pct', 'list'], capture_output=True, text=True, timeout=30).stdout.splitlines()[1:]
-found = [r.split() for r in rows if '9router' in r]
-if not found:
-    print(json.dumps({'missing': True})); sys.exit(0)
-vmid, status = found[0][0], found[0][1]
-if status != 'running':
-    print(json.dumps({'vmid': vmid, 'status': status})); sys.exit(0)
-out = subprocess.run(['pct', 'exec', vmid, '--', 'python3', '-c', inner], capture_output=True, text=True, timeout=90)
-answer = json.loads(out.stdout.strip().splitlines()[-1]) if out.stdout.strip() else {'errors': [(out.stderr or 'no answer')[-200:]]}
-answer.update({'vmid': vmid, 'status': status})
-print(json.dumps(answer))
+found = sorted((r.split() for r in rows if '9router' in r), key=lambda f: int(f[0]))
+if only:
+    found = [f for f in found if f[0] == only]
+routers = []
+for f in found:
+    vmid, status, name = f[0], f[1], f[-1]
+    answer = {}
+    if status == 'running':
+        out = subprocess.run(['pct', 'exec', vmid, '--', 'python3', '-c', inner], capture_output=True, text=True, timeout=90)
+        try:
+            answer = json.loads(out.stdout.strip().splitlines()[-1])
+        except (IndexError, ValueError):
+            answer = {'errors': [(out.stderr or 'no answer')[-200:]]}
+    answer.update({'vmid': vmid, 'status': status, 'hostname': name})
+    routers.append(answer)
+print(json.dumps({'routers': routers}))
 '''
 
 # Runs inside the 9router container as root: one key action through 9router's own API on localhost, signed
@@ -231,11 +245,39 @@ def _auto_ping(ap, conn):
             'last_ping_at': _when(conn.get('lastPingAt'))}
 
 
+# Optional labels: {container_id: [label, description]}.
+ROUTERS = json.loads(os.environ.get('HQ_ROUTER_LABELS', '{}'))
+
+
+def summarize_all(raw, now):
+    """Every router's summary, plus the fleet's plan use over all of them. The top level is the main router
+    (HQ_ROUTER_PRIMARY, else the first found), as before, so older readers keep working; `routers` has them all."""
+    if 'routers' not in raw:  # one container's answer (older script)
+        raw = {'routers': [] if raw.get('missing') else [raw]}
+    routers = [summarize(r, now) for r in raw['routers']]
+    if not routers:
+        return {'found': False, 'routers': []}
+    for r in routers:
+        named = ROUTERS.get(str(r.get('vmid')))
+        r['label'] = named[0] if named and len(routers) > 1 else '9router' if len(routers) == 1 else f'CT {r.get("vmid")}'
+        r['role'] = named[1] if named else None
+    order = list(ROUTERS)
+    routers.sort(key=lambda r: (order.index(str(r.get('vmid'))) if str(r.get('vmid')) in order else len(order), int(r.get('vmid') or 0)))
+    main = next((r for r in routers if str(r.get('vmid')) == os.environ.get('HQ_ROUTER_PRIMARY', '')), routers[0])
+    out = {**main, 'routers': routers}
+    if len(routers) > 1:
+        usage = [u for r in raw['routers'] for u in (r.get('usage') or [])]
+        conns = [c for r in routers for c in r.get('connections') or []]
+        keys = [k for r in routers for k in r.get('api_keys') or []]
+        out['plan'] = plan_summary(usage, conns, keys, now)
+    return out
+
+
 def summarize(raw, now):
-    """Shape what the container printed into what the Router page shows."""
+    """Shape what one container printed into what the Router page shows."""
     if raw.get('missing'):
         return {'found': False}
-    out = {'found': True, 'vmid': raw.get('vmid'), 'status': raw.get('status'), 'version': raw.get('version'),
+    out = {'found': True, 'vmid': raw.get('vmid'), 'hostname': raw.get('hostname'), 'status': raw.get('status'), 'version': raw.get('version'),
            'services': raw.get('services') or {}, 'health': raw.get('health'), 'headroom_health': raw.get('headroom_health'),
            'settings': raw.get('settings') or {}, 'combos': raw.get('combos') or [],
            'models': raw.get('models') or {}, 'catalog': raw.get('catalog') or {}, 'disabled_models': raw.get('disabled_models') or {},
@@ -252,12 +294,17 @@ def summarize(raw, now):
     usage = raw.get('usage') or []
     day = now - 86400
     conns = []
+    nodes = raw.get('nodes') or {}
     for c in raw.get('connections') or []:
         key = (c.get('provider'), c.get('priority'))
+        node = nodes.get(c.get('provider')) or {}
+        # A provider pointing at another 9router (port 20128) is a fallback link, not an account of its own.
+        link = node.get('base_url') if ':20128' in (node.get('base_url') or '') else None
         mine = [u for u in usage if u[3] == c.get('id')]
         limited = _when(c.get('rateLimitedUntil'))
         conns.append({
             'id': c.get('id'), 'provider': c.get('provider'), 'auth': c.get('auth'), 'name': c.get('name') or c.get('email'),
+            'link': link, 'prefix': node.get('prefix'),
             'email': c.get('email'), 'priority': c.get('priority'), 'active': c.get('active'), 'test_status': c.get('testStatus'),
             'token_expires_at': _when(c.get('expiresAt')), 'last_error': c.get('lastError'), 'last_error_at': _when(c.get('lastErrorAt')),
             'error_code': c.get('errorCode'), 'backoff_level': c.get('backoffLevel') or 0,
@@ -281,7 +328,8 @@ def summarize(raw, now):
                      'last_used_at': max((u[0] for u in mine), default=None)})
     out['api_keys'] = keys
     # Which account the router uses next: the first in rotation order that's active and not cooling down.
-    ready = sorted((c for c in conns if c['active'] and not c['rate_limited_until']), key=lambda c: (c['rotation_position'] or 99, c['priority'] or 99))
+    ready = sorted((c for c in conns if c['active'] and not c['rate_limited_until'] and not c['link']
+                    and c['test_status'] in (None, 'active', 'ok', 'success', 'unknown')), key=lambda c: (c['rotation_position'] or 99, c['priority'] or 99))
     out['in_use'] = ready[0]['id'] if ready else None
     out['rotation_ran_at'] = _when(rotation.get('ran'))
     out['usage'] = usage_summary(usage, conns, now, {k['id']: k['name'] for k in keys})
@@ -307,6 +355,8 @@ def plan_summary(usage, conns, keys, now):
     """
     plan_accounts, api_cost, accounts = [], 0.0, []
     for c in conns:
+        if c.get('link'):
+            continue  # a fallback to another router: that router counts the use against its own accounts
         is_plan = (c.get('auth') or '').lower() in ('oauth', 'oauth2', 'subscription')
         limit = c.get('limit') or {}
         resets = limit.get('resets_at')
@@ -425,8 +475,8 @@ class Router:
         self._snapshot, self._error = None, None
 
     def refresh(self):
-        out = self.pve.run(['python3', '-c', SCRIPT], timeout=150, stdin=INNER)
-        snapshot = summarize(json.loads(out.strip().splitlines()[-1]), self.clock())
+        out = self.pve.run(['python3', '-c', SCRIPT], timeout=300, stdin=INNER)
+        snapshot = summarize_all(json.loads(out.strip().splitlines()[-1]), self.clock())
         with self._lock:
             self._snapshot, self._error = snapshot, None
         return snapshot
@@ -435,13 +485,23 @@ class Router:
         with self._lock:
             return self._snapshot, self._error
 
-    def key_action(self, action, key_id=None, name=None, access=None):
-        """Create, pause, resume, delete or reveal a 9router API key. The value (create, reveal) is returned to
-        the caller only: it isn't kept, logged or put in the snapshot."""
-        req = check_key_request(action, self.snapshot()[0], key_id, name, access)
+    def key_action(self, action, key_id=None, name=None, access=None, vmid=None):
+        """Create, pause, resume, delete or reveal a 9router API key on one router (vmid; the main one when not
+        given). The value (create, reveal) is returned to the caller only: it isn't kept, logged or put in the snapshot."""
+        snap = self.snapshot()[0] or {}
+        routers = snap.get('routers') or ([snap] if snap.get('found') else [])
+        if vmid is None:
+            target = snap if snap.get('found') else None
+        else:
+            target = next((r for r in routers if str(r.get('vmid')) == str(vmid)), None)
+        if not target:
+            raise ValueError('unknown router')
+        req = check_key_request(action, target, key_id, name, access)
         inner = KEY_INNER.replace('__REQ__', repr(json.dumps(req)))
-        out = self.pve.run(['python3', '-c', SCRIPT], timeout=120, stdin=inner)
-        answer = json.loads(out.strip().splitlines()[-1])
+        out = self.pve.run(['python3', '-c', SCRIPT, str(target.get('vmid'))], timeout=120, stdin=inner)
+        found = json.loads(out.strip().splitlines()[-1])
+        found = found.get('routers', [found]) if isinstance(found, dict) else []
+        answer = found[0] if found else {'missing': True}
         if answer.get('missing') or answer.get('status') != 'running':
             raise ControlError('9router isn’t running')
         problem = answer.get('error') or (answer.get('errors') or [None])[0]

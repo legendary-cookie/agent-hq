@@ -76,7 +76,7 @@ class UpdateTests(unittest.TestCase):
 
     def wait(self, engine, job_id):
         for _ in range(200):
-            if engine.jobs[job_id]['state'] != 'running':
+            if engine.jobs[job_id].get('ended_at') is not None:
                 return engine.jobs[job_id]
             time.sleep(.02)
         self.fail('update did not finish')

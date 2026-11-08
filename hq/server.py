@@ -73,6 +73,15 @@ FLEET_CACHE_S = 15
 OFFICE_CACHE_S = 5
 INSIGHTS_CACHE_S = 60
 
+def companion_url(value):
+    """Only explicit web URLs can become navigation links."""
+    try:
+        parsed = urlsplit(value)
+        return value if parsed.scheme in ('http', 'https') and parsed.hostname and not parsed.username and not parsed.password else None
+    except ValueError:
+        return None
+
+
 def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: str | None = None,run_service=None,remote_collector=None,public_url=None):
     run_key = secrets.token_urlsafe(32)
     login = Accounts(store.path.parent)  # users, roles and sessions; the old login.json becomes user "admin"
@@ -246,7 +255,7 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
             if path=='/mcp':
                 body=b'{"error":"POST MCP requests to this address"}'; self.send_response(405); self.send_header('Allow','POST'); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body); return
             # The app's name is shown on the sign-in page, before anyone has signed in.
-            if path=='/api/brand': return self.send_json(200,{'brand':load_fleet(config_dir)['brand']})
+            if path=='/api/brand': return self.send_json(200,{'brand':load_fleet(config_dir)['brand'], **({'chat_url': url} if (url := companion_url(os.environ.get('HQ_CHAT_URL', ''))) else {})})
             if path.startswith('/api/') and not (self.token_ok(self.headers.get('X-HQ-Token')) or (path in ('/api/stream','/api/terminal') and self.token_ok(query.get('token',[None])[0]))): return self.send_json(403,{'error':'forbidden'})
             REQUEST_USER.user=None
             if path.startswith('/api/'):
@@ -609,9 +618,9 @@ def make_server(store,collector,cfg,config_dir,port=7420,static_dir=None,token: 
                     # Create, pause, resume, delete or copy a 9router key. The value is in the answer only, never logged.
                     if not control.elevated(self.headers.get('X-HQ-Token')): return self.send_json(403,{'error':'confirm your password first'})
                     action=data.get('action')
-                    try: answer=router.key_action(action,data.get('id'),data.get('name'),data.get('access'))
+                    try: answer=router.key_action(action,data.get('id'),data.get('name'),data.get('access'),data.get('router'))
                     except (ControlError, ValueError) as exc: return self.send_json(409,{'error':str(exc)})
-                    control.log({'action':f'router_key_{action}','key_id':str(answer.get('id') or data.get('id'))[:64],'name':answer.get('name') or None})
+                    control.log({'action':f'router_key_{action}','key_id':str(answer.get('id') or data.get('id'))[:64],'name':answer.get('name') or None,'router':str(data.get('router') or '')[:8] or None})
                     return self.send_json(200,answer)
                 if method=='POST' and path=='/api/updates/settings':
                     if not control.elevated(self.headers.get('X-HQ-Token')): return self.send_json(403,{'error':'confirm your password first'})

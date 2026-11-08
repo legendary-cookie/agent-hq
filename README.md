@@ -22,6 +22,10 @@ Status:
 
 Design: [spec](docs/superpowers/specs/2026-10-30-agent-hq-design.md), [Steer spec](docs/superpowers/specs/2026-11-03-agent-hq-steer-design.md), [remote watching spec](docs/superpowers/specs/2026-11-03-agent-hq-remote-watch-design.md), [run mode spec](docs/superpowers/specs/2026-11-03-agent-hq-run-mode-design.md), [1.1 spec](docs/superpowers/specs/2026-11-04-agent-hq-1.1-design.md), [backend plan](docs/superpowers/plans/2026-10-30-agent-hq-backend.md), [UI plan](docs/superpowers/plans/2026-10-31-agent-hq-ui.md), [approved mockup](docs/design/mockup-v2-office.html).
 
+## Chat workspace (optional)
+
+Private chats, multi-agent channels, tasks, directory/org chart, exports, live activity and experimental voice are available in the [optional Chat companion](chat/README.md). It runs separately with its own accounts; core HQ has no new Python dependencies.
+
 ## Fleet management and accounts
 
 The fleet edition adds Overview, Usage, Insights, Trends, an interactive office, accounts with configurable roles, and optional Proxmox and 9router integration. Local collection and run mode still work without a fleet. See [fleet setup](docs/fleet-setup.md) for authentication, SSH prerequisites and integration limits.

@@ -43,3 +43,6 @@
   .router-accounts .mini-row { grid-template-columns: 24px 1fr 1fr; }
   .router-accounts .mini-row span:nth-child(n+5) { display: none; }
 }
+.router-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+.router-tabs button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; border: 1px solid var(--line, #d9d9d9); border-radius: 8px; background: transparent; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.router-tabs button.on { border-color: var(--working, #3b6fd6); box-shadow: inset 0 0 0 1px var(--working, #3b6fd6); }

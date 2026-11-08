@@ -17,3 +17,16 @@ config/fleet.json
 .env.*
 *.pem
 *.key
+
+# Optional Chat runtime data
+/chat-data/
+chat/server/data/
+chat/data/
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+chat/web/dist/
+
+/data/

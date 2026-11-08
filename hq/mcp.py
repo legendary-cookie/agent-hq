@@ -125,7 +125,7 @@ TOOLS = [
      'inputSchema': _schema()},
     {'name': 'update_status', 'scope': None, 'description': 'Versions on every agent and which are behind on Claude Code, Zylos or security updates.',
      'inputSchema': _schema()},
-    {'name': 'router_status', 'scope': None, 'description': '9router (the AI router): up or down, version, routing strategy, each account’s status, weekly limit left and reset time, which account is used next, available combos and models, and usage over the last day.',
+    {'name': 'router_status', 'scope': None, 'description': '9router (the AI router; one entry per router when there are several): up or down, version, routing strategy, each account’s status, weekly limit left and reset time, which account is used next, available combos and models, and usage over the last day.',
      'inputSchema': _schema()},
     {'name': 'send_message', 'scope': 'message', 'description': 'Type a one-line message into another agent’s Claude session, as if a person sent it there. Use sparingly; it is logged.',
      'inputSchema': _schema({'host': HOST, 'text': {'type': 'string', 'minLength': 1, 'maxLength': 2000}}, ['host', 'text'])},
@@ -245,6 +245,12 @@ class McpServer:
             raise ToolError('HQ has no 9router reading yet')
         if not snap.get('found'):
             raise ToolError('HQ didn’t find a 9router container')
+        routers = snap.get('routers') or [snap]
+        if len(routers) > 1:
+            return {'routers': [{'name': r.get('label'), 'ct': r.get('vmid'), 'for': r.get('role'), **self._one_router(r)} for r in routers]}
+        return self._one_router(snap)
+
+    def _one_router(self, snap):
         settings = snap.get('settings') or {}
         return {'up': snap.get('up'), 'version': snap.get('version'), 'strategy': settings.get('fallbackStrategy'),
                 'provider_strategies': settings.get('providerStrategies'), 'in_use': snap.get('in_use'),

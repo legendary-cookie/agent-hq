@@ -52,3 +52,26 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build   # type check (tsc --noEmit) and production build
+
+
+  chat:
+    name: Optional Chat tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -r chat/server/requirements.txt pytest httpx
+      - run: python -m pytest -q tests
+        working-directory: chat/server
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: chat/web/package-lock.json
+      - run: npm ci
+        working-directory: chat/web
+      - run: npm run build
+        working-directory: chat/web

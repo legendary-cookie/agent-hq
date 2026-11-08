@@ -150,3 +150,25 @@ it('words times until a reset', () => {
   expect(until(500, 1000)).toBe('now');
   expect(until(null, 1000)).toBe('—');
 });
+
+it('shows a tab per router, the fallback link, and sends key actions to the chosen router', async () => {
+  const { api } = await import('../api/client');
+  const main = DATA.snapshot!;
+  const jordan = { ...main, vmid: '124', label: 'Router 2', role: 'Jordan: lead and Helper', in_use: 'j1',
+    connections: [
+      { ...main.connections![1], id: 'f1', name: 'router2-fallback', provider: 'anthropic-compatible-x', auth: 'apikey', link: 'http://192.0.2.80:20128/v1', rotation_position: null },
+      { ...main.connections![1], id: 'j1', name: 'jordan@example.test' },
+    ],
+    api_keys: [{ ...main.api_keys![0], id: 'k7', name: 'ct203-lead' }] };
+  state.data = { ...DATA, snapshot: { ...main, label: 'Router 1', routers: [{ ...main, label: 'Router 1' }, jordan] } };
+  render(<RouterPage />);
+  const tabs = screen.getAllByRole('tab');
+  expect(tabs.map((t) => t.textContent)).toEqual([expect.stringContaining('Router 1'), expect.stringContaining('Jordan: lead and Helper')]);
+  fireEvent.click(tabs[1]);
+  expect(screen.getByText(/fallback to the router at 192\.0\.2\.80:20128/)).toBeTruthy();
+  expect(screen.getByText('1/1')).toBeTruthy();  // the fallback link isn't counted as an account
+  (api as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({});
+  const row = screen.getAllByRole('row').find((r) => r.textContent?.includes('ct203-lead'))!;
+  fireEvent.click(within(row).getByRole('button', { name: /pause/i }));
+  await waitFor(() => expect(api).toHaveBeenLastCalledWith('/api/router/key-action', { method: 'POST', body: JSON.stringify({ action: 'pause', id: 'k7', router: '124' }) }));
+});

@@ -26,10 +26,23 @@ Suggested addresses use offsets 60–99 within the subnet. Configure a subnet la
 
 ## 9router (optional)
 
-The Router page discovers a Proxmox container with `9router` in its hostname. This integration currently monitors one router. It expects 9router on port 20128, its database at `/var/lib/9router/db/data.sqlite`, and optional rotation/model-catalog files in `/var/lib/9router`. Schema changes in 9router may require an HQ update.
+The Router page discovers a Proxmox container with `9router` in its hostname. Every matching router is monitored. The Router page has a tab for each, and key actions target the selected router. It expects 9router on port 20128, its database at `/var/lib/9router/db/data.sqlite`, and optional rotation/model-catalog files in `/var/lib/9router`. Schema changes in 9router may require an HQ update.
 
 Health and usage reads use allowlisted fields. Key management calls the router’s localhost API inside its container. Key values leave the router only for explicit create/copy actions; keep Router permissions restricted. Plan percentages estimate usage attribution from observed traffic and provider limits; dollar values use the configured price book.
 
 ## MCP access
 
 Use Agent keys to create a scoped token and copy the generated MCP connection command. Keep tokens private. This uses the same running HQ server and logs actions in Activity.
+
+
+### Multiple router labels
+
+`HQ_ROUTER_PRIMARY` selects the container ID used for the backward-compatible top-level summary. Otherwise the first discovered/sorted router is used. `HQ_ROUTER_LABELS` is a JSON object mapping container IDs to `[label, description]`, for example `{"301": ["Primary", "Team agents"], "302": ["Fallback", "Overflow"]}`. With no custom labels, router tabs use their container IDs. Fallback provider links are shown separately and excluded from plan-account totals.
+
+### Optional Chat workspace
+
+See [Chat setup](../chat/README.md). Set `HQ_CHAT_URL` to its HTTP/HTTPS origin to show the navigation link. Chat runs independently with separate users and permissions.
+
+### Read-only agent audit
+
+`tools/agent-audit.py` inventories local agent settings, model routing and recent usage when run inside a Linux agent container. It masks common secret-looking fields. Review the report before sharing it: it can still contain operational paths and metadata. No cloud account or container-execution wrapper is bundled.

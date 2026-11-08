@@ -52,7 +52,7 @@ export function Sidebar({ route, navigate, onRun, onSearch }: { route: Route; na
   const allowed = (target: Route) => can(ROUTE_PERMISSION[target]);
   const { data: options } = useApi<{ run_mode: boolean; run_key_ok?: boolean }>('/api/runs/options', { live: false });
   const { data: approvals } = useApi<Approval[]>(options?.run_mode && options.run_key_ok ? '/api/approvals?state=waiting' : null);
-  const { data: branding } = useApi<{ brand: string | null }>('/api/brand', { live: false });
+  const { data: branding } = useApi<{ brand: string | null; chat_url?: string | null }>('/api/brand', { live: false });
   const brand = branding?.brand || 'Agent HQ';
   const [notifications, setNotifications] = useState(false);
   const [dark, setDark] = useState(() => isDark());
@@ -81,6 +81,7 @@ export function Sidebar({ route, navigate, onRun, onSearch }: { route: Route; na
       <button type="button" className="side-menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>{menu ? 'Close' : 'Menu'}</button>
       <button type="button" className="side-find" onClick={onSearch}><span>Search</span><kbd>Ctrl K</kbd></button>
       <nav aria-label="Main">{MAIN.filter(([target]) => allowed(target)).map(([target, label]) => link(target, label))}</nav>
+      {branding?.chat_url && <nav aria-label="Workspace"><a className="side-link" href={branding.chat_url}>Chat workspace ↗</a></nav>}
       {options?.run_mode && (
         <nav aria-label="Work">
           <div className="nav-heading">Work</div>

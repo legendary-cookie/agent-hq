@@ -1,8 +1,9 @@
 import json
 import unittest
+from unittest.mock import patch
 
 from hq.control.pve import ControlError
-from hq.router import INNER, KEY_INNER, SCRIPT, Router, check_key_request, parse_why, summarize
+from hq.router import INNER, KEY_INNER, SCRIPT, Router, check_key_request, parse_why, summarize, summarize_all
 
 NOW = 1794000000.0
 RAW = {
@@ -197,6 +198,84 @@ class RouterAlertTests(unittest.TestCase):
         down = summarize({**RAW, 'services': {'9router': 'failed'}}, NOW)
         watch.router = lambda: down
         self.assertEqual([k for _, k, _ in watch._router()], ['9router'])
+
+
+JAMES = {
+    'vmid': '124', 'status': 'running', 'hostname': 'app-9router-jordan', 'version': '0.5.116', 'health': 200,
+    'services': {'9router': 'active', 'headroom': 'active'},
+    'nodes': {'anthropic-compatible-x': {'type': 'anthropic-compatible', 'name': 'Router 2', 'prefix': 'r2', 'base_url': 'http://192.0.2.80:20128/v1'}},
+    'connections': [
+        {'id': 'f1', 'provider': 'anthropic-compatible-x', 'auth': 'apikey', 'name': 'router2-fallback', 'priority': 1, 'active': True, 'testStatus': 'unknown'},
+        {'id': 'j1', 'provider': 'claude', 'auth': 'oauth', 'name': 'jordanwee@example.test', 'priority': 2, 'active': True, 'testStatus': 'active'},
+    ],
+    'api_keys': [{'id': 'k7', 'name': 'ct203-lead', 'active': True, 'created': '', 'restricted': False, 'allow': []}],
+    'usage': [[int(NOW - 60), 'claude', 'claude-opus-5-5', 'j1', 'k7', 100, 10, 0.2, 'ok'],
+              [int(NOW - 30), 'anthropic-compatible-x', 'default', 'f1', 'k7', 100, 10, 0.2, 'ok']],
+}
+
+
+class SeveralRoutersTests(unittest.TestCase):
+    def setUp(self):
+        labels = patch("hq.router.ROUTERS", {"124": ("Router 1", "lead agents"), "122": ("Router 2", "staff")})
+        labels.start()
+        self.addCleanup(labels.stop)
+        primary = patch.dict("os.environ", {"HQ_ROUTER_PRIMARY": "122"})
+        primary.start()
+        self.addCleanup(primary.stop)
+
+    def test_every_router_is_read_and_the_main_one_stays_on_top(self):
+        snap = summarize_all({'routers': [dict(RAW, hostname='app-9router'), JAMES]}, NOW)
+        self.assertEqual(snap['vmid'], '122')
+        # the owner's order and names: Router 1 is Jordan (CT 124), Router 2 the staff one (CT 122)
+        self.assertEqual([r['vmid'] for r in snap['routers']], ['124', '122'])
+        self.assertEqual([r['label'] for r in snap['routers']], ['Router 1', 'Router 2'])
+        self.assertIn('lead', snap['routers'][0]['role'])
+        # keys from every router count in the fleet's plan figure
+        self.assertIn('k7', snap['plan']['keys'])
+
+    def test_a_link_to_another_router_is_a_fallback_not_an_account(self):
+        jordan = summarize_all({'routers': [JAMES]}, NOW)
+        by = {c['id']: c for c in jordan['connections']}
+        self.assertEqual(by['f1']['link'], 'http://192.0.2.80:20128/v1')
+        self.assertIsNone(by['j1']['link'])
+        self.assertEqual(jordan['in_use'], 'j1')  # the fallback is never "in use" ahead of the router's own account
+        self.assertEqual([a['id'] for a in jordan['plan']['accounts']], ['j1'])
+        out = summarize_all({'routers': [{**JAMES, 'connections': [{**JAMES['connections'][1], 'testStatus': 'unavailable'}]}]}, NOW)
+        self.assertIsNone(out['in_use'])  # an account that's out of limit isn't where the next request goes
+
+    def test_old_single_answer_and_nothing_found(self):
+        self.assertEqual(summarize_all(RAW, NOW)['vmid'], '122')
+        self.assertEqual(summarize_all({'routers': []}, NOW), {'found': False, 'routers': []})
+
+    def test_key_actions_go_to_the_chosen_router_only(self):
+        sent = []
+
+        class Pve:
+            def run(self, words, timeout=60, stdin=None):
+                sent.append(words)
+                return json.dumps({'routers': [{'key': 'sk-x', 'vmid': words[-1], 'status': 'running'}]}) + '\n'
+
+            def configured(self):
+                return True
+        router = Router(Pve(), clock=lambda: NOW)
+        router._snapshot = summarize_all({'routers': [RAW, JAMES]}, NOW)
+        router._refresh_quietly = lambda: None
+        self.assertEqual(router.key_action('reveal', 'k7', vmid='124'), {'key': 'sk-x'})
+        self.assertEqual(sent[-1][-1], '124')
+        with self.assertRaises(ValueError):
+            router.key_action('reveal', 'k7')  # k7 is on Router 124, not the main one
+        with self.assertRaises(ValueError):
+            router.key_action('reveal', 'k1', vmid='999')
+
+    def test_alerts_name_the_router_and_skip_the_fallback_link(self):
+        from hq.watch import Watchman
+        snap = summarize_all({'routers': [RAW, {**JAMES, 'services': {'9router': 'failed'}}]}, NOW)
+        watch = Watchman.__new__(Watchman)
+        watch.router, watch.clock = (lambda: snap), (lambda: NOW)
+        found = {key: text for kind, key, text in watch._router()}
+        self.assertIn('Router 2 (CT 122) account', found['router:c1'])
+        self.assertIn('isn’t answering', found['9router:124'])
+        self.assertNotIn('router:f1', found)
 
 
 if __name__ == '__main__':

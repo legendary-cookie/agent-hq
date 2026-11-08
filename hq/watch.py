@@ -244,23 +244,33 @@ class Watchman:
         return found
 
     def _router(self):
-        """9router: the service, and each account's errors, cooldown and weekly limit."""
+        """Every 9router: the service, and each account's errors, cooldown and weekly limit."""
         snap = self.router()
         if not snap or not snap.get('found'):
             return []
+        found = []
+        for r in snap.get('routers') or [snap]:
+            found += self._one_router(r, len(snap.get('routers') or [snap]) > 1)
+        return found
+
+    def _one_router(self, snap, several):
+        where = f'{snap.get("label")} (CT {snap.get("vmid")})' if several else '9router'
+        key0 = f'9router:{snap.get("vmid")}' if several else '9router'
         if not snap.get('up'):
-            return [('router', '9router', f'9router (CT {snap.get("vmid")}) isn’t answering: container {snap.get("status")}, service {(snap.get("services") or {}).get("9router")}')]
+            return [('router', key0, f'{where if several else "9router (CT " + str(snap.get("vmid")) + ")"} isn’t answering: container {snap.get("status")}, service {(snap.get("services") or {}).get("9router")}')]
         found, now = [], self.clock()
         for c in snap.get('connections') or []:
+            if c.get('link'):
+                continue  # the fallback to another router: that router's own accounts are checked there
             if not c.get('active'):
                 continue
             name, key = c.get('name') or c.get('id'), f'router:{c.get("id")}'
             if c.get('test_status') not in (None, 'active', 'ok', 'success'):
-                found.append(('router', key, f'9router account {name}: {c.get("test_status")}{" (" + c["last_error"][:100] + ")" if c.get("last_error") else ""}'))
+                found.append(('router', key, f'{where} account {name}: {c.get("test_status")}{" (" + c["last_error"][:100] + ")" if c.get("last_error") else ""}'))
             elif c.get('rate_limited_until'):
-                found.append(('router', key, f'9router account {name} is cooling down after a limit, until {time.strftime("%H:%M", time.localtime(c["rate_limited_until"]))}'))
+                found.append(('router', key, f'{where} account {name} is cooling down after a limit, until {time.strftime("%H:%M", time.localtime(c["rate_limited_until"]))}'))
             elif (c.get('limit') or {}).get('left_pct') is not None and c['limit']['left_pct'] <= 10:
-                found.append(('router', key, f'9router account {name}: {c["limit"]["window"]} limit {c["limit"]["left_pct"]:.0f}% left'))
+                found.append(('router', key, f'{where} account {name}: {c["limit"]["window"]} limit {c["limit"]["left_pct"]:.0f}% left'))
         return found
 
     def _claude(self, host, label, cfg):

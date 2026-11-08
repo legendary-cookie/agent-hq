@@ -3,11 +3,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { resetMe, canDo } from '../api/me';
 import { Sidebar } from './Sidebar';
 
-function signedInAs(me: object | null) {
+function signedInAs(me: object | null, chatUrl?: string) {
   vi.stubGlobal('fetch', vi.fn(async (path: string) => (
     path === '/api/me'
       ? (me ? { ok: true, status: 200, json: async () => me } : { ok: false, status: 404, json: async () => ({}) })
-      : { ok: true, status: 200, json: async () => (path === '/api/brand' ? { brand: 'HQ' } : { run_mode: false }) }
+      : { ok: true, status: 200, json: async () => (path === '/api/brand' ? { brand: 'HQ', chat_url: chatUrl } : { run_mode: false }) }
   )));
   vi.stubGlobal('EventSource', class { addEventListener() {} close() {} });
 }
@@ -52,4 +52,10 @@ it('an older server without /api/me hides nothing', async () => {
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(links()).toHaveLength(10);
   expect(canDo(null, 'accounts.manage')).toBe(true);
+});
+
+it('links to the optional Chat companion when configured', async () => {
+  signedInAs({ username: 'boss', role: 'admin', permissions: [], admin: true }, 'http://127.0.0.1:8700');
+  render(<Sidebar route="overview" navigate={() => undefined} />);
+  expect(await screen.findByRole('link', { name: 'Chat workspace ↗' })).toHaveAttribute('href', 'http://127.0.0.1:8700');
 });
